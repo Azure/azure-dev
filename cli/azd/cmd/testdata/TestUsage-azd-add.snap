@@ -2,7 +2,7 @@
 Add a component to your project.
 
 Choose from items supplied by installed extensions.
-If none are available, use the built-in menu for compatible projects.
+If no installed extension offers items, see available extensions that support azd add.
 
 Usage
   azd add [flags]

@@ -26,7 +26,6 @@ import (
 	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
-	"github.com/azure/azure-dev/cli/azd/internal/cmd/add"
 	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
@@ -1009,7 +1008,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(extensions.NewSourceManager)
 	container.MustRegisterSingleton(extensions.NewRunner)
 	container.MustRegisterScoped(middleware.NewExtensionActivator)
-	container.MustRegisterNamedTransient(legacyAddActionName, add.NewAddAction)
 	container.MustRegisterSingleton(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*extensions.Runner] {
 		return lazy.NewLazy(func() (*extensions.Runner, error) {
 			var runner *extensions.Runner

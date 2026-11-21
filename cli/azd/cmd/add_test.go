@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,6 +37,48 @@ func (c addTestConsole) Handles() input.ConsoleHandles {
 	return c.handles
 }
 
+func TestAddListsAvailableProvidersWithoutCheckingProjectCompatibility(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+	t.Setenv("NO_COLOR", "1")
+	projectDir := t.TempDir()
+	t.Chdir(projectDir)
+	require.NoError(t, os.WriteFile("azure.yaml", []byte("name: test-add\n"), 0o600))
+	require.NoError(t, os.Mkdir("infra", 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join("infra", "main.bicep"), []byte("// template\n"), 0o600))
+
+	registry := filepath.Join(t.TempDir(), "registry.json")
+	require.NoError(t, os.WriteFile(registry, []byte(`{
+		"schemaVersion": "1.0",
+		"extensions": [
+			{"id": "test.add", "versions": [{"version": "1.0.0", "capabilities": ["add-provider"]}]},
+			{"id": "test.other", "versions": [{"version": "1.0.0", "capabilities": ["custom-commands"]}]}
+		]
+	}`), 0o600))
+	userConfig := fmt.Sprintf(`{"extension":{"sources":{"local":{"name":"local","type":"file","location":%q}}}}`, registry)
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.json"), []byte(userConfig), 0o600))
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	args := []string{"add", "--no-prompt"}
+	options := &internal.GlobalCommandOptions{}
+	require.NoError(t, ParseGlobalFlags(args, options))
+	ioc.RegisterInstance(mockCtx.Container, options)
+	root := NewRootCmd(false, nil, mockCtx.Container)
+	mockCtx.Container.MustRegisterScoped(func() input.Console { return mockCtx.Console })
+	root.SetArgs(args)
+	err := root.ExecuteContext(t.Context())
+
+	require.ErrorContains(t, err, "no installed extension offered anything to add")
+	rendered := strings.Join(mockCtx.Console.Output(), "\n")
+	require.NotContains(t, rendered, "incompatible project")
+	require.Contains(t, rendered, "Available extensions that support azd add:")
+	require.Contains(t, rendered, "test.add (source: local)")
+	require.Contains(t, rendered, "azd extension install <id> --source <source>")
+	require.NotContains(t, rendered, "test.other")
+	require.NoDirExists(t, filepath.Join(projectDir, ".azure"))
+}
+
 func TestAddProviderDispatch(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -50,7 +93,10 @@ func TestAddProviderDispatch(t *testing.T) {
 		{name: "select without project", noProject: true, wantInvoked: true},
 		{name: "no prompt", noPrompt: true, wantErr: "requires interactive input"},
 		{name: "startup failure", startupErr: errors.New("listener failed"), wantErr: "listener failed"},
-		{name: "empty provider falls back to legacy", noItems: true, noProject: true, wantErr: "no project exists"},
+		{
+			name: "empty provider falls back without a project", noItems: true, noProject: true,
+			wantErr: "no installed extension offered anything to add",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -70,6 +116,16 @@ func TestAddProviderDispatch(t *testing.T) {
 			require.NoError(t, os.WriteFile(fullPath, []byte("mock"), 0o600))
 
 			mockCtx := mocks.NewMockContext(t.Context())
+			if tt.noItems {
+				mockCtx.HttpClient.When(func(req *http.Request) bool {
+					return req.URL.String() == "https://aka.ms/azd/extensions/registry"
+				}).RespondFn(func(req *http.Request) (*http.Response, error) {
+					return mocks.CreateHttpResponseWithBody(req, http.StatusOK, extensions.Registry{
+						SchemaVersion: extensions.CurrentRegistrySchemaVersion,
+						Extensions:    []*extensions.ExtensionMetadata{},
+					})
+				})
+			}
 			manager := newExtensionActionTestManager(t, mockCtx, &extensions.Extension{
 				Id: "test.add", Path: extensionPath, Version: "1.0.0",
 				Capabilities: []extensions.CapabilityType{extensions.AddProviderCapability},
@@ -125,6 +181,11 @@ func TestAddProviderDispatch(t *testing.T) {
 				require.NoError(t, err)
 			} else {
 				require.ErrorContains(t, err, tt.wantErr)
+			}
+			if tt.noItems {
+				suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+				require.True(t, ok)
+				require.Contains(t, suggestion.Suggestion, "No extensions that support azd add were found")
 			}
 			require.Equal(t, tt.wantInvoked, prompted)
 			if tt.wantInvoked {

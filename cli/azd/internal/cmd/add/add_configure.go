@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/names"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -32,34 +33,6 @@ type PromptOptions struct {
 	// ExistingId is the ID of an existing resource.
 	// This is only used to configure the resource with an existing resource.
 	ExistingId string
-}
-
-// ConfigureLive fills in the fields for a resource by first querying live Azure for information.
-//
-// This is used in addition to Configure currently.
-func (a *AddAction) ConfigureLive(
-	ctx context.Context,
-	r *project.ResourceConfig,
-	console input.Console,
-	p PromptOptions) (*project.ResourceConfig, error) {
-	if r.Existing {
-		return r, nil
-	}
-
-	var err error
-
-	switch r.Type {
-	case project.ResourceTypeAiProject:
-		r, err = a.promptAiModel(console, ctx, r, p)
-	case project.ResourceTypeOpenAiModel:
-		r, err = a.promptOpenAi(console, ctx, r, p)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return r, nil
 }
 
 // Configure fills in the fields for a resource.
@@ -298,40 +271,12 @@ func fillUses(
 	return r, nil
 }
 
-func promptUsedBy(
-	ctx context.Context,
-	r *project.ResourceConfig,
-	console input.Console,
-	p PromptOptions) ([]string, error) {
-	svc := []string{}
-	isHost := strings.HasPrefix(string(r.Type), "host.")
-	for _, other := range p.PrjConfig.Resources {
-		otherIsHost := strings.HasPrefix(string(other.Type), "host.")
-		// Linking between different host types is not supported yet
-		if isHost && otherIsHost && r.Type != other.Type {
-			continue
-		}
-		if otherIsHost && !slices.Contains(other.Uses, r.Name) {
-			svc = append(svc, other.Name)
-		}
+func validateResourceName(name string, prj *project.ProjectConfig) error {
+	if err := names.ValidateLabelName(name); err != nil {
+		return err
 	}
-	slices.Sort(svc)
-
-	if len(svc) > 0 {
-		message := "Select the service(s) that uses this resource"
-		if strings.HasPrefix(string(r.Type), "host.") {
-			message = "Select the front-end service(s) that uses this service (if applicable)"
-		}
-		uses, err := console.MultiSelect(ctx, input.ConsoleOptions{
-			Message: message,
-			Options: svc,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		return uses, nil
+	if _, exists := prj.Resources[name]; exists {
+		return fmt.Errorf("resource with name '%s' already exists", name)
 	}
-
-	return nil, nil
+	return nil
 }

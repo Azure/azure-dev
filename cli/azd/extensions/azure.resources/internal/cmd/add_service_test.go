@@ -151,6 +151,7 @@ func TestAddHostCommandDelegatesServiceWriteToRPC(t *testing.T) {
 	require.Len(t, host.project.layerRequests, 1)
 	require.Equal(t, "infra.layers", host.project.layerRequests[0].Path)
 	require.Contains(t, output, "Added service")
+	require.Contains(t, output, "Run 'azd up' to apply these changes.\n")
 }
 
 func TestAddHostCommandRestoresProjectAfterServiceRPCFailure(t *testing.T) {
@@ -167,8 +168,8 @@ func TestAddHostCommandRestoresProjectAfterServiceRPCFailure(t *testing.T) {
 	require.Len(t, host.project.requests, 1)
 	require.Equal(t, []string{"services", "infra"}, host.project.unsetRequests)
 	require.Zero(t, host.writes)
-	require.Empty(t, prompts.commands)
 	require.NotContains(t, output, "azure.yaml updated:")
+	require.NotContains(t, output, "to apply these changes")
 	require.Equal(t, original, saved, "the layer written before the failed service must be rolled back")
 }
 
@@ -187,8 +188,8 @@ func TestAddLayerRPCFailureStopsBeforeServiceWrites(t *testing.T) {
 	require.Len(t, host.project.layerRequests, 1)
 	require.Empty(t, host.project.requests)
 	require.Zero(t, host.writes)
-	require.Empty(t, prompts.commands)
 	require.NotContains(t, output, "azure.yaml updated:")
+	require.NotContains(t, output, "to apply these changes")
 }
 
 func TestAddReadRPCFailureStopsBeforePromptsOrWrites(t *testing.T) {

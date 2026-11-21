@@ -15,8 +15,6 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 )
 
 type serviceReceiver interface {
@@ -371,7 +369,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		addCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		broker, err := er.addProvider.connect(
-			addCtx, v1beta.NewAddProviderServiceClient(er.client.connection), extensionId, brokerLogger,
+			addCtx, er.client.AddProviderBeta(), extensionId, brokerLogger,
 		)
 		if err != nil {
 			if status.Code(err) != codes.Unimplemented {

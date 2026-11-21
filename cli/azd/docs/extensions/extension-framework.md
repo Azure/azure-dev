@@ -1023,8 +1023,10 @@ Core displays the registered choices and sends the selected ID back over
 the owning extension's stream. The extension handles prompts and project
 changes. Core forwards the selected listener's stdout and stderr to the
 corresponding CLI streams from invocation through listener shutdown. If no
-provider contributes choices, `azd add` uses the legacy resource flow for
-compatible projects.
+provider contributes choices, `azd add` lists available add-provider
+extensions from configured sources and explains how to install one. This
+fallback doesn't require a project, prompt for input, or install anything.
+It exits with a nonzero status because no component was added.
 
 See [Add providers](extension-sdk-reference.md#add-providers-beta) for the Go SDK interface.
 

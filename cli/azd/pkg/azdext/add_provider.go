@@ -19,6 +19,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 )
 
+// AddItemUnavailableCode tells azd add that the selected item could not be added and no changes were made.
+// Return it in a validation LocalError to let the user choose another item.
+const AddItemUnavailableCode = "add_item_unavailable"
+
 type addProviderRegistration struct {
 	items   []*v1beta.AddItem
 	handler func(context.Context, string) error

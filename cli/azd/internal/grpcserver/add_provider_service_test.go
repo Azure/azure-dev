@@ -53,7 +53,10 @@ func TestAddProviderRoutesThroughBetaSDK(t *testing.T) {
 	t.Cleanup(client.Close)
 	entered := make(chan string, 1)
 	host := azdext.NewExtensionHost(client).WithBetaAddProvider(
-		[]*v1beta.AddItem{{Id: "wait", DisplayName: "Wait"}, {Id: "fail", DisplayName: "Fail"}},
+		[]*v1beta.AddItem{
+			{Id: "wait", DisplayName: "Wait"}, {Id: "fail", DisplayName: "Fail"},
+			{Id: "blocked", DisplayName: "Blocked", DisabledReason: "This layer already has one."},
+		},
 		func(ctx context.Context, id string) error {
 			entered <- id
 			if id == "wait" {
@@ -70,10 +73,14 @@ func TestAddProviderRoutesThroughBetaSDK(t *testing.T) {
 	require.NoError(t, installed.WaitUntilReady(ctx))
 	require.True(t, registry.HasProvider(extension.Id))
 	items := registry.Items()
-	require.Len(t, items, 2)
-	require.Equal(t, "wait", items[1].ID)
-	require.Equal(t, "Wait", items[1].DisplayName)
-	require.Equal(t, extension.Id, items[1].Provider)
+	require.Len(t, items, 3)
+	blocked, fail, wait := items[0], items[1], items[2]
+	require.Equal(t, "wait", wait.ID)
+	require.Equal(t, "Wait", wait.DisplayName)
+	require.Equal(t, extension.Id, wait.Provider)
+	require.Equal(t, "This layer already has one.", blocked.DisabledReason)
+	require.Equal(t, codes.FailedPrecondition, status.Code(blocked.Run(ctx)))
+	require.Empty(t, entered)
 
 	duplicate, err := rpc.Stream(auth)
 	require.NoError(t, err)
@@ -84,7 +91,7 @@ func TestAddProviderRoutesThroughBetaSDK(t *testing.T) {
 	invokeCtx, stopInvoke := context.WithCancel(ctx)
 	defer stopInvoke()
 	invoked := make(chan error, 1)
-	go func() { invoked <- items[1].Run(invokeCtx) }()
+	go func() { invoked <- wait.Run(invokeCtx) }()
 	select {
 	case id := <-entered:
 		require.Equal(t, "wait", id)
@@ -98,7 +105,7 @@ func TestAddProviderRoutesThroughBetaSDK(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("add invocation did not acknowledge cancellation")
 	}
-	require.ErrorContains(t, items[0].Run(ctx), "provider failure")
+	require.ErrorContains(t, fail.Run(ctx), "provider failure")
 	require.Equal(t, "fail", <-entered)
 
 	stopHost()
@@ -118,7 +125,7 @@ func TestAddProviderRoutesThroughBetaSDK(t *testing.T) {
 	require.NotNil(t, ack.GetRegisterResponse())
 	require.True(t, registry.HasProvider(extension.Id))
 	require.Empty(t, registry.Items())
-	require.Equal(t, codes.Unavailable, status.Code(items[0].Run(ctx)))
+	require.Equal(t, codes.Unavailable, status.Code(fail.Run(ctx)))
 	require.NoError(t, empty.CloseSend())
 }
 

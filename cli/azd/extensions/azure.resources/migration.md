@@ -11,9 +11,8 @@ Move top-level `resources` into a named `infra.layers` entry's `config`.
 Resource-to-resource `uses` references must stay within the same entry.
 Core service `uses` references do not resolve extension-owned resources; review
 those dependencies and use infrastructure layer dependencies where appropriate.
-After migrating, select **Azure resource or service** in `azd add`, or launch
-the wizard directly with `azd resources add`. The migrated resources layer is
-selected automatically, with confirmation before updating it.
+After migrating, select an item marked **(resources)** in `azd add`. The
+command automatically uses the existing resources layer.
 
 Before:
 

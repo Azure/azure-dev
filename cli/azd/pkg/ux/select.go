@@ -44,8 +44,9 @@ type SelectOptions struct {
 }
 
 type SelectChoice struct {
-	Value string
-	Label string
+	Value          string
+	Label          string
+	DisabledReason string
 }
 
 type indexedSelectChoice struct {
@@ -181,7 +182,7 @@ func (p *Select) Ask(ctx context.Context) (*int, error) {
 			p.selectedChoice = p.filteredChoices[*p.currentIndex]
 		}
 
-		if args.Key == surveyterm.KeyEnter && p.currentIndex != nil {
+		if args.Key == surveyterm.KeyEnter && p.currentIndex != nil && p.selectedChoice.DisabledReason == "" {
 			p.complete = true
 		}
 
@@ -287,7 +288,14 @@ func (p *Select) renderOptions(printer Printer, indent string) {
 			digitPrefix = fmt.Sprintf("%*d. ", digitWidth, option.Index+1) // Padded digit prefix
 		}
 
-		if start+index == selected {
+		if option.DisabledReason != "" {
+			prefix := " "
+			if start+index == selected {
+				prefix = output.WithHighLightFormat(">")
+			}
+			printer.Fprintf("%s%s %s\n", indent, prefix,
+				output.WithGrayFormat("%s%s (Unavailable: %s)", digitPrefix, displayValue, option.DisabledReason))
+		} else if start+index == selected {
 			prefix := ">"
 			printer.Fprintf("%s%s %s%s\n",
 				indent,

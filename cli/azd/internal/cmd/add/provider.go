@@ -11,37 +11,40 @@ import (
 	"slices"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
 // ProviderItem represents one selectable action from an installed add provider.
 type ProviderItem struct {
-	ID          string
-	DisplayName string
-	Provider    string
-	Run         func(context.Context) error
+	ID             string
+	DisplayName    string
+	Provider       string
+	DisabledReason string
+	Run            func(context.Context) error
 }
 
-// NewDispatchAction constructs the add action without resolving legacy project or Azure dependencies.
+// NewDispatchAction constructs the add action. onEmpty reports what to do when no provider contributes items.
 func NewDispatchAction(
 	console input.Console,
 	noPrompt bool,
 	discover func(context.Context) ([]ProviderItem, func(), error),
-	resolveLegacy func() (actions.Action, error),
+	onEmpty func(context.Context) error,
 ) actions.Action {
 	return &dispatchAction{
-		console:       console,
-		noPrompt:      noPrompt,
-		discover:      discover,
-		resolveLegacy: resolveLegacy,
+		console:  console,
+		noPrompt: noPrompt,
+		discover: discover,
+		onEmpty:  onEmpty,
 	}
 }
 
 type dispatchAction struct {
-	console       input.Console
-	noPrompt      bool
-	discover      func(context.Context) ([]ProviderItem, func(), error)
-	resolveLegacy func() (actions.Action, error)
+	console  input.Console
+	noPrompt bool
+	discover func(context.Context) ([]ProviderItem, func(), error)
+	onEmpty  func(context.Context) error
 }
 
 func (a *dispatchAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -50,11 +53,7 @@ func (a *dispatchAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, err
 	}
 
-	legacy, err := a.resolveLegacy()
-	if err != nil {
-		return nil, err
-	}
-	return legacy.Run(ctx)
+	return nil, a.onEmpty(ctx)
 }
 
 func (a *dispatchAction) runProvider(ctx context.Context) (bool, error) {
@@ -76,14 +75,37 @@ func (a *dispatchAction) runProvider(ctx context.Context) (bool, error) {
 	slices.SortFunc(items, func(a, b ProviderItem) int {
 		return cmp.Or(cmp.Compare(a.DisplayName, b.DisplayName), cmp.Compare(a.Provider, b.Provider), cmp.Compare(a.ID, b.ID))
 	})
-	idx, err := a.console.Select(ctx, input.ConsoleOptions{
-		Message: "What would you like to add?",
-		Options: providerLabels(items),
-	})
-	if err != nil {
-		return true, err
+	options := input.ConsoleOptions{
+		Message:       "What would you like to add?",
+		Options:       providerLabels(items),
+		FitToTerminal: true,
 	}
-	return true, items[idx].Run(ctx)
+	options.DisabledReasons = make([]string, len(items))
+	for i, item := range items {
+		options.DisabledReasons[i] = item.DisabledReason
+	}
+	for {
+		idx, err := a.console.Select(ctx, options)
+		if err != nil {
+			return true, err
+		}
+
+		if reason := items[idx].DisabledReason; reason != "" {
+			return true, fmt.Errorf("%s is unavailable: %s", items[idx].DisplayName, reason)
+		}
+		err = items[idx].Run(ctx)
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		if !ok || localErr.Category != azdext.LocalErrorCategoryValidation || localErr.Code != azdext.AddItemUnavailableCode {
+			return true, err
+		}
+
+		a.console.MessageUxItem(ctx, &ux.ErrorWithSuggestion{
+			Message: localErr.Message, Suggestion: localErr.Suggestion, Links: localErr.Links,
+		})
+		if _, err := a.console.Prompt(ctx, input.ConsoleOptions{Message: "Press Enter to return to the add menu"}); err != nil {
+			return true, err
+		}
+	}
 }
 
 func providerLabels(items []ProviderItem) []string {

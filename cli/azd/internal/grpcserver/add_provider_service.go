@@ -34,11 +34,12 @@ func NewAddProviderRegistry() *AddProviderRegistry {
 
 // AddProviderItem is an add action offered by an extension.
 type AddProviderItem struct {
-	ID          string
-	DisplayName string
-	Provider    string
-	owner       *addProvider
-	itemID      string
+	ID             string
+	DisplayName    string
+	Provider       string
+	DisabledReason string
+	owner          *addProvider
+	itemID         string
 }
 
 // AttachOutput forwards the owning listener's output and returns a function that detaches it.
@@ -73,6 +74,9 @@ func (w *addOutputWriter) Write(p []byte) (int, error) {
 
 // Run invokes this item on the stream that advertised it.
 func (i AddProviderItem) Run(ctx context.Context) error {
+	if i.DisabledReason != "" {
+		return status.Error(codes.FailedPrecondition, i.DisabledReason)
+	}
 	if i.owner == nil {
 		return status.Error(codes.FailedPrecondition, "add item is not registered")
 	}
@@ -197,6 +201,7 @@ func (s *addProviderService) Stream(stream v1beta.AddProviderService_StreamServe
 		seen[id] = struct{}{}
 		provider.items = append(provider.items, AddProviderItem{
 			ID: id, DisplayName: displayName, Provider: extension.Id, owner: provider, itemID: id,
+			DisabledReason: strings.TrimSpace(item.GetDisabledReason()),
 		})
 	}
 	if err := s.registry.register(extension.Id, provider); err != nil {

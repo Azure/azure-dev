@@ -25,7 +25,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
-	"github.com/azure/azure-dev/cli/azd/internal/cmd/add"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd/show"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -470,7 +469,7 @@ func newRootCmd(
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 	root.
 		Add("add", &actions.ActionDescriptorOptions{
-			Command:        add.NewAddCmd(),
+			Command:        newAddCmd(),
 			ActionResolver: newAddAction,
 			HelpOptions:    actions.ActionHelpOptions{Description: getCmdAddHelpDescription},
 			GroupingOptions: actions.CommandGroupOptions{

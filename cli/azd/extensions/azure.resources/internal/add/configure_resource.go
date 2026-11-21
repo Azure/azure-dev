@@ -8,12 +8,28 @@ import (
 	"fmt"
 
 	"azure.resources/internal/resources"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 func (w *Wizard) configureResource(
 	ctx context.Context, resourceType string, pending map[string]string,
 ) (string, resources.Definition, error) {
 	definition := resources.Definition{Type: resourceType}
+	if resourceType == resources.OpenAIModel || resourceType == resources.AIProject {
+		return w.configureAI(ctx, resourceType, pending)
+	}
+
+	for _, other := range w.Resources {
+		if other.Type == resourceType && !other.Existing {
+			return "", definition, &azdext.LocalError{
+				Category: azdext.LocalErrorCategoryValidation,
+				Code:     azdext.AddItemUnavailableCode,
+				Message:  resources.DuplicateManagedResourceError(resourceType).Error(),
+			}
+		}
+	}
+
 	var name string
 	var err error
 	switch resourceType {
@@ -31,8 +47,6 @@ func (w *Wizard) configureResource(
 		name = "event-hubs"
 	case resources.ServiceBus:
 		name = "service-bus"
-	case resources.OpenAIModel, resources.AIProject:
-		return w.configureAI(ctx, resourceType, pending)
 	default:
 		return "", definition, fmt.Errorf("unsupported resource type %q", resourceType)
 	}
@@ -41,12 +55,6 @@ func (w *Wizard) configureResource(
 	}
 	if err := w.validateResourceName(name); err != nil {
 		return "", definition, err
-	}
-	// These resource types have one shared backing resource per entry.
-	for _, other := range w.Resources {
-		if other.Type == resourceType && !other.Existing {
-			return "", definition, fmt.Errorf("only one %s resource is supported per infrastructure entry", resourceType)
-		}
 	}
 	switch resourceType {
 	case resources.Storage:

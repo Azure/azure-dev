@@ -105,7 +105,7 @@ func TestConfigValidation(t *testing.T) {
 		}, "python or node"},
 		{"duplicate singleton", map[string]any{
 			"first": map[string]any{"type": Mongo}, "second": map[string]any{"type": Mongo},
-		}, "at most one"},
+		}, "this layer already manages a Cosmos DB for MongoDB resource"},
 		{"invalid environment name", map[string]any{
 			"api": map[string]any{
 				"type": ContainerApp, "port": 8080,

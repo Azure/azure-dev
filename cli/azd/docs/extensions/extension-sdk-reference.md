@@ -761,8 +761,9 @@ a published SDK containing these helpers before releasing.
 
 ## Add providers (beta)
 
-Declare `add-provider` in `capabilities` in `extension.yaml`. In the extension
-listener, register the items and handler before calling `host.Run`:
+`AzdClient.AddProviderBeta()` exposes the beta-only `AddProviderService.Stream`
+RPC. Declare `add-provider` in `capabilities` in `extension.yaml`. In the
+extension listener, register the items and handler before calling `host.Run`:
 
 ```go
 host.WithBetaAddProvider([]*v1beta.AddItem{
@@ -772,11 +773,20 @@ host.WithBetaAddProvider([]*v1beta.AddItem{
 
 `v1beta` is `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta`.
 Each `Id` is nonempty and unique within the extension. `DisplayName` is the
-label shown in the menu. The handler (`func(context.Context, string) error`)
+label shown in the menu. Set `DisabledReason` to a short explanation when an
+item cannot be added in the current project. The item stays searchable and
+visible, but the host does not invoke it. Leave the field empty to enable the
+item. Older hosts that don't recognize the field ignore it, so handlers should
+still check whether an item can be added.
+
+The handler (`func(context.Context, string) error`)
 receives the selected ID. It owns any further prompts, project updates, and
 output. Registration should not prompt or make changes. The host surfaces
-errors returned by the handler. `azd add` requires interactive selection when
-extension choices are available.
+errors returned by the handler. To let the user return to the menu after
+acknowledging a validation error, return a validation `LocalError` with
+`azdext.AddItemUnavailableCode`. Only use this code if the selection made
+no changes. `azd add` requires interactive selection when extension choices
+are available.
 
 This API targets azd 1.39.0. Before publishing, require a host and pin a
 released SDK that both contain `AddProviderService`.
@@ -805,6 +815,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `CommandResult()` | `v1beta.CommandResultServiceClient` (preview) |
 | `Compose()` | `v1beta.ComposeServiceClient` (preview) |
 | `InfraGenerationBeta()` | `v1beta.InfraGenerationServiceClient` (preview) |
+| `AddProviderBeta()` | `v1beta.AddProviderServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
 | `ServiceTarget()` | `ServiceTargetServiceClient` |
 | `BetaServiceTarget()` | `v1beta.ServiceTargetServiceClient` (deprecated for deployment preview; use `ServiceTarget()`) |

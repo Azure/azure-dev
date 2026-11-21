@@ -22,6 +22,7 @@ import (
 const defaultResourcesLayer = "azureresources"
 
 type addProject struct {
+	layerName      string
 	layers         []any
 	index          int
 	target         map[string]any
@@ -50,6 +51,10 @@ func loadProject(ctx context.Context, client azdext.ProjectServiceClient) (map[s
 // parseProject validates that the project is compatible with 'resources' and parses
 // it.
 func parseProject(project map[string]any, layerName string) (*addProject, error) {
+	autoSelect := layerName == ""
+	if autoSelect {
+		layerName = defaultResourcesLayer
+	}
 	if err := validateProjectForResources(project, layerName); err != nil {
 		return nil, err
 	}
@@ -65,9 +70,9 @@ func parseProject(project map[string]any, layerName string) (*addProject, error)
 	}
 
 	addProjectState := &addProject{
-		index: -1, config: resources.Config{}, services: services, layers: layers,
+		layerName: layerName, index: -1, config: resources.Config{}, services: services, layers: layers,
 	}
-	if err := addProjectState.readLayers(layerName); err != nil {
+	if err := addProjectState.readLayers(autoSelect); err != nil {
 		return nil, err
 	}
 
@@ -134,7 +139,6 @@ func parseInfra(project map[string]any) ([]any, error) {
 		}
 		return nil, nil
 	}
-
 	layers, ok := rawLayers.([]any)
 	if !ok {
 		return nil, errors.New("infra.layers must be a sequence")
@@ -142,7 +146,7 @@ func parseInfra(project map[string]any) ([]any, error) {
 	return layers, nil
 }
 
-func (p *addProject) readLayers(layerName string) error {
+func (p *addProject) readLayers(autoSelect bool) error {
 	for i, value := range p.layers {
 		layer, err := resources.UnmarshalProjectLayer(value)
 		if err != nil {
@@ -150,15 +154,18 @@ func (p *addProject) readLayers(layerName string) error {
 		}
 		if layer.Provider == resources.ProviderName {
 			p.resourcesLayer = layer.Name
+			if autoSelect {
+				p.layerName = layer.Name
+			}
 		}
 
-		if layer.Name == layerName {
+		if layer.Name == p.layerName {
 			p.index, p.target, p.provider = i, layer.Raw, layer.Provider
 		}
 	}
 
 	if p.provider == resources.ProviderName {
-		config, err := unmarshalResourceConfig(p.target, layerName)
+		config, err := unmarshalResourceConfig(p.target, p.layerName)
 		if err != nil {
 			return err
 		}

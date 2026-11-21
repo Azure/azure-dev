@@ -251,11 +251,13 @@ func (*RegisterAddProviderResponse) Descriptor() ([]byte, []int) {
 }
 
 type AddItem struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	DisplayName string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	// A nonempty reason keeps the item visible but prevents invocation.
+	DisabledReason string `protobuf:"bytes,3,opt,name=disabled_reason,json=disabledReason,proto3" json:"disabled_reason,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *AddItem) Reset() {
@@ -298,6 +300,13 @@ func (x *AddItem) GetId() string {
 func (x *AddItem) GetDisplayName() string {
 	if x != nil {
 		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *AddItem) GetDisabledReason() string {
+	if x != nil {
+		return x.DisabledReason
 	}
 	return ""
 }
@@ -437,10 +446,11 @@ const file_azd_extensions_v1beta_add_provider_proto_rawDesc = "" +
 	"\fmessage_type\"R\n" +
 	"\x1aRegisterAddProviderRequest\x124\n" +
 	"\x05items\x18\x01 \x03(\v2\x1e.azd.extensions.v1beta.AddItemR\x05items\"\x1d\n" +
-	"\x1bRegisterAddProviderResponse\"<\n" +
+	"\x1bRegisterAddProviderResponse\"e\n" +
 	"\aAddItem\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
-	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\" \n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12'\n" +
+	"\x0fdisabled_reason\x18\x03 \x01(\tR\x0edisabledReason\" \n" +
 	"\x0eAddItemRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x11\n" +
 	"\x0fAddItemResponse\"\x0f\n" +

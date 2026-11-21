@@ -34,6 +34,8 @@ message RegisterAddProviderResponse {}
 message AddItem {
   string id = 1;
   string display_name = 2;
+  // A nonempty reason keeps the item visible but prevents invocation.
+  string disabled_reason = 3;
 }
 
 message AddItemRequest {

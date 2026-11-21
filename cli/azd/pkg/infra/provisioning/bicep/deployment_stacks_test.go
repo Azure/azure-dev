@@ -4,12 +4,15 @@
 package bicep
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -276,40 +279,6 @@ func TestDeploymentOptionsMap_SkipsResolutionWhenStacksDisabled(t *testing.T) {
 	require.NotContains(t, optionsMap, "DeploymentStacks")
 }
 
-// TestHasActiveDeploymentStacksConfig guards the deployment-state bypass: when an effective
-// deployment-stacks configuration is present, Deploy must skip the state shortcut so a changed
-// ${VAR}-resolved deny principal/action is re-applied (rather than silently ignored because the
-// ARM template and parameters are unchanged) and the ${VAR} validation always runs.
-func TestHasActiveDeploymentStacksConfig(t *testing.T) {
-	t.Run("no config", func(t *testing.T) {
-		enableDeploymentStacks(t)
-		mockContext := mocks.NewMockContext(t.Context())
-		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
-		provider.options.DeploymentStacks = nil
-		require.False(t, provider.hasActiveDeploymentStacksConfig())
-	})
-
-	t.Run("config present but feature disabled", func(t *testing.T) {
-		// deployment.stacks alpha feature is NOT enabled.
-		mockContext := mocks.NewMockContext(t.Context())
-		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
-		provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
-			DenySettings: &provisioning.DenySettingsConfig{Mode: "denyDelete"},
-		}
-		require.False(t, provider.hasActiveDeploymentStacksConfig())
-	})
-
-	t.Run("config present and feature enabled", func(t *testing.T) {
-		enableDeploymentStacks(t)
-		mockContext := mocks.NewMockContext(t.Context())
-		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
-		provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
-			DenySettings: &provisioning.DenySettingsConfig{Mode: "denyDelete"},
-		}
-		require.True(t, provider.hasActiveDeploymentStacksConfig())
-	})
-}
-
 // TestResolveDeploymentStacksMap_DefaultExpression verifies that shell-style default expressions
 // (${VAR:-fallback}) are honored: an unset variable with a usable default resolves to the default
 // and is accepted, rather than being rejected as an unset reference.
@@ -443,48 +412,123 @@ func TestResolveDeploymentStacksMap_EscapedUnsetVarIsLiteral(t *testing.T) {
 		t, []string{"Microsoft.Authorization/${UNSET_SCOPE}/write"}, denySettings["excludedActions"])
 }
 
-// TestUseDeploymentStateShortcut exercises every branch of the shortcut decision: it is disabled
-// when deployment-state tracking is off, when the parameters hash failed, and when an active
-// deployment-stacks configuration is present; otherwise it is enabled.
-func TestUseDeploymentStateShortcut(t *testing.T) {
-	t.Run("enabled by default", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(t.Context())
-		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
-		require.True(t, provider.useDeploymentStateShortcut(nil))
+func TestDeploymentStacksProvisionState(t *testing.T) {
+	enableDeploymentStacks(t)
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	t.Setenv("AZD_DEBUG_PROVISION_PROGRESS_DISABLE", "true")
+	mockContext := mocks.NewMockContext(t.Context())
+	userConfig := config.NewEmptyConfig()
+	require.NoError(t, userConfig.Set("validation.provision", "off"))
+	require.NoError(t, userConfig.Set("provision.preflight", "off"))
+	mockContext.Container.MustRegisterSingleton(func() config.UserConfigManager {
+		return config.NewUserConfigManager(mockContext.ConfigManager.WithConfig(userConfig))
 	})
 
-	t.Run("disabled when deployment state ignored", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(t.Context())
-		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+	template := minimalArmTemplate()
+	provider := createBicepProviderWithEnv(t, mockContext, template, nil)
+	service := &stackStateDeploymentService{}
+	provider.deploymentManager = infra.NewDeploymentManager(service, nil, mockContext.Console)
+	settings := &provisioning.DeploymentStacksConfig{
+		DenySettings: &provisioning.DenySettingsConfig{
+			Mode:               "denyDelete",
+			ExcludedPrincipals: expandableStrings("${EXCLUDED_PRINCIPAL}"),
+		},
+		ActionOnUnmanage: &provisioning.ActionOnUnmanageConfig{Resources: "detach"},
+	}
+	provider.options.DeploymentStacks = settings
+	provider.env.DotenvSet("EXCLUDED_PRINCIPAL", "first-principal")
+
+	provision := func(t *testing.T, skip bool) {
+		t.Helper()
+		previous := service.latest
+		result, err := provider.Deploy(t.Context())
+		require.NoError(t, err)
+		if skip {
+			require.Equal(t, provisioning.DeploymentStateSkipped, result.SkippedReason)
+			require.Same(t, previous, service.latest)
+		} else {
+			require.Empty(t, result.SkippedReason)
+			require.NotSame(t, previous, service.latest)
+		}
+	}
+
+	provision(t, false)
+	provision(t, true)
+
+	t.Run("changed resolved principal redeploys", func(t *testing.T) {
+		provider.env.DotenvSet("EXCLUDED_PRINCIPAL", "second-principal")
+		provision(t, false)
+		require.Equal(t, map[string]any{
+			"denySettings": map[string]any{
+				"mode":               "denyDelete",
+				"excludedPrincipals": []string{"second-principal"},
+			},
+			"actionOnUnmanage": map[string]any{"resources": "detach"},
+		}, service.options[deploymentStacksOptionKey])
+	})
+	t.Run("changed action on unmanage redeploys", func(t *testing.T) {
+		settings.ActionOnUnmanage.Resources = "delete"
+		provision(t, false)
+	})
+	t.Run("removed block redeploys without stack options", func(t *testing.T) {
+		provider.options.DeploymentStacks = nil
+		provision(t, false)
+		require.NotContains(t, service.options, deploymentStacksOptionKey)
+		provision(t, true)
+	})
+	t.Run("legacy parameters-only state with removed block redeploys once", func(t *testing.T) {
+		provider.options.DeploymentStacks = nil
+		legacyHash, err := parametersHash(template.Parameters, nil)
+		require.NoError(t, err)
+		service.latest.Tags[azure.TagKeyAzdDeploymentStateParamHashName] = new(legacyHash)
+		provision(t, false)
+		provision(t, true)
+	})
+	t.Run("unchanged empty block skips", func(t *testing.T) {
+		provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{}
+		provision(t, false)
+		provision(t, true)
 		provider.ignoreDeploymentState = true
-		require.False(t, provider.useDeploymentStateShortcut(nil))
+		provision(t, false)
 	})
+}
 
-	t.Run("disabled when parameters hash failed", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(t.Context())
-		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
-		require.False(t, provider.useDeploymentStateShortcut(errors.New("hash failed")))
-	})
+// stackStateDeploymentService models a stack update replacing the prior deployment.
+type stackStateDeploymentService struct {
+	azapi.DeploymentService
+	latest  *azapi.ResourceDeployment
+	options map[string]any
+}
 
-	t.Run("disabled when active deployment stacks config present", func(t *testing.T) {
-		enableDeploymentStacks(t)
-		mockContext := mocks.NewMockContext(t.Context())
-		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
-		provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
-			DenySettings: &provisioning.DenySettingsConfig{Mode: "denyDelete"},
-		}
-		require.False(t, provider.useDeploymentStateShortcut(nil))
-	})
+func (*stackStateDeploymentService) GenerateDeploymentName(baseName string) string {
+	return "azd-stack-" + baseName
+}
 
-	t.Run("enabled when stacks config present but feature disabled", func(t *testing.T) {
-		// deployment.stacks alpha feature is NOT enabled, so the config is inert.
-		mockContext := mocks.NewMockContext(t.Context())
-		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
-		provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
-			DenySettings: &provisioning.DenySettingsConfig{Mode: "denyDelete"},
-		}
-		require.True(t, provider.useDeploymentStateShortcut(nil))
-	})
+func (*stackStateDeploymentService) CalculateTemplateHash(context.Context, string, azure.RawArmTemplate) (string, error) {
+	return "template-hash", nil
+}
+
+func (s *stackStateDeploymentService) ListSubscriptionDeployments(
+	context.Context, string,
+) ([]*azapi.ResourceDeployment, error) {
+	if s.latest == nil {
+		return nil, nil
+	}
+	return []*azapi.ResourceDeployment{s.latest}, nil
+}
+
+func (s *stackStateDeploymentService) DeployToSubscription(
+	_ context.Context, _, _, name string, _ azure.RawArmTemplate, _ azure.ArmParameters,
+	tags map[string]*string, options map[string]any,
+) (*azapi.ResourceDeployment, error) {
+	s.options = options
+	s.latest = &azapi.ResourceDeployment{
+		Name:              name,
+		Tags:              tags,
+		TemplateHash:      new("template-hash"),
+		ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+	}
+	return s.latest, nil
 }
 
 // TestResolveDeploymentStacksMap_ActionOnUnmanageManagementGroups covers the management-groups

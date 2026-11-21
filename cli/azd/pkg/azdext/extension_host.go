@@ -260,7 +260,7 @@ func (er *ExtensionHost) WithServiceEventHandler(
 }
 
 // WithServiceEventResponseHandler registers a service-level predeploy or postdeploy handler that can return
-// structured, non-blocking messages. azd 1.39.0 or later displays the messages after deployment and includes them
+// structured, non-blocking messages. azd 1.40.0 or later displays the messages after deployment and includes them
 // in JSON output; older hosts ignore them. An event cannot also be registered with WithServiceEventHandler or
 // WithBetaServiceEventHandler.
 func (er *ExtensionHost) WithServiceEventResponseHandler(
@@ -279,7 +279,7 @@ func (er *ExtensionHost) WithServiceEventResponseHandler(
 // WithBetaServiceEventHandler registers a structured deploy handler on the deprecated v1beta route.
 // It supports service-level predeploy and postdeploy events only.
 //
-// Deprecated: use WithServiceEventResponseHandler with stable types in azd 1.39.0 or later.
+// Deprecated: use WithServiceEventResponseHandler with stable types in azd 1.40.0 or later.
 func (er *ExtensionHost) WithBetaServiceEventHandler(
 	eventName string,
 	handler BetaServiceEventHandler,

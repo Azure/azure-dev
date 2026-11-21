@@ -1019,7 +1019,9 @@ for the SDK interface and host/version requirements.
 Installed extensions declare `add-provider` in `capabilities` to contribute
 choices to `azd add`. No `providers` entry is needed. The beta-only
 `AddProviderService.Stream` registers each choice by ID and display name.
-Core displays the registered choices and sends the selected ID back over
+Core prefixes each choice with the registration's category and sorts choices by
+category, then item name. Multiple extensions can contribute to the same category.
+Core sends the selected item ID back over
 the owning extension's stream. The extension handles prompts and project
 changes. Core forwards the selected listener's stdout and stderr to the
 corresponding CLI streams from invocation through listener shutdown. If no

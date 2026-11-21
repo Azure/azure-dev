@@ -766,15 +766,18 @@ RPC. Declare `add-provider` in `capabilities` in `extension.yaml`. In the
 extension listener, register the items and handler before calling `host.Run`:
 
 ```go
-host.WithBetaAddProvider([]*v1beta.AddItem{
+host.WithBetaAddProvider("Resources", []*v1beta.AddItem{
     {Id: "resource", DisplayName: "Azure resource"},
 }, addResource)
 ```
 
 `v1beta` is `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta`.
 Each `Id` is nonempty and unique within the extension. `DisplayName` is the
-label shown in the menu. Set `DisabledReason` to a short explanation when an
-item cannot be added in the current project. The item stays searchable and
+item label. Do not include a category prefix in `DisplayName`. The host
+prefixes every item with the registration's category. Use the same category
+name across extensions to group their items together. Registrations without a
+category appear under `Other`. Set `DisabledReason` to a short
+explanation when an item cannot be added in the current project. The item stays searchable and
 visible, but the host does not invoke it. Leave the field empty to enable the
 item. Older hosts that don't recognize the field ignore it, so handlers should
 still check whether an item can be added.

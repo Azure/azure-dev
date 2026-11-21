@@ -425,7 +425,7 @@ func TestAddProviderSelectsServiceBusDirectly(t *testing.T) {
 
 	items := addProviderItems()
 	serviceBus := slices.IndexFunc(items, func(item *v1beta.AddItem) bool {
-		return item.GetDisplayName() == "(resources) Service Bus"
+		return item.GetDisplayName() == "Service Bus"
 	})
 	require.Greater(t, len(items), 1)
 	require.NotEqual(t, -1, serviceBus)

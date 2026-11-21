@@ -53,6 +53,7 @@ func TestAddProviderRoutesThroughBetaSDK(t *testing.T) {
 	t.Cleanup(client.Close)
 	entered := make(chan string, 1)
 	host := azdext.NewExtensionHost(client).WithBetaAddProvider(
+		" Resources ",
 		[]*v1beta.AddItem{
 			{Id: "wait", DisplayName: "Wait"}, {Id: "fail", DisplayName: "Fail"},
 			{Id: "blocked", DisplayName: "Blocked", DisabledReason: "This layer already has one."},
@@ -77,6 +78,7 @@ func TestAddProviderRoutesThroughBetaSDK(t *testing.T) {
 	blocked, fail, wait := items[0], items[1], items[2]
 	require.Equal(t, "wait", wait.ID)
 	require.Equal(t, "Wait", wait.DisplayName)
+	require.Equal(t, "Resources", wait.Category)
 	require.Equal(t, extension.Id, wait.Provider)
 	require.Equal(t, "This layer already has one.", blocked.DisabledReason)
 	require.Equal(t, codes.FailedPrecondition, status.Code(blocked.Run(ctx)))

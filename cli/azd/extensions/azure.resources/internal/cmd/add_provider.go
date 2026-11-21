@@ -23,19 +23,19 @@ const (
 
 func addProviderItems() []*v1beta.AddItem {
 	return []*v1beta.AddItem{
-		{Id: resources.AppService, DisplayName: "(resources) App Service"},
-		{Id: resources.AISearch, DisplayName: "(resources) AI Search"},
-		{Id: resources.ContainerApp, DisplayName: "(resources) Container App"},
-		{Id: resources.Mongo, DisplayName: "(resources) Cosmos DB for MongoDB"},
-		{Id: resources.Cosmos, DisplayName: "(resources) Cosmos DB for NoSQL"},
-		{Id: resources.EventHubs, DisplayName: "(resources) Event Hubs"},
-		{Id: add.ExistingResource, DisplayName: "(resources) Existing resource"},
-		{Id: resources.AIProject, DisplayName: "(resources) Foundry model"},
-		{Id: resources.KeyVault, DisplayName: "(resources) Key Vault"},
-		{Id: resources.OpenAIModel, DisplayName: "(resources) OpenAI model"},
-		{Id: resources.Redis, DisplayName: "(resources) Redis"},
-		{Id: resources.ServiceBus, DisplayName: "(resources) Service Bus"},
-		{Id: resources.Storage, DisplayName: "(resources) Storage account"},
+		{Id: resources.AppService, DisplayName: "App Service"},
+		{Id: resources.AISearch, DisplayName: "AI Search"},
+		{Id: resources.ContainerApp, DisplayName: "Container App"},
+		{Id: resources.Mongo, DisplayName: "Cosmos DB for MongoDB"},
+		{Id: resources.Cosmos, DisplayName: "Cosmos DB for NoSQL"},
+		{Id: resources.EventHubs, DisplayName: "Event Hubs"},
+		{Id: add.ExistingResource, DisplayName: "Existing resource"},
+		{Id: resources.AIProject, DisplayName: "Foundry model"},
+		{Id: resources.KeyVault, DisplayName: "Key Vault"},
+		{Id: resources.OpenAIModel, DisplayName: "OpenAI model"},
+		{Id: resources.Redis, DisplayName: "Redis"},
+		{Id: resources.ServiceBus, DisplayName: "Service Bus"},
+		{Id: resources.Storage, DisplayName: "Storage account"},
 	}
 }
 
@@ -75,7 +75,7 @@ func newAddProviderHandler(
 			return &azdext.LocalError{
 				Category: azdext.LocalErrorCategoryValidation, Code: invalidAddItemCode,
 				Message:    "unrecognized Azure Resources add item",
-				Suggestion: "Run azd add and select an item marked (resources).",
+				Suggestion: "Run azd add and select an item from the Azure Resources extension.",
 			}
 		}
 		if extCtx.NoPrompt {

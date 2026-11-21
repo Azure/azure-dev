@@ -37,6 +37,7 @@ type AddProviderItem struct {
 	ID             string
 	DisplayName    string
 	Provider       string
+	Category       string
 	DisabledReason string
 	owner          *addProvider
 	itemID         string
@@ -189,6 +190,10 @@ func (s *addProviderService) Stream(stream v1beta.AddProviderService_StreamServe
 	provider := &addProvider{
 		ctx: ctx, broker: broker, abort: cancel, ready: make(chan struct{}), extension: extension,
 	}
+	category := strings.TrimSpace(request.GetCategory())
+	if category == "" {
+		category = "Other"
+	}
 	seen := make(map[string]struct{}, len(request.GetItems()))
 	for _, item := range request.GetItems() {
 		id, displayName := item.GetId(), item.GetDisplayName()
@@ -201,6 +206,7 @@ func (s *addProviderService) Stream(stream v1beta.AddProviderService_StreamServe
 		seen[id] = struct{}{}
 		provider.items = append(provider.items, AddProviderItem{
 			ID: id, DisplayName: displayName, Provider: extension.Id, owner: provider, itemID: id,
+			Category:       category,
 			DisabledReason: strings.TrimSpace(item.GetDisabledReason()),
 		})
 	}

@@ -23,7 +23,7 @@ func TestDispatchActionReturnsToMenuAfterUnavailableItem(t *testing.T) {
 	acknowledged := false
 	console.WhenSelect(func(input.ConsoleOptions) bool { return true }).
 		RespondFn(func(options input.ConsoleOptions) (any, error) {
-			require.Equal(t, []string{"Event Hubs", "Service Bus"}, options.Options)
+			require.Equal(t, []string{"(Resources) Event Hubs", "(Resources) Service Bus"}, options.Options)
 			menuCalls++
 			if menuCalls == 1 {
 				return 0, nil
@@ -41,13 +41,13 @@ func TestDispatchActionReturnsToMenuAfterUnavailableItem(t *testing.T) {
 	added := false
 	action := NewDispatchAction(console, false, func(context.Context) ([]ProviderItem, func(), error) {
 		return []ProviderItem{
-			{DisplayName: "Event Hubs", Run: func(context.Context) error {
+			{Provider: "azure.resources", Category: "Resources", DisplayName: "Event Hubs", Run: func(context.Context) error {
 				return azdext.UnwrapError(azdext.WrapError(&azdext.LocalError{
 					Category: azdext.LocalErrorCategoryValidation, Code: azdext.AddItemUnavailableCode,
 					Message: "this layer already manages an Event Hubs namespace",
 				}))
 			}},
-			{DisplayName: "Service Bus", Run: func(context.Context) error {
+			{Provider: "test.messaging", Category: "Resources", DisplayName: "Service Bus", Run: func(context.Context) error {
 				added = true
 				return nil
 			}},
@@ -58,6 +58,19 @@ func TestDispatchActionReturnsToMenuAfterUnavailableItem(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, menuCalls)
 	require.True(t, added)
+}
+
+func TestProviderLabelsDistinguishExtensionsWithSameCategoryAndItemName(t *testing.T) {
+	t.Parallel()
+
+	items := []ProviderItem{
+		{ID: "redis", Provider: "azure.resources", Category: "Resources", DisplayName: "Redis"},
+		{ID: "redis", Provider: "test.resources", Category: "Resources", DisplayName: "Redis"},
+	}
+	require.Equal(t, []string{
+		"(Resources) Redis (azure.resources: redis)",
+		"(Resources) Redis (test.resources: redis)",
+	}, providerLabels(items))
 }
 
 func TestDispatchActionReturnsOtherProviderErrors(t *testing.T) {

@@ -24,8 +24,9 @@ import (
 const AddItemUnavailableCode = "add_item_unavailable"
 
 type addProviderRegistration struct {
-	items   []*v1beta.AddItem
-	handler func(context.Context, string) error
+	category string
+	items    []*v1beta.AddItem
+	handler  func(context.Context, string) error
 }
 
 type addProviderReceiver struct {
@@ -36,13 +37,15 @@ func (r addProviderReceiver) Receive(ctx context.Context) error {
 	return r.Run(ctx)
 }
 
-// WithBetaAddProvider advertises add items while Run is active. The handler
+// WithBetaAddProvider advertises add items under one menu category while Run is active. The handler
 // receives the selected item ID and a context scoped to that invocation.
 // An empty item list is valid. Calling this method again replaces the registration.
 func (er *ExtensionHost) WithBetaAddProvider(
-	items []*v1beta.AddItem, handler func(context.Context, string) error,
+	category string, items []*v1beta.AddItem, handler func(context.Context, string) error,
 ) *ExtensionHost {
-	er.addProvider = &addProviderRegistration{handler: handler, items: make([]*v1beta.AddItem, len(items))}
+	er.addProvider = &addProviderRegistration{
+		category: category, handler: handler, items: make([]*v1beta.AddItem, len(items)),
+	}
 	for i, item := range items {
 		er.addProvider.items[i] = proto.CloneOf(item)
 	}
@@ -66,7 +69,7 @@ func (r *addProviderRegistration) connect(
 	err = stream.Send(&v1beta.AddProviderMessage{
 		RequestId: requestID,
 		MessageType: &v1beta.AddProviderMessage_RegisterRequest{
-			RegisterRequest: &v1beta.RegisterAddProviderRequest{Items: r.items},
+			RegisterRequest: &v1beta.RegisterAddProviderRequest{Items: r.items, Category: r.category},
 		},
 	})
 	// Recv exposes the server status even if Send got EOF due to a rejected stream.

@@ -127,7 +127,7 @@ func TestAddProviderDispatch(t *testing.T) {
 				})
 			}
 			manager := newExtensionActionTestManager(t, mockCtx, &extensions.Extension{
-				Id: "test.add", Path: extensionPath, Version: "1.0.0",
+				Id: "test.add", DisplayName: "Test Extension", Path: extensionPath, Version: "1.0.0",
 				Capabilities: []extensions.CapabilityType{extensions.AddProviderCapability},
 			})
 			args := []string{"add"}
@@ -155,7 +155,9 @@ func TestAddProviderDispatch(t *testing.T) {
 				return options.Message == "What would you like to add?"
 			}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 				prompted = true
-				require.Equal(t, []string{"Same (test.add: a)", "Same (test.add: b)"}, options.Options)
+				require.Equal(t, []string{
+					"(Resources) Same (test.add: a)", "(Resources) Same (test.add: b)",
+				}, options.Options)
 				require.Nil(t, options.DefaultValue)
 				return 1, nil
 			})
@@ -244,7 +246,7 @@ func fakeAddListener(ctx context.Context, args exec.RunArgs, items []*v1beta.Add
 	err = stream.Send(&v1beta.AddProviderMessage{
 		RequestId: "register",
 		MessageType: &v1beta.AddProviderMessage_RegisterRequest{
-			RegisterRequest: &v1beta.RegisterAddProviderRequest{Items: items},
+			RegisterRequest: &v1beta.RegisterAddProviderRequest{Items: items, Category: "Resources"},
 		},
 	})
 	if err != nil {

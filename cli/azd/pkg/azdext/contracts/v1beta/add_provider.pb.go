@@ -171,8 +171,10 @@ func (*AddProviderMessage_AddResponse) isAddProviderMessage_MessageType() {}
 func (*AddProviderMessage_Cancel) isAddProviderMessage_MessageType() {}
 
 type RegisterAddProviderRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Items         []*AddItem             `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Items []*AddItem             `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	// Menu category shared by all items in this registration.
+	Category      string `protobuf:"bytes,2,opt,name=category,proto3" json:"category,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -212,6 +214,13 @@ func (x *RegisterAddProviderRequest) GetItems() []*AddItem {
 		return x.Items
 	}
 	return nil
+}
+
+func (x *RegisterAddProviderRequest) GetCategory() string {
+	if x != nil {
+		return x.Category
+	}
+	return ""
 }
 
 type RegisterAddProviderResponse struct {
@@ -443,9 +452,10 @@ const file_azd_extensions_v1beta_add_provider_proto_rawDesc = "" +
 	"addRequest\x12K\n" +
 	"\fadd_response\x18\x05 \x01(\v2&.azd.extensions.v1beta.AddItemResponseH\x00R\vaddResponse\x12>\n" +
 	"\x06cancel\x18\x06 \x01(\v2$.azd.extensions.v1beta.AddItemCancelH\x00R\x06cancelB\x0e\n" +
-	"\fmessage_type\"R\n" +
+	"\fmessage_type\"n\n" +
 	"\x1aRegisterAddProviderRequest\x124\n" +
-	"\x05items\x18\x01 \x03(\v2\x1e.azd.extensions.v1beta.AddItemR\x05items\"\x1d\n" +
+	"\x05items\x18\x01 \x03(\v2\x1e.azd.extensions.v1beta.AddItemR\x05items\x12\x1a\n" +
+	"\bcategory\x18\x02 \x01(\tR\bcategory\"\x1d\n" +
 	"\x1bRegisterAddProviderResponse\"e\n" +
 	"\aAddItem\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +

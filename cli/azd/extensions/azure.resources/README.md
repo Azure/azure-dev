@@ -25,7 +25,7 @@ azd env new dev
 azd add --environment dev
 ```
 
-Select a resource or application host, such as **(resources) Cosmos DB for NoSQL**,
+Select a resource or application host, such as **(Resources) Cosmos DB for NoSQL**,
 then follow the configuration prompts.
 
 ## Supported resources
@@ -50,7 +50,7 @@ see [current limitations](#current-limitations) for restrictions.
 
 ## Add resources interactively
 
-In `azd add`, select a type directly from the **(resources)** items. To choose
+In `azd add`, select a type in the **Resources** category. To choose
 from the Azure Resources wizard's categories instead, launch it directly:
 
 ```sh

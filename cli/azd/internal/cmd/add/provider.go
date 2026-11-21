@@ -21,6 +21,7 @@ type ProviderItem struct {
 	ID             string
 	DisplayName    string
 	Provider       string
+	Category       string
 	DisabledReason string
 	Run            func(context.Context) error
 }
@@ -73,7 +74,12 @@ func (a *dispatchAction) runProvider(ctx context.Context) (bool, error) {
 
 	items = slices.Clone(items)
 	slices.SortFunc(items, func(a, b ProviderItem) int {
-		return cmp.Or(cmp.Compare(a.DisplayName, b.DisplayName), cmp.Compare(a.Provider, b.Provider), cmp.Compare(a.ID, b.ID))
+		return cmp.Or(
+			cmp.Compare(a.Category, b.Category),
+			cmp.Compare(a.DisplayName, b.DisplayName),
+			cmp.Compare(a.Provider, b.Provider),
+			cmp.Compare(a.ID, b.ID),
+		)
 	})
 	options := input.ConsoleOptions{
 		Message:       "What would you like to add?",
@@ -110,17 +116,18 @@ func (a *dispatchAction) runProvider(ctx context.Context) (bool, error) {
 
 func providerLabels(items []ProviderItem) []string {
 	counts := make(map[string]int, len(items))
-	for _, item := range items {
-		counts[item.DisplayName]++
+	labels := make([]string, len(items))
+	for i, item := range items {
+		labels[i] = fmt.Sprintf("(%s) %s", item.Category, item.DisplayName)
+		counts[labels[i]]++
 	}
 	used := make(map[string]bool, len(items))
 	for label, count := range counts {
 		used[label] = count == 1
 	}
 
-	labels := make([]string, len(items))
 	for i, item := range items {
-		label := item.DisplayName
+		label := labels[i]
 		if counts[label] > 1 {
 			// Console selection matches labels, not just indices. Reserve unique original
 			// labels so a generated suffix cannot hide another provider's item.

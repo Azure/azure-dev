@@ -27,6 +27,8 @@ message AddProviderMessage {
 
 message RegisterAddProviderRequest {
   repeated AddItem items = 1;
+  // Menu category shared by all items in this registration.
+  string category = 2;
 }
 
 message RegisterAddProviderResponse {}

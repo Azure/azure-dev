@@ -58,6 +58,7 @@ func newAddAction(
 			for _, item := range registered {
 				items = append(items, add.ProviderItem{
 					ID: item.ID, DisplayName: item.DisplayName, Provider: item.Provider,
+					Category:       item.Category,
 					DisabledReason: item.DisabledReason,
 					Run: func(ctx context.Context) error {
 						if detachOutput != nil {

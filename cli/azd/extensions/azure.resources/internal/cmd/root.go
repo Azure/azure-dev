@@ -33,7 +33,8 @@ func NewRootCommand() *cobra.Command {
 		ctx := azdext.WithAccessToken(listen.Context())
 		client := host.Client()
 		runAdd := newAddProviderHandler(client, extCtx, listen.OutOrStdout())
-		host.WithBetaAddProvider(projectAddProviderItems(ctx, client.Project()), func(ctx context.Context, id string) error {
+		items := projectAddProviderItems(ctx, client.Project())
+		host.WithBetaAddProvider("Resources", items, func(ctx context.Context, id string) error {
 			addSucceeded.Store(false)
 			err := runAdd(ctx, id)
 			addSucceeded.Store(err == nil && ctx.Err() == nil)

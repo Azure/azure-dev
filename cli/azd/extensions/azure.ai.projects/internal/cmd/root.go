@@ -121,7 +121,7 @@ func configureExtensionHostWithReport(host *azdext.ExtensionHost, report func(st
 				ctx context.Context,
 				args *azdext.ProjectEventArgs,
 			) error {
-				return projectLifecycleHandler(ctx, azdClient, args)
+				return projectPredeployHandler(ctx, azdClient, args)
 			},
 		).
 		WithProjectEventHandler("predown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {

@@ -138,7 +138,7 @@ func newPromptGraph(
 	// Resolve the model before the harness binds to it and publishes the
 	// agent.
 	if node := deploymentNode(g, func() (deploymentResolver, error) {
-		return provisionedDeploymentResolver{}, nil
+		return provisionedDeploymentResolver{graph: g}, nil
 	}); node != nil {
 		g.nodes = append(g.nodes, *node)
 	}

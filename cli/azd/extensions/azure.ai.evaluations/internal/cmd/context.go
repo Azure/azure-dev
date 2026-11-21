@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/grpc"
 )
 
 // projectEndpointEnvKey is the azd environment key holding the Foundry project
@@ -134,7 +135,11 @@ func newEvalContext(ctx context.Context, endpointFlag string) (*evalContext, err
 	ec.endpoint = strings.TrimSuffix(resolved.Endpoint, "/")
 	log.Printf("[endpoint] resolved from %s", resolved.Source)
 
-	cred, err := newAzdTokenCredential()
+	tenantID := resolveAzdTenantID(
+		ctx, azdClient.Environment(), azdClient.Account(), tenantEnvName(ctx, azdClient.Environment(), resolved),
+	)
+
+	cred, err := newAzdTokenCredential(tenantID)
 	if err != nil {
 		ec.Close()
 		return nil, err
@@ -151,14 +156,112 @@ func newEvalContext(ctx context.Context, endpointFlag string) (*evalContext, err
 // retry. Handing back the wrapper rather than the raw credential is what keeps
 // the retry wired: an earlier version assigned the wrapper to the context and
 // then built both clients from the unwrapped one, so nothing retried.
-func newAzdTokenCredential() (azcore.TokenCredential, error) {
+//
+// tenantID is passed to `azd auth token --tenant-id`. Empty keeps azd's own
+// fallback, which is the signed-in user's home tenant.
+func newAzdTokenCredential(tenantID string) (azcore.TokenCredential, error) {
 	cred, err := azidentity.NewAzureDeveloperCLICredential(
-		&azidentity.AzureDeveloperCLICredentialOptions{},
+		&azidentity.AzureDeveloperCLICredentialOptions{TenantID: tenantID},
 	)
 	if err != nil {
 		return nil, messages.CreatingCredential(err)
 	}
 	return azdTokenRetry{inner: cred}, nil
+}
+
+// azdSubscriptionEnvKey is the azd environment key holding the subscription
+// the environment deploys to.
+const azdSubscriptionEnvKey = "AZURE_SUBSCRIPTION_ID"
+
+// envValueReader and tenantLookup are the slices of the azd client that
+// resolveAzdTenantID needs, so tests can stand in for the daemon.
+type envValueReader interface {
+	GetValue(context.Context, *azdext.GetEnvRequest, ...grpc.CallOption) (*azdext.KeyValueResponse, error)
+}
+
+type tenantLookup interface {
+	LookupTenant(context.Context, *azdext.LookupTenantRequest, ...grpc.CallOption) (*azdext.LookupTenantResponse, error)
+}
+
+// azureAIProjectEndpointEnvKey is the fallback key the endpoint resolver reads
+// after projectEndpointEnvKey (`azd ai agent init` / `azd add` persist it).
+const azureAIProjectEndpointEnvKey = "AZURE_AI_PROJECT_ENDPOINT"
+
+// envDotenvReader is the slice of the azd environment service tenantEnvName
+// needs: the values persisted in the environment's .env, with no fallback.
+type envDotenvReader interface {
+	GetValues(context.Context, *azdext.GetEnvironmentRequest, ...grpc.CallOption) (*azdext.KeyValueListResponse, error)
+}
+
+// tenantEnvName is the azd environment whose subscription tenant the
+// credential should ask for, or "" to keep azd's own default.
+//
+// Only an endpoint persisted in the azd environment is known to belong to that
+// environment's subscription. An endpoint from --project-endpoint, global
+// config or the host environment can live in any tenant -- commonly the
+// user's home tenant -- so forcing the environment's tenant onto it would
+// break a deployment that works today.
+//
+// SourceAzdEnv alone does not prove that: azd's GetValue falls back to the
+// process environment when the key is not in the .env file, so an exported
+// FOUNDRY_PROJECT_ENDPOINT also resolves as SourceAzdEnv. The endpoint is
+// therefore checked against the environment's .env values (GetValues returns
+// only those) before the tenant is inferred.
+func tenantEnvName(ctx context.Context, env envDotenvReader, resolved *projectctx.Resolved) string {
+	if resolved == nil || resolved.Source != projectctx.SourceAzdEnv || resolved.AzdEnvName == "" || env == nil {
+		return ""
+	}
+	values, err := env.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: resolved.AzdEnvName})
+	if err != nil {
+		log.Printf("[auth] could not read the values of environment %q: %v", resolved.AzdEnvName, err)
+		return ""
+	}
+	want := normalizedEndpoint(resolved.Endpoint)
+	for _, kv := range values.GetKeyValues() {
+		if kv.GetKey() != projectEndpointEnvKey && kv.GetKey() != azureAIProjectEndpointEnvKey {
+			continue
+		}
+		persisted, _, err := projectctx.Validate(kv.GetValue())
+		if err == nil && normalizedEndpoint(persisted) == want {
+			return resolved.AzdEnvName
+		}
+	}
+	return ""
+}
+
+// resolveAzdTenantID returns the tenant that grants access to the azd
+// environment's subscription, or "" when there is none to use.
+//
+// `azd auth token` already picks this tenant when it runs inside the project,
+// but azidentity starts it from a fixed directory (/bin on Linux), so azd finds
+// no project or environment there and falls back to the user's home tenant.
+// When that is not the tenant hosting the Foundry project, every data-plane
+// call fails with "Token tenant ... does not match resource tenant", unless
+// AZURE_SUBSCRIPTION_ID happens to be exported in the shell. Looking the tenant
+// up here, through the azd host, gives the credential the same answer azd would
+// have given in the project directory.
+//
+// A failed lookup is logged and falls back to the previous behavior rather than
+// failing the command: the home tenant is still right for most users.
+func resolveAzdTenantID(ctx context.Context, env envValueReader, account tenantLookup, envName string) string {
+	if envName == "" || env == nil || account == nil {
+		return ""
+	}
+	sub, err := env.GetValue(ctx, &azdext.GetEnvRequest{EnvName: envName, Key: azdSubscriptionEnvKey})
+	if err != nil {
+		log.Printf("[auth] could not read %s from environment %q: %v", azdSubscriptionEnvKey, envName, err)
+		return ""
+	}
+	subscriptionID := strings.TrimSpace(sub.GetValue())
+	if subscriptionID == "" {
+		return ""
+	}
+	tenant, err := account.LookupTenant(ctx, &azdext.LookupTenantRequest{SubscriptionId: subscriptionID})
+	if err != nil {
+		log.Printf("[auth] could not look up the tenant for subscription %s: %v", subscriptionID, err)
+		return ""
+	}
+	return strings.TrimSpace(tenant.GetTenantId())
 }
 
 // azdTokenRetry retries a failed token request once. azidentity gives the azd

@@ -1258,8 +1258,7 @@ must first be converted or extracted.
 
 Prompt-agent root references must stay within the project directory and resolve
 relative to the directory holding `azure.yaml`, not the service's `project`
-directory. Prompt `skills/` and `vector-assets/` convention folders remain next
-to the referenced definition. Nested `$ref` includes and relative instructions
+directory. Nested `$ref` includes and relative instructions
 paths inside a definition resolve relative to that file. Hosted code packaging
 still uses the service's `project` directory. Keep core service fields such as
 `project`, `language`, `image`, `docker`, and `env` in `azure.yaml`, not in the

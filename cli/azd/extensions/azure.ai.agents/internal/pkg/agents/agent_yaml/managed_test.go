@@ -290,6 +290,35 @@ func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
 	}
 }
 
+func TestPromptAgentSkillReferences_LinksSanitizedServiceName(t *testing.T) {
+	refs := PromptAgentSkillReferences(PromptAgent{
+		Skills:         []HarnessSkillRef{{Name: "code review"}},
+		ResolvedSkills: []HarnessSkillRef{{Name: "codereview", Version: "7"}},
+	})
+	want := []agent_api.SkillReference{{
+		Type:    "skill_reference",
+		Name:    "codereview",
+		Version: "7",
+	}}
+	if len(refs) != len(want) || refs[0] != want[0] {
+		t.Fatalf("PromptAgentSkillReferences: got %+v, want %+v", refs, want)
+	}
+
+	for _, order := range [][]HarnessSkillRef{
+		{{Name: "code review", Version: "1"}, {Name: "codereview", Version: "2"}},
+		{{Name: "codereview", Version: "2"}, {Name: "code review", Version: "1"}},
+	} {
+		got := PromptAgentSkillReferences(PromptAgent{Skills: order})
+		if len(got) != 2 {
+			t.Fatalf("expected both authored pins to be preserved, got %+v", got)
+		}
+		if got[0].Name != order[0].Name || got[0].Version != order[0].Version ||
+			got[1].Name != order[1].Name || got[1].Version != order[1].Version {
+			t.Fatalf("unexpected authored pin ordering/values: got %+v, want %+v", got, order)
+		}
+	}
+}
+
 func TestCreatePromptAgentAPIRequest_AuthoredVersionedSkill(t *testing.T) {
 	promptDef := PromptAgent{
 		AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},

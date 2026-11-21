@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=../extension.schema.json
+id: microsoft.azd.emulators
+namespace: emulators
+displayName: Azure Emulators
+description: Launch local Azure service emulators and display their connection information.
+usage: azd emulators <emulator> [options]
+version: 0.1.0
+requiredAzdVersion: ">=1.39.0-beta.1"
+language: go
+capabilities:
+  - custom-commands
+  - metadata
+  - add-provider
+  - provisioning-provider
+providers:
+  - name: emulators
+    type: provisioning-provider
+    description: Start local Azure emulators declared in an infrastructure layer.
+examples:
+  - name: servicebus
+    description: Start Service Bus and its SQL Server dependency.
+    usage: azd emulators servicebus --accept-license
+  - name: storage
+    description: Start Azurite and print connection information as JSON.
+    usage: azd emulators storage --output json
+  - name: stop
+    description: Stop and remove the Service Bus emulator and its dependency.
+    usage: azd emulators servicebus --stop

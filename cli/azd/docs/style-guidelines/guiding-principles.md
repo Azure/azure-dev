@@ -31,7 +31,7 @@ Choose the boundary based on the workflow and ownership, even when a feature ser
 
 The [extension framework](../extensions/extension-framework.md#capabilities) provides lifecycle events, framework service providers, service target providers, and provisioning providers. In Go, use the SDK's `ExtensionHost` to register the relevant handlers and providers and manage their connection to azd. Reuse host services for project/environment access, accounts, and prompts instead of maintaining parallel state or prompt flows.
 
-Prefer these integrations when extending `init`, `provision`, `package`, or `deploy`. Add custom commands for distinct domain operations that those workflows do not express. Keep their scope within the extension's domain, and follow the [extensions style guide](../extensions/extensions-style-guide.md) for their user experience.
+Prefer these integrations when extending `provision`, `package`, or `deploy`. Add custom commands for distinct domain operations that those workflows do not express. Keep their scope within the extension's domain, and follow the [extensions style guide](../extensions/extensions-style-guide.md) for their user experience.
 
 ### Design extension points and public APIs
 

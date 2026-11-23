@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore kubelet
+// cspell:ignore kubelet termenv
 
 // Package onboarding checks BYO AKS prerequisites, supplied-identity permissions and supporting resources
 // without mutating Azure or persisting deployment state.

@@ -11,7 +11,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -20,6 +22,7 @@ import (
 	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/google/uuid"
 )
@@ -33,7 +36,7 @@ type byoHostingParameters struct {
 
 func (p *FoundryProvisioningProvider) prepareBYO(
 	ctx context.Context, source *templateSource, progress grpcbroker.ProgressFunc,
-) error {
+) (prepareErr error) {
 	hosting, err := byoHostingParameter(source)
 	if err != nil {
 		return err
@@ -41,6 +44,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	if !hosting.Enabled {
 		return nil
 	}
+	defer func() { prepareErr = redactBYOPreparationError(prepareErr) }()
 	if include, _ := parameterValue(source, "includeAcr").(bool); include &&
 		!templateDeclaresParameter(source, "acrPullPrincipalId") {
 		return errors.New("the ejected Bicep registry access contract is outdated; " +
@@ -255,6 +259,59 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	}
 	source.parameters = mergeParameters(source.parameters, hostBindings)
 	return nil
+}
+
+// Terminal controls delimit URLs in OSC8 hyperlinks and must not be consumed by URL parsing.
+var byoErrorURLPattern = regexp.MustCompile(`(?i)https?://[^\s<>"\x00-\x1f\x7f-\x9f]+`)
+
+func redactBYOErrorMessage(message string) string {
+	return byoErrorURLPattern.ReplaceAllStringFunc(message, func(raw string) string {
+		endpoint, err := url.Parse(raw)
+		if err != nil {
+			return "[redacted URL]"
+		}
+		endpoint.User, endpoint.RawQuery, endpoint.Fragment = nil, "", ""
+		endpoint.ForceQuery = false
+		return endpoint.String()
+	})
+}
+
+func redactBYOPreparationError(err error) error {
+	if err == nil {
+		return nil
+	}
+	message := redactBYOErrorMessage(err.Error())
+	wire := azdext.WrapError(err)
+	if message == err.Error() && redactBYOErrorMessage(wire.GetMessage()) == wire.GetMessage() {
+		return err
+	}
+	// The SDK prefers structured messages over outer Error() text; redact a classified copy, not the shared cause.
+	wire.Message = message
+	var classified error
+	if wire.GetOrigin() != azdext.ErrorOrigin_ERROR_ORIGIN_UNSPECIFIED {
+		classified = azdext.UnwrapError(wire)
+	}
+	if original, ok := errors.AsType[*azdext.ToolError](err); ok &&
+		wire.GetOrigin() == azdext.ErrorOrigin_ERROR_ORIGIN_TOOL {
+		value := new(*original)
+		value.Message = message
+		classified = value
+	}
+	return &byoPreparationError{cause: err, classified: classified, message: message}
+}
+
+type byoPreparationError struct {
+	cause, classified error
+	message           string
+}
+
+func (e *byoPreparationError) Error() string { return e.message }
+
+func (e *byoPreparationError) Unwrap() []error {
+	if e.classified == nil {
+		return []error{e.cause}
+	}
+	return []error{e.classified, e.cause}
 }
 
 func byoARMOptions(options *arm.ClientOptions) *arm.ClientOptions {

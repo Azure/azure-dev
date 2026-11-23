@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -26,6 +27,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -658,6 +661,191 @@ func TestBYORoleAssignmentReadFailureKeepsContext(t *testing.T) {
 			assert.Zero(t, fake.base.previews)
 		})
 	}
+}
+
+func TestBYOLateReadErrorsRedactURLs(t *testing.T) {
+	//nolint:gosec // G101: synthetic URL credentials exercise the preparation error boundary.
+	const endpoint = "https://lookup-user:lookup-password@example.test/resource?sig=lookup-secret#lookup-fragment"
+	for _, query := range []struct{ name, path, context string }{
+		{"federation role", "/subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
+			"resolve built-in federation role:"},
+		{"existing role assignments", offlineClusterID + "/providers/Microsoft.Authorization/roleAssignments",
+			"resolve existing BYO AKS role assignments: read applicable role assignments"},
+	} {
+		for _, failure := range []string{"transport", "response"} {
+			for _, preview := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/preview=%t", query.name, failure, preview), func(t *testing.T) {
+					p, fake, _ := suppliedProvider(t, 2)
+					cause := &url.Error{Op: http.MethodGet, URL: endpoint, Err: errors.New("connection reset")}
+					queried := false
+					p.armClientOptions.Transport = acrTestTransport(func(request *http.Request) (*http.Response, error) {
+						if request.Method != http.MethodGet || request.URL.Path != query.path {
+							return fake.Do(request)
+						}
+						queried = true
+						if failure == "response" {
+							return fake.base.response(request, http.StatusForbidden, map[string]any{
+								"error": map[string]string{
+									"code": "AuthorizationFailed", "message": "service rejected " + endpoint,
+								},
+							}), nil
+						}
+						return nil, cause
+					})
+					var err error
+					var progress []string
+					if preview {
+						_, err = p.Preview(t.Context(), func(message string) { progress = append(progress, message) })
+					} else {
+						_, err = p.Deploy(t.Context(), func(message string) { progress = append(progress, message) })
+					}
+					require.True(t, queried)
+					require.ErrorContains(t, err, query.context)
+					assert.Contains(t, progress, "Resolving deployment identity and role bindings...")
+					_, blocked := errors.AsType[*onboarding.BlockedError](err)
+					assert.False(t, blocked)
+					transported := roundTripProvisioningError(t, err)
+					if failure == "transport" {
+						require.ErrorIs(t, err, cause)
+						original, ok := errors.AsType[*url.Error](err)
+						require.True(t, ok)
+						assert.Same(t, cause, original)
+						assert.Equal(t, endpoint, original.URL)
+					} else {
+						original, ok := errors.AsType[*azcore.ResponseError](err)
+						require.True(t, ok)
+						assert.Equal(t, http.StatusForbidden, original.StatusCode)
+						assert.Equal(t, "AuthorizationFailed", original.ErrorCode)
+						assert.Contains(t, original.Error(), endpoint)
+						service, ok := errors.AsType[*azdext.ServiceError](transported)
+						require.True(t, ok)
+						assert.Equal(t, original.StatusCode, service.StatusCode)
+						assert.Equal(t, original.ErrorCode, service.ErrorCode)
+					}
+					for _, output := range []string{
+						err.Error(), azdext.WrapError(err).GetMessage(), transported.Error(),
+						(&ux.ActionResult{Err: transported}).ToString(""),
+						fmt.Sprintf("Handler returned error: %v", err),
+					} {
+						assert.Contains(t, output, query.context)
+						assert.Contains(t, output, "https://example.test/resource")
+						for _, secret := range []string{
+							"lookup-user", "lookup-password", "sig=", "lookup-secret", "lookup-fragment",
+						} {
+							assert.NotContains(t, output, secret)
+						}
+						assert.NotContains(t, output, "BYO-AKS preflight report:")
+					}
+					assert.Zero(t, fake.base.writes)
+					assert.Zero(t, fake.base.previews)
+				})
+			}
+		}
+	}
+}
+
+func TestBYOPreparationErrorRedactionPreservesClassification(t *testing.T) {
+	//nolint:gosec // G101: synthetic URL credentials exercise structured error serialization.
+	const endpoint = "https://lookup-user:lookup-password@example.test/resource?sig=lookup-secret#lookup-fragment"
+	message := "request to " + endpoint + " failed"
+	toolCause := errors.New("process exited")
+	for _, test := range []struct {
+		name      string
+		cause     error
+		canonical error
+	}{
+		{"service", &azdext.ServiceError{
+			Message: message, StatusCode: http.StatusForbidden,
+			ErrorCode: "AuthorizationFailed", ServiceName: "example.test",
+		}, nil},
+		{"local", &azdext.LocalError{
+			Message: message, Category: azdext.LocalErrorCategoryAuth, Code: "login_required",
+		}, nil},
+		{"tool", &azdext.ToolError{
+			Message: message, ToolName: "bicep", Kind: azdext.ToolErrorKindFailed, ExitCode: new(1), Err: toolCause,
+		}, nil},
+		{"canceled", fmt.Errorf("%s: %w", message, context.Canceled), context.Canceled},
+		{"deadline", fmt.Errorf("%s: %w", message, context.DeadlineExceeded), context.DeadlineExceeded},
+		{"grpc auth", status.Error(codes.Unauthenticated, message), nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			original := fmt.Errorf("BYO lookup: %w", test.cause)
+			before := original.Error()
+			expected := strings.ReplaceAll(before, endpoint, "https://example.test/resource")
+			classified := azdext.WrapError(original)
+			classified.Message = expected
+			redacted := redactBYOPreparationError(original)
+			assert.EqualError(t, redacted, expected)
+			require.ErrorIs(t, redacted, original)
+			require.ErrorIs(t, redacted, test.cause)
+			assert.Equal(t, before, original.Error(), "the original shared cause must not be modified")
+			assert.True(t, proto.Equal(classified, azdext.WrapError(redacted)))
+			transported := roundTripProvisioningError(t, redacted)
+			assert.EqualError(t, transported, expected)
+			assert.Equal(t, "ERROR: "+expected, strings.TrimSpace((&ux.ActionResult{Err: transported}).ToString("")))
+			assert.Equal(t, "Handler returned error: "+expected, fmt.Sprintf("Handler returned error: %v", redacted))
+			if test.canonical != nil {
+				require.ErrorIs(t, redacted, test.canonical)
+				require.ErrorIs(t, transported, test.canonical)
+			}
+			if originalTool, ok := errors.AsType[*azdext.ToolError](test.cause); ok {
+				copy, ok := errors.AsType[*azdext.ToolError](redacted)
+				require.True(t, ok)
+				assert.NotSame(t, originalTool, copy)
+				expectedTool := *originalTool
+				expectedTool.Message = expected
+				assert.Equal(t, &expectedTool, copy)
+				require.ErrorIs(t, redacted, toolCause)
+			}
+		})
+	}
+}
+
+func TestBYOPreparationErrorRedactionPreservesBlockedLinks(t *testing.T) {
+	for _, terminal := range []bool{false, true} {
+		t.Run(fmt.Sprintf("terminal=%t", terminal), func(t *testing.T) {
+			t.Setenv("FORCE_COLOR", "1")
+			t.Setenv("NO_COLOR", "1")
+			if terminal {
+				t.Setenv("NO_COLOR", "")
+			}
+			t.Setenv("CI", "")
+			t.Setenv("TERM", "xterm-256color")
+			t.Setenv("WT_SESSION", "test-terminal")
+			t.Setenv("TERM_PROGRAM", "")
+			//nolint:gosec // G101: a hidden structured cause must not bypass the short blocked message.
+			const endpoint = "https://lookup-user:lookup-password@example.test/resource?sig=lookup-secret#lookup-fragment"
+			cause := &azdext.ServiceError{
+				Message:    "request to " + endpoint + " failed",
+				StatusCode: http.StatusForbidden, ErrorCode: "AuthorizationFailed",
+			}
+			blocked := onboarding.Report{{
+				ResourceType: "AKS", Status: onboarding.Unverified, Mandatory: true,
+				FailureReasons: []string{"AKS cluster could not be read"}, Cause: cause,
+			}}.Err()
+			expected := blocked.Error()
+			redacted := redactBYOPreparationError(blocked)
+			require.ErrorIs(t, redacted, blocked)
+			assert.EqualError(t, redacted, expected)
+			assert.Equal(t, expected, azdext.WrapError(redacted).GetMessage())
+			assert.EqualError(t, roundTripProvisioningError(t, redacted), expected)
+			assert.Contains(t, cause.Error(), endpoint)
+			if terminal {
+				assert.Contains(t, redacted.Error(), "\x1b]8;;"+byoRequirementsURL+"\x1b\\requirements\x1b]8;;\x1b\\")
+			} else {
+				assert.Contains(t, redacted.Error(), "requirements ("+byoRequirementsURL+")")
+				assert.NotContains(t, redacted.Error(), "\x1b")
+			}
+		})
+	}
+}
+
+func TestBYOPreparationErrorRedactionLeavesSafeErrorsUnchanged(t *testing.T) {
+	require.NoError(t, redactBYOPreparationError(nil))
+	cause := errors.New("required role is unavailable")
+	assert.Same(t, cause, redactBYOPreparationError(cause))
+	assert.Equal(t, "request to [redacted URL] failed",
+		redactBYOErrorMessage("request to https://example.test/%invalid?sig=secret failed"))
 }
 
 func TestBYOCanceledReadsRetainCancellation(t *testing.T) {

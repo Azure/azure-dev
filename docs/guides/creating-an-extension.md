@@ -33,27 +33,39 @@ azd extensions use a gRPC-based framework to add functionality. The extension fr
 
 ### 1. Create the extension
 
-For a community-authored or organization-internal extension, use your own project directory. The Developer Extension provides `azd x init` to create a project from a template; its `--internal` option creates files for Microsoft-authored extensions in this repository.
-
-For Microsoft-authored extension work, extensions live under `cli/azd/extensions/`. The following directory example uses that layout:
+For a community-authored or organization-internal extension, run the scaffold from the directory where you want to create the extension:
 
 ```bash
-mkdir -p cli/azd/extensions/my.extension
-cd cli/azd/extensions/my.extension
+mkdir -p "my-extensions"
+cd "my-extensions"
+azd x init
 ```
 
-### 2. Define extension.yaml
+For a Microsoft-authored extension, run the internal scaffold from the root of your `Azure/azure-dev` checkout:
 
-Create an `extension.yaml` manifest that declares the extension's metadata and capabilities:
-
-```yaml
-id: my.extension
-displayName: My Extension
-description: A brief description of what this extension does
-version: 0.1.0
-capabilities:
-  - lifecycle-events
+```bash
+azd x init --internal
 ```
+
+Follow the prompts to provide an extension ID, name, namespace, and capabilities. Select Go for the community or organization-internal scaffold; the internal scaffold also asks for code owners. For example, with the ID `my.extension`, the first command creates `my.extension` under the current directory, while the internal scaffold creates it under `cli/azd/extensions/` and adds repository CI and ownership files.
+
+The scaffold builds, packages, publishes to a local extension source, and installs the extension. For the community-authored or organization-internal example, change into the generated directory:
+
+```bash
+cd "my.extension"
+```
+
+For the Microsoft-authored example, change into the generated directory from the repository root:
+
+```bash
+cd "cli/azd/extensions/my.extension"
+```
+
+<a id="2-define-extensionyaml"></a>
+
+### 2. Review extension.yaml
+
+Edit the generated `extension.yaml` manifest to reflect your extension's metadata and capabilities. Keep the other generated fields, including `requiredAzdVersion`, and update the minimum version if your extension needs newer host APIs.
 
 ### 3. Implement the extension
 

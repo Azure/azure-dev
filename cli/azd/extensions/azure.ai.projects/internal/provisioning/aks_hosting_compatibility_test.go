@@ -122,7 +122,7 @@ func TestBYOKubeletBindingFailureBeforeRegistryWrites(t *testing.T) {
 					case "missing actual identity":
 						principal = offlineKubeletObjectID
 						fake.kubeletID = ""
-						expectedError = "aks-identity"
+						expectedError = "Kubelet identity principal could not be verified"
 					}
 					source.parameters["kubeletObjectId"] = map[string]any{"value": principal}
 					if external {

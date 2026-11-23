@@ -243,6 +243,9 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		}
 		keys, _, err := evidence.ExistingRoleAssignmentKeys(ctx, plan, grantFacts, federationRoleID)
 		if err != nil {
+			if _, blocked := errors.AsType[*onboarding.BlockedError](err); blocked {
+				return err
+			}
 			return fmt.Errorf("resolve existing BYO AKS role assignments: %w", err)
 		}
 		resolvedBindings["byoAksExistingRoleAssignmentKeys"] = keys

@@ -6,7 +6,6 @@
 package onboarding
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -14,23 +13,32 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 )
 
+const (
+	aksResourceType              = "AKS"
+	storageResourceType          = "Storage account"
+	hostingIdentityResourceType  = "Hosting managed identity"
+	workloadIdentityResourceType = "Workload managed identity"
+	networkResourceType          = "Agent network"
+	subscriptionResourceType     = "Subscription"
+)
+
 var aksCheckIDs = [...]string{
 	"aks-type", "aks-version", "aks-cni", "aks-identity", "aks-federation", "system-pool",
 	"agent-pool", "agent-image", "agent-label", "network-policy",
 }
 
-func resourceCheck(id, scope, expected string) Check {
+func resourceCheck(id, scope, resourceType string, reasons ...string) Check {
 	return Check{
-		ID: id, Scope: scope, Status: Unverified, Mandatory: true, Expected: expected,
-		Observed: "required ARM evidence is unavailable", Missing: "readable, explicit resource properties",
-		Remediation: "provide the stated evidence or ask the resource administrator to correct the configuration",
+		ID: id, Scope: scope, ResourceType: resourceType, Status: Unverified, Mandatory: true, FailureReasons: reasons,
 	}
 }
 
-func resourceResult(c Check, status Status, observed string) Check {
-	c.Status, c.Observed = status, observed
+func resourceResult(c Check, status Status, reasons ...string) Check {
+	c.Status = status
 	if status == Pass || status == NotApplicable {
-		c.Missing, c.Remediation = "", ""
+		c.FailureReasons = nil
+	} else if len(reasons) > 0 {
+		c.FailureReasons = reasons
 	}
 	return c
 }
@@ -46,14 +54,22 @@ func resourceBool(p *bool) bool {
 	return p != nil && *p
 }
 
-func resourceKnown(c Check, known, valid bool, observed string) Check {
+func resourceKnown(c Check, known, valid bool, failedReasons ...string) Check {
 	if !known {
-		return resourceResult(c, Unverified, observed)
+		return resourceResult(c, Unverified)
 	}
 	if !valid {
-		return resourceResult(c, Fail, observed)
+		return resourceResult(c, Fail, failedReasons...)
 	}
-	return resourceResult(c, Pass, observed)
+	return resourceResult(c, Pass)
+}
+
+func addFailureReason(c *Check, known, valid bool, unknown, failed string) {
+	if !known {
+		c.FailureReasons = append(c.FailureReasons, unknown)
+	} else if !valid {
+		c.FailureReasons = append(c.FailureReasons, failed)
+	}
 }
 
 func numericVersion(raw string, minimum []int) (bool, bool) {
@@ -95,29 +111,39 @@ func agentPoolChecks(pool *armcontainerservice.AgentPool) Report {
 		scope = resourceValue(pool.Name)
 	}
 	checks := Report{
-		resourceCheck("agent-pool", scope, "one User pool: Azure Linux, KataVmIsolation, count >= 1"),
-		resourceCheck("agent-image", scope, "compatible AKSAzureLinux-V3katagen2 image >= 202608.14.0"),
-		resourceCheck("agent-label", scope, "agents.ai.azure.com/sandbox-node=true"),
+		resourceCheck("agent-pool", scope, aksResourceType),
+		resourceCheck("agent-image", scope, aksResourceType,
+			"The selected User node pool's Kata image could not be verified"),
+		resourceCheck("agent-label", scope, aksResourceType),
 	}
 	knownOS := p.OSSKU != nil
 	validOS := resourceValue(p.OSSKU) == "AzureLinux" || resourceValue(p.OSSKU) == "AzureLinux3"
-	known := knownOS && p.WorkloadRuntime != nil && p.Count != nil
-	valid := validOS && resourceValue(p.WorkloadRuntime) == "KataVmIsolation" && p.Count != nil && *p.Count >= 1
-	detail := "osSKU=" + resourceValue(p.OSSKU) + "; workloadRuntime=" + resourceValue(p.WorkloadRuntime)
-	if p.Count != nil {
-		detail += "; count=" + strconv.Itoa(int(*p.Count))
-	}
-	checks[0] = resourceKnown(checks[0], known, valid, detail)
+	knownRuntime := p.WorkloadRuntime != nil
+	validRuntime := resourceValue(p.WorkloadRuntime) == "KataVmIsolation"
+	knownCount := p.Count != nil
+	validCount := knownCount && *p.Count >= 1
+	known := knownOS && knownRuntime && knownCount
+	valid := validOS && validRuntime && validCount
+	addFailureReason(&checks[0], knownOS, validOS,
+		"The selected User node pool's operating system could not be verified",
+		"The selected User node pool does not use Azure Linux")
+	addFailureReason(&checks[0], knownRuntime, validRuntime,
+		"The selected User node pool's Kata runtime could not be verified",
+		"The selected User node pool is not Kata-enabled")
+	addFailureReason(&checks[0], knownCount, validCount,
+		"The selected User node pool's node count could not be verified",
+		"The selected User node pool has no nodes")
+	checks[0] = resourceKnown(checks[0], known, valid)
 	// A known incompatible field is a failure even when a different property is absent.
-	if knownOS && !validOS || p.WorkloadRuntime != nil && resourceValue(p.WorkloadRuntime) != "KataVmIsolation" ||
-		p.Count != nil && *p.Count < 1 {
-		checks[0] = resourceResult(checks[0], Fail, "incompatible agent pool configuration: "+detail)
+	if knownOS && !validOS || knownRuntime && !validRuntime || knownCount && !validCount {
+		checks[0] = resourceResult(checks[0], Fail)
 	}
 	imageKnown, imageValid := agentImage(resourceValue(p.NodeImageVersion))
-	checks[1] = resourceKnown(checks[1], imageKnown, imageValid, resourceValue(p.NodeImageVersion))
+	checks[1] = resourceKnown(checks[1], imageKnown, imageValid,
+		"The selected User node pool's Kata image is older than the minimum supported version")
 	label, labelExists := p.NodeLabels["agents.ai.azure.com/sandbox-node"]
 	checks[2] = resourceKnown(checks[2], true, labelExists && resourceValue(label) == "true",
-		"persisted pool sandbox-node label="+resourceValue(label))
+		"Sandbox label was not detected as enabled on the selected User node pool")
 	return checks
 }
 
@@ -151,13 +177,13 @@ func aksResourceChecks(
 ) (string, Report) {
 	scope := resourceValue(cluster.ID)
 	report := Report{}
-	add := func(id, expected string, known, valid bool, observed string) {
-		report = append(report, resourceKnown(resourceCheck(id, scope, expected), known, valid, observed))
+	add := func(id string, known, valid bool, unknown, failed string) {
+		report = append(report, resourceKnown(resourceCheck(id, scope, aksResourceType, unknown), known, valid, failed))
 	}
 	p := cluster.Properties
 	if p == nil {
 		for _, id := range aksCheckIDs {
-			report = append(report, resourceCheck(id, scope, "readable AKS properties"))
+			report = append(report, resourceCheck(id, scope, aksResourceType, "AKS configuration could not be read"))
 		}
 		return "", report
 	}
@@ -166,24 +192,19 @@ func aksResourceChecks(
 		skuName = resourceValue(cluster.SKU.Name)
 	}
 	typeCheck := resourceKnown(
-		resourceCheck("aks-type", scope, "AKS Standard cluster (sku.name=Base)"),
+		resourceCheck("aks-type", scope, aksResourceType, "AKS Standard cluster type could not be verified"),
 		skuName != "",
 		strings.EqualFold(skuName, "Base"),
-		fmt.Sprintf("returned cluster sku.name=%q", skuName),
+		"AKS Standard is required; the cluster does not use the supported Base SKU",
 	)
-	if typeCheck.Status != Pass {
-		typeCheck.Missing = "explicit sku.name=Base on the selected AKS cluster"
-		typeCheck.Remediation = "Select an AKS Standard cluster with sku.name=Base. " +
-			"AKS Automatic is not supported by this hosting configuration."
-	}
 	report = append(report, typeCheck)
 	version := resourceValue(p.CurrentKubernetesVersion)
 	knownVersion, validVersion := numericVersion(version, []int{1, 31})
-	add("aks-version", "running Kubernetes >= 1.31",
-		knownVersion, validVersion, "currentKubernetesVersion="+version)
+	add("aks-version", knownVersion, validVersion, "The running Kubernetes version could not be verified",
+		"The running Kubernetes version is below the required minimum of 1.31")
 	n := p.NetworkProfile
 	if n == nil {
-		add("aks-cni", "Azure CNI Overlay or Pod Subnet on every pool", false, false, "networkProfile is absent")
+		add("aks-cni", false, false, "Azure CNI configuration could not be verified", "")
 	} else {
 		plugin := strings.ToLower(resourceValue(n.NetworkPlugin))
 		mode := strings.ToLower(resourceValue(n.NetworkPluginMode))
@@ -194,9 +215,9 @@ func aksResourceChecks(
 				break
 			}
 		}
-		add("aks-cni", "Azure CNI Overlay or Pod Subnet on every pool", plugin != "",
-			plugin == "azure" && (mode == "overlay" || allPodSubnets),
-			"plugin="+plugin+"; mode="+mode+"; nonempty pool list with all podSubnetID="+strconv.FormatBool(allPodSubnets))
+		add("aks-cni", plugin != "", plugin == "azure" && (mode == "overlay" || allPodSubnets),
+			"Azure CNI configuration could not be verified",
+			"Azure CNI Overlay or Pod Subnet on every node pool is required")
 	}
 	kubelet := ""
 	if identity := p.IdentityProfile["kubeletidentity"]; identity != nil {
@@ -208,36 +229,36 @@ func aksResourceChecks(
 	}
 	managed := identityType == "SystemAssigned" || identityType == "UserAssigned" ||
 		identityType == "SystemAssigned, UserAssigned"
-	add("aks-identity", "managed cluster identity and kubelet principal object ID",
-		identityType != "" && kubelet != "", managed && kubelet != "",
-		"identity.type="+identityType+"; kubelet object ID="+kubelet)
+	identityCheck := resourceCheck("aks-identity", scope, aksResourceType)
+	addFailureReason(&identityCheck, identityType != "" || p.ServicePrincipalProfile != nil, managed,
+		"Cluster managed identity could not be verified", "Cluster managed identity is not enabled")
+	addFailureReason(&identityCheck, kubelet != "", kubelet != "",
+		"Kubelet identity principal could not be verified", "")
+	identityCheck = resourceKnown(identityCheck, identityType != "" && kubelet != "", managed && kubelet != "")
 	if identityType != "" && !managed || identityType == "" && p.ServicePrincipalProfile != nil {
-		report[len(report)-1] = resourceResult(report[len(report)-1], Fail, "cluster lacks a supported managed identity")
+		identityCheck = resourceResult(identityCheck, Fail)
 	}
-	oidcState, workloadState, issuerState := "unavailable", "unavailable", "unavailable"
-	if p.OidcIssuerProfile != nil {
-		if p.OidcIssuerProfile.Enabled != nil {
-			oidcState = strconv.FormatBool(*p.OidcIssuerProfile.Enabled)
-		}
-		if p.OidcIssuerProfile.IssuerURL != nil {
-			issuerState = "empty"
-			if strings.TrimSpace(*p.OidcIssuerProfile.IssuerURL) != "" {
-				issuerState = "present"
-			}
-		}
+	report = append(report, identityCheck)
+	oidc := p.OidcIssuerProfile
+	oidcKnown := oidc != nil && oidc.Enabled != nil
+	oidcEnabled := oidcKnown && *oidc.Enabled
+	issuerKnown := oidc != nil && oidc.IssuerURL != nil
+	issuerPresent := issuerKnown && strings.TrimSpace(*oidc.IssuerURL) != ""
+	workloadKnown := p.SecurityProfile != nil && p.SecurityProfile.WorkloadIdentity != nil &&
+		p.SecurityProfile.WorkloadIdentity.Enabled != nil
+	workloadEnabled := workloadKnown && *p.SecurityProfile.WorkloadIdentity.Enabled
+	federation := resourceCheck("aks-federation", scope, aksResourceType)
+	addFailureReason(&federation, oidcKnown, oidcEnabled, "OIDC enablement could not be verified", "OIDC is not enabled")
+	addFailureReason(&federation, issuerKnown, issuerPresent, "OIDC issuer URL could not be verified",
+		"OIDC issuer URL is missing")
+	addFailureReason(&federation, workloadKnown, workloadEnabled, "Workload identity enablement could not be verified",
+		"Workload identity is not enabled")
+	federation = resourceKnown(federation, oidcKnown && workloadKnown && issuerKnown,
+		oidcEnabled && workloadEnabled && issuerPresent)
+	if oidcKnown && !oidcEnabled || workloadKnown && !workloadEnabled || issuerKnown && !issuerPresent {
+		federation = resourceResult(federation, Fail)
 	}
-	if p.SecurityProfile != nil && p.SecurityProfile.WorkloadIdentity != nil &&
-		p.SecurityProfile.WorkloadIdentity.Enabled != nil {
-		workloadState = strconv.FormatBool(*p.SecurityProfile.WorkloadIdentity.Enabled)
-	}
-	federationObserved := fmt.Sprintf("OIDC enabled=%s; issuer URL=%s; Workload Identity enabled=%s",
-		oidcState, issuerState, workloadState)
-	add("aks-federation", "OIDC enabled with issuer URL; Workload Identity enabled",
-		oidcState != "unavailable" && workloadState != "unavailable" && issuerState != "unavailable",
-		oidcState == "true" && workloadState == "true" && issuerState == "present", federationObserved)
-	if oidcState == "false" || workloadState == "false" || issuerState == "empty" {
-		report[len(report)-1] = resourceResult(report[len(report)-1], Fail, federationObserved)
-	}
+	report = append(report, federation)
 	hasSystem := false
 	for _, pool := range pools {
 		if pool == nil || pool.Properties == nil {
@@ -247,18 +268,12 @@ func aksResourceChecks(
 			hasSystem = true
 		}
 	}
-	systemObserved := "AKS child pools could not be read"
-	if poolsKnown {
-		systemObserved = "System child pool present=" + strconv.FormatBool(hasSystem)
-	}
-	add("system-pool", "at least one System child pool", poolsKnown, hasSystem, systemObserved)
+	add("system-pool", poolsKnown, hasSystem, "Node pools could not be read", "No System node pool found")
 	if selectedPool == nil {
 		for _, id := range []string{"agent-pool", "agent-image", "agent-label"} {
-			check := resourceCheck(id, scope, "one complete qualifying User pool")
+			check := resourceCheck(id, scope, aksResourceType, "Node pools could not be read")
 			if poolsKnown {
-				check = resourceResult(check, Fail, "no User child pool")
-			} else {
-				check.Observed = "AKS child pools could not be read"
+				check = resourceResult(check, Fail, "No User node pool found")
 			}
 			report = append(report, check)
 		}
@@ -266,21 +281,21 @@ func aksResourceChecks(
 		report = append(report, agentPoolChecks(selectedPool)...)
 	}
 	if n == nil {
-		add("network-policy", "supported network policy engine enabled", false, false, "networkProfile is absent")
+		add("network-policy", false, false, "Network policy configuration could not be verified", "")
 	} else {
 		policy, dataplane := resourceValue(n.NetworkPolicy), resourceValue(n.NetworkDataplane)
 		valid := policy == "azure" || policy == "calico" || dataplane == "cilium" && (policy == "" || policy == "cilium")
 		known := policy != "" || dataplane == "azure" || dataplane == "cilium"
-		add("network-policy", "Azure/Calico policy or supported Cilium dataplane",
-			known, valid, "networkPolicy="+policy+"; networkDataplane="+dataplane)
+		add("network-policy", known, valid, "Network policy configuration could not be verified",
+			"A supported Azure, Calico or Cilium network policy is not enabled")
 	}
 	return kubelet, report
 }
 
 func storageResourceChecks(account armstorage.Account) Report {
 	scope := resourceValue(account.ID)
-	typeCheck := resourceCheck("storage-type", scope, "StorageV2; Hot tier; HNS disabled")
-	security := resourceCheck("storage-security", scope, "HTTPS only; TLS >= 1.2")
+	typeCheck := resourceCheck("storage-type", scope, storageResourceType, "Storage configuration could not be read")
+	security := resourceCheck("storage-security", scope, storageResourceType, "Storage configuration could not be read")
 	p := account.Properties
 	if p == nil {
 		return Report{typeCheck, security}
@@ -288,32 +303,30 @@ func storageResourceChecks(account armstorage.Account) Report {
 	known := account.Kind != nil && p.AccessTier != nil
 	valid := resourceValue(account.Kind) == "StorageV2" && resourceValue(p.AccessTier) == "Hot" &&
 		!resourceBool(p.IsHnsEnabled)
-	hns := "false (default)"
-	if p.IsHnsEnabled != nil {
-		hns = strconv.FormatBool(*p.IsHnsEnabled)
-	}
-	detail := "kind=" + resourceValue(account.Kind) + "; tier=" + resourceValue(p.AccessTier) +
-		"; isHnsEnabled=" + hns
-	typeCheck = resourceKnown(typeCheck, known, valid, detail)
+	typeCheck.FailureReasons = nil
+	addFailureReason(&typeCheck, account.Kind != nil, resourceValue(account.Kind) == "StorageV2",
+		"Storage account kind could not be verified", "StorageV2 account kind is required")
+	addFailureReason(&typeCheck, p.AccessTier != nil, resourceValue(p.AccessTier) == "Hot",
+		"Storage access tier could not be verified", "Hot storage access tier is required")
+	addFailureReason(&typeCheck, true, !resourceBool(p.IsHnsEnabled), "", "Hierarchical namespace must be disabled")
+	typeCheck = resourceKnown(typeCheck, known, valid)
 	if account.Kind != nil && resourceValue(account.Kind) != "StorageV2" ||
 		p.AccessTier != nil && resourceValue(p.AccessTier) != "Hot" || resourceBool(p.IsHnsEnabled) {
-		typeCheck = resourceResult(typeCheck, Fail, "incompatible Storage kind, tier or HNS configuration: "+detail)
+		typeCheck = resourceResult(typeCheck, Fail)
 	}
-	sku := ""
-	if account.SKU != nil {
-		sku = resourceValue(account.SKU.Name)
-	}
-	typeCheck.Observed += "; SKU=" + sku
 	// Accounts.GetProperties uses API 2024-01-01. Its documented defaults are:
 	// HTTPS=true (since 2019-04-01), minimum TLS=1.0.
 	https := p.EnableHTTPSTrafficOnly == nil || *p.EnableHTTPSTrafficOnly
 	tls := resourceValue(p.MinimumTLSVersion)
 	tlsKnown := tls == "" || tls == "TLS1_0" || tls == "TLS1_1" || tls == "TLS1_2" || tls == "TLS1_3"
 	tlsValid := tls == "TLS1_2" || tls == "TLS1_3"
-	security = resourceKnown(security, tlsKnown, https && tlsValid,
-		fmt.Sprintf("HTTPS=%t; minimum TLS=%s", https, tls))
+	security.FailureReasons = nil
+	addFailureReason(&security, true, https, "", "HTTPS-only traffic is not enabled")
+	addFailureReason(&security, tlsKnown, tlsValid, "Minimum TLS version could not be verified",
+		"Minimum TLS version must be at least 1.2")
+	security = resourceKnown(security, tlsKnown, https && tlsValid)
 	if !https || tlsKnown && !tlsValid {
-		security = resourceResult(security, Fail, security.Observed)
+		security = resourceResult(security, Fail)
 	}
 	return Report{typeCheck, security}
 }

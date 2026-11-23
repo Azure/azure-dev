@@ -59,32 +59,31 @@ func existingResourceID(raw, kind string) (*arm.ResourceID, error) {
 	return ParseID(raw, kind)
 }
 
-func readFailure(id, scope, action string, err error) Check {
-	c := resourceCheck(id, scope, action)
+func readFailure(id, scope, resourceType, operation string, err error) Check {
+	c := resourceCheck(id, scope, resourceType, operation+" could not be read")
 	c.Cause = err
-	c.Missing = action + " at " + scope
-	c.Observed = "resource could not be read; inspect the original service error"
-	c.Remediation = "allow the stated read operation and retry; do not replace an unreadable resource"
 	if response, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		if response.StatusCode == http.StatusNotFound {
-			c.Status, c.Observed = Fail, "referenced resource does not exist (HTTP 404)"
-			c.Missing = "existing resource at " + scope
-			c.Remediation = "verify the resource ID and existence with its administrator; " +
-				"correct the reference or ensure the selected resource exists before retrying"
-		} else {
-			c.Observed = fmt.Sprintf("resource read failed (HTTP %d; code %s)", response.StatusCode, response.ErrorCode)
+			c = resourceResult(c, Fail, operation+" does not exist")
+		} else if response.StatusCode == http.StatusForbidden {
+			c.FailureReasons = []string{"Permission to read " + operation + " was denied"}
+		} else if response.StatusCode == http.StatusUnauthorized {
+			c.FailureReasons = []string{"Authentication is required to read " + operation}
 		}
 	}
 	return c
 }
 
-func resourceReadiness(scope, returnedID, state, action string) Check {
-	c := resourceCheck("resource-refs", scope, "referenced resource ID matches and provisioningState=Succeeded")
+func resourceReadiness(scope, returnedID, state, resourceType string) Check {
+	c := resourceCheck("resource-refs", scope, resourceType)
+	addFailureReason(&c, returnedID != "", strings.EqualFold(scope, returnedID),
+		"Returned resource identity could not be verified", "Returned resource does not match the selected resource")
+	addFailureReason(&c, state != "", state == "Succeeded",
+		"Resource provisioning state could not be verified", "Resource provisioning has not succeeded")
 	if returnedID == "" || state == "" {
 		return c
 	}
-	return resourceKnown(c, true, strings.EqualFold(scope, returnedID) && state == "Succeeded",
-		"resource ID matches="+fmt.Sprint(strings.EqualFold(scope, returnedID))+"; provisioningState="+state+"; "+action)
+	return resourceKnown(c, true, strings.EqualFold(scope, returnedID) && state == "Succeeded")
 }
 
 func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan) (string, Report) {
@@ -97,7 +96,7 @@ func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan)
 		subscriptions[strings.ToLower(plan.SubscriptionID)] = true
 	} else {
 		report = append(report, resourceResult(resourceCheck("resource-refs", plan.SubscriptionID,
-			"valid target subscription ID"), Fail, "target subscription is absent or malformed"))
+			subscriptionResourceType), Fail, "Target subscription is absent or malformed"))
 	}
 	for _, item := range []struct {
 		resource Resource
@@ -112,15 +111,15 @@ func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan)
 			if parent, err := arm.ParseResourceID(item.resource.Parent); err == nil && parent.SubscriptionID != "" {
 				subscriptions[strings.ToLower(parent.SubscriptionID)] = true
 			} else {
-				report = append(report, SkippedCheck("resource-refs", item.resource.diagnosticScope(),
-					"resource subscription owning tenant", item.resource.Missing))
+				report = append(report, SkippedCheck("resource-refs",
+					item.resource.diagnosticScope(), subscriptionResourceType))
 			}
 			continue
 		}
 		id, err := ParseID(item.resource.ID, item.kind)
 		if err != nil {
-			check := resourceResult(resourceCheck("resource-refs", item.resource.ID, item.kind), Fail,
-				"malformed supplied resource ID")
+			check := resourceResult(resourceCheck("resource-refs", item.resource.ID, subscriptionResourceType), Fail,
+				"A resource's owning subscription could not be identified from its resource ID")
 			check.Cause = err
 			report = append(report, check)
 			continue
@@ -129,7 +128,8 @@ func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan)
 	}
 	_, err := c.reads.armClient()
 	if err != nil {
-		return "", append(report, readFailure("resource-refs", plan.SubscriptionID, "subscriptions/read", err))
+		return "", append(report, readFailure("resource-refs", plan.SubscriptionID,
+			subscriptionResourceType, "Subscription", err))
 	}
 	keys := slices.Sorted(maps.Keys(subscriptions))
 	checks := make(Report, len(keys))
@@ -154,7 +154,7 @@ func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan)
 				tenant = tenants[i]
 			}
 			check = resourceKnown(check, true, strings.EqualFold(tenant, tenants[i]),
-				"subscription owning tenantId="+tenants[i])
+				"Referenced and target subscriptions do not belong to the same tenant")
 		}
 		report = append(report, check)
 	}
@@ -168,20 +168,17 @@ func readSubscriptionTenant(ctx context.Context, reader *AuthorizationEvidence, 
 	scope := "/subscriptions/" + subscription
 	response, err := reader.GetSubscription(ctx, subscription)
 	if err != nil {
-		return "", readFailure("resource-refs", scope, "Microsoft.Resources/subscriptions/read", err)
+		return "", readFailure("resource-refs", scope, subscriptionResourceType, "Subscription", err)
 	}
 	var result struct {
 		TenantID string `json:"tenantId"`
 	}
 	err = runtime.UnmarshalAsJSON(response, &result)
 	if err != nil {
-		return "", readFailure("resource-refs", scope, "top-level subscription tenantId", err)
+		return "", readFailure("resource-refs", scope, subscriptionResourceType, "Subscription", err)
 	}
-	check := resourceCheck("resource-refs", scope,
-		"all referenced and target subscriptions have the same top-level tenantId")
-	if result.TenantID == "" {
-		check.Observed = "subscription response has no top-level tenantId; managedByTenants is not ownership"
-	}
+	check := resourceCheck("resource-refs", scope, subscriptionResourceType,
+		"Subscription owning tenant could not be verified")
 	return result.TenantID, check
 }
 
@@ -215,12 +212,14 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	}
 	if plan.Hosting.Supplied || plan.Hosting.PrincipalRequired {
 		tasks = append(tasks, func() {
-			identities[0], identityReports[0] = c.readIdentity(ctx, plan.Hosting, tenant, "hosting identity")
+			identities[0], identityReports[0] = c.readIdentity(ctx, plan.Hosting, tenant,
+				"hosting identity", hostingIdentityResourceType)
 		})
 	}
 	if plan.Workload.Supplied || plan.Workload.PrincipalRequired {
 		tasks = append(tasks, func() {
-			identities[1], identityReports[1] = c.readIdentity(ctx, plan.Workload, tenant, "workload identity")
+			identities[1], identityReports[1] = c.readIdentity(ctx, plan.Workload, tenant,
+				"workload identity", workloadIdentityResourceType)
 		})
 	}
 	parallelReads(tasks...)
@@ -242,16 +241,16 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	} else {
 		for _, id := range aksCheckIDs {
 			if plan.Cluster.Missing != "" {
-				report = append(report, SkippedCheck(id, plan.Cluster.diagnosticScope(),
-					"AKS prerequisite configuration", plan.Cluster.Missing))
+				report = append(report, SkippedCheck(id, plan.Cluster.diagnosticScope(), aksResourceType))
 			} else {
-				report = append(report, resourceCheck(id, plan.Cluster.ID, "readable AKS metadata"))
+				report = append(report, resourceCheck(id, plan.Cluster.ID,
+					aksResourceType, "AKS configuration could not be read"))
 			}
 		}
 	}
 	if missing := plan.Storage.Missing + plan.Storage.LifecycleMissing; missing != "" {
 		for _, id := range []string{"storage-type", "storage-security"} {
-			report = append(report, SkippedCheck(id, plan.Storage.diagnosticScope(), "Storage configuration", missing))
+			report = append(report, SkippedCheck(id, plan.Storage.diagnosticScope(), storageResourceType))
 		}
 	} else if plan.Storage.Supplied {
 		if storage != nil {
@@ -259,13 +258,14 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 			report = append(report, storageResourceChecks(*storage)...)
 		} else {
 			for _, id := range []string{"storage-type", "storage-security"} {
-				report = append(report, resourceCheck(id, plan.Storage.ID, "readable supplied Storage account"))
+				report = append(report, resourceCheck(id, plan.Storage.ID, storageResourceType,
+					"Storage configuration could not be read"))
 			}
 		}
 	} else {
 		for _, id := range []string{"storage-type", "storage-security"} {
-			report = append(report, resourceResult(resourceCheck(id, plan.Storage.Parent, "supplied Storage"),
-				NotApplicable, "Storage uses the default ARM creation/update path"))
+			report = append(report, resourceResult(resourceCheck(id, plan.Storage.Parent,
+				storageResourceType), NotApplicable))
 		}
 	}
 	report = append(report, networkReport...)
@@ -279,31 +279,31 @@ func (c *sdkResourceChecker) readCluster(
 	ctx context.Context, resource Resource,
 ) (*armcontainerservice.ManagedCluster, []*armcontainerservice.AgentPool, bool, Report) {
 	if resource.Missing != "" {
-		return nil, nil, false, Report{SkippedCheck("resource-refs", resource.diagnosticScope(),
-			"AKS resource existence and identity", resource.Missing)}
+		return nil, nil, false, Report{SkippedCheck("resource-refs", resource.diagnosticScope(), aksResourceType)}
 	}
 	id, err := existingResourceID(resource.ID, "Microsoft.ContainerService/managedClusters")
 	if err != nil {
-		return nil, nil, false, Report{readFailure("resource-refs", resource.ID, "complete managedClusters resource ID", err)}
+		check := resourceCheck("resource-refs", resource.ID, aksResourceType, "AKS resource ID is invalid")
+		check.Cause = err
+		return nil, nil, false, Report{check}
 	}
 	client, err := armcontainerservice.NewManagedClustersClient(id.SubscriptionID, c.credential, c.options)
 	if err != nil {
-		return nil, nil, false, Report{readFailure("resource-refs", resource.ID, "managedClusters/read", err)}
+		return nil, nil, false, Report{readFailure("resource-refs", resource.ID, aksResourceType, "AKS cluster", err)}
 	}
 	done := c.progress.start("AKS")
 	response, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
 	done()
 	if err != nil {
-		return nil, nil, false, Report{readFailure("resource-refs", resource.ID,
-			"Microsoft.ContainerService/managedClusters/read", err)}
+		return nil, nil, false, Report{readFailure("resource-refs", resource.ID, aksResourceType, "AKS cluster", err)}
 	}
-	report := Report{resourceKnown(resourceCheck("resource-refs", resource.ID, "referenced AKS resource ID matches"),
+	report := Report{resourceKnown(resourceCheck("resource-refs", resource.ID, aksResourceType,
+		"Returned AKS resource identity could not be verified"),
 		response.ID != nil, strings.EqualFold(resource.ID, resourceValue(response.ID)),
-		"returned AKS resource ID="+resourceValue(response.ID))}
+		"Returned AKS resource does not match the selected cluster")}
 	pools, poolErr := c.readAgentPools(ctx, id)
 	if poolErr != nil {
-		report = append(report, readFailure("resource-refs", resource.ID,
-			"Microsoft.ContainerService/managedClusters/agentPools/read", poolErr))
+		report = append(report, readFailure("resource-refs", resource.ID, aksResourceType, "Node pool list", poolErr))
 	}
 	return &response.ManagedCluster, pools, poolErr == nil, report
 }
@@ -333,43 +333,43 @@ func (c *sdkResourceChecker) readStorage(
 	ctx context.Context, resource Resource,
 ) (*armstorage.Account, Report) {
 	if resource.Missing != "" {
-		return nil, Report{SkippedCheck("resource-refs", resource.diagnosticScope(),
-			"Storage resource existence and identity", resource.Missing)}
+		return nil, Report{SkippedCheck("resource-refs", resource.diagnosticScope(), storageResourceType)}
 	}
 	id, err := ParseID(resource.ID, "Microsoft.Storage/storageAccounts")
 	if err != nil {
-		return nil, Report{readFailure("resource-refs", resource.ID, "valid Storage resource ID", err)}
+		check := resourceCheck("resource-refs", resource.ID, storageResourceType, "Storage resource ID is invalid")
+		check.Cause = err
+		return nil, Report{check}
 	}
 	client, err := armstorage.NewAccountsClient(id.SubscriptionID, c.credential, c.options)
 	if err != nil {
-		return nil, Report{readFailure("resource-refs", resource.ID, "Microsoft.Storage/storageAccounts/read", err)}
+		return nil, Report{readFailure("resource-refs", resource.ID, storageResourceType, "Storage account", err)}
 	}
 	defer c.progress.start("Storage")()
 	response, err := client.GetProperties(ctx, id.ResourceGroupName, id.Name, nil)
 	if err != nil {
-		return nil, Report{readFailure("resource-refs", resource.ID, "Microsoft.Storage/storageAccounts/read", err)}
+		return nil, Report{readFailure("resource-refs", resource.ID, storageResourceType, "Storage account", err)}
 	}
 	state := ""
 	if response.Properties != nil {
 		state = resourceValue(response.Properties.ProvisioningState)
 	}
 	return &response.Account, Report{
-		resourceReadiness(resource.ID, resourceValue(response.ID), state, "storageAccounts/read"),
+		resourceReadiness(resource.ID, resourceValue(response.ID), state, storageResourceType),
 	}
 }
 
 func (c *sdkResourceChecker) readIdentity(
-	ctx context.Context, resource Resource, tenant, description string,
+	ctx context.Context, resource Resource, tenant, description, resourceType string,
 ) (Identity, Check) {
 	if resource.Missing != "" {
-		return Identity{}, SkippedCheck("resource-refs", resource.diagnosticScope(),
-			"managed identity existence and metadata", resource.Missing)
+		return Identity{}, SkippedCheck("resource-refs", resource.diagnosticScope(), resourceType)
 	}
-	check := resourceCheck("resource-refs", resource.ID,
-		"existing user-assigned identity with matching ID, principal, client and tenant")
+	check := resourceCheck("resource-refs", resource.ID, resourceType, "Managed identity metadata could not be read")
 	id, err := ParseID(resource.ID, "Microsoft.ManagedIdentity/userAssignedIdentities")
 	if err != nil {
-		check.Status, check.Observed, check.Cause = Fail, "invalid identity resource ID", err
+		check = resourceResult(check, Fail, "Managed identity resource ID is invalid")
+		check.Cause = err
 		return Identity{}, check
 	}
 	client, err := c.clients().identities.get(strings.ToLower(id.SubscriptionID),
@@ -383,20 +383,34 @@ func (c *sdkResourceChecker) readIdentity(
 	defer c.progress.start(description)()
 	response, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
 	if err != nil {
-		return Identity{}, readFailure("resource-refs", resource.ID,
-			"Microsoft.ManagedIdentity/userAssignedIdentities/read", err)
+		return Identity{}, readFailure("resource-refs", resource.ID, resourceType, "Managed identity", err)
 	}
 	properties := response.Properties
-	if response.ID == nil || properties == nil || authString(properties.PrincipalID) == "" ||
+	if properties == nil {
+		check.FailureReasons = []string{"Managed identity properties could not be verified"}
+		return Identity{}, check
+	}
+	if response.ID == nil || authString(properties.PrincipalID) == "" ||
 		authString(properties.ClientID) == "" || authString(properties.TenantID) == "" || tenant == "" {
-		check.Observed = "identity ID, principal, client or owning tenant evidence is missing"
+		check.FailureReasons = nil
+		addFailureReason(&check, response.ID != nil, true, "Returned managed identity resource identity is missing", "")
+		addFailureReason(&check, authString(properties.PrincipalID) != "", true, "Managed identity principal is missing", "")
+		addFailureReason(&check, authString(properties.ClientID) != "", true, "Managed identity client is missing", "")
+		addFailureReason(&check, authString(properties.TenantID) != "", true,
+			"Managed identity owning tenant is missing", "")
+		addFailureReason(&check, tenant != "", true, "Owning tenant consistency could not be verified", "")
 		return Identity{}, check
 	}
 	identity := Identity{ID: *response.ID, PrincipalID: *properties.PrincipalID}
 	if !strings.EqualFold(resource.ID, identity.ID) || !strings.EqualFold(tenant, *properties.TenantID) {
-		return Identity{}, resourceResult(check, Fail, "identity ID or owning tenant does not match")
+		check.FailureReasons = nil
+		addFailureReason(&check, true, strings.EqualFold(resource.ID, identity.ID), "",
+			"Returned managed identity does not match the selected resource")
+		addFailureReason(&check, true, strings.EqualFold(tenant, *properties.TenantID), "",
+			"Managed identity does not belong to the owning tenant")
+		return Identity{}, resourceResult(check, Fail)
 	}
-	return identity, resourceResult(check, Pass, "existing identity metadata matches")
+	return identity, resourceResult(check, Pass)
 }
 
 func (c *sdkResourceChecker) reportProgress(detail string) {

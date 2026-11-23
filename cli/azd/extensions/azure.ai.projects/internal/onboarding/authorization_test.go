@@ -83,8 +83,12 @@ func TestSuppliedGrantChecksRequireAllSuppliedSelections(t *testing.T) {
 				} else {
 					check := checkWithID(t, report, id)
 					assert.Equal(t, Fail, check.Status)
-					assert.NotEmpty(t, check.Remediation)
-					assert.Contains(t, check.Remediation, "does not repair")
+					role := "Managed Identity Federated Identity Credential Contributor"
+					if id == "workload-blob" {
+						role = "Storage Blob Data Contributor"
+					}
+					assert.Equal(t, []string{"Required " + role + " permission is missing or conditional"},
+						check.FailureReasons)
 				}
 			})
 		}
@@ -190,8 +194,7 @@ func TestAuthorizationReadsAreCachedOnlyWithinOnePass(t *testing.T) {
 		require.NoError(t, report.Err())
 		for _, check := range report {
 			assert.Equal(t, Pass, check.Status)
-			assert.Empty(t, check.Missing)
-			assert.Empty(t, check.Remediation)
+			assert.Empty(t, check.FailureReasons)
 			assert.NoError(t, check.Cause)
 		}
 		assert.Equal(t, pass, fake.count(testCluster+assignmentSuffix),
@@ -202,6 +205,7 @@ func TestAuthorizationReadsAreCachedOnlyWithinOnePass(t *testing.T) {
 }
 
 func TestExistingRoleAssignmentKeysDistinguishConditions(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
 	for _, state := range []string{
 		"missing", "unconditional", "conditional", "unrelated principal", "unrelated role", "inherited scope",
 		"conditional then unconditional", "unconditional then conditional", "paged", "new principal",
@@ -262,18 +266,20 @@ func TestExistingRoleAssignmentKeysDistinguishConditions(t *testing.T) {
 				require.Error(t, err)
 				require.Len(t, report, 1)
 				assert.Equal(t, Fail, report[0].Status)
+				assert.EqualError(t, err, "Workload managed identity does not meet requirements. Review the requirements ("+
+					prerequisitesURL+") and edit your configuration before proceeding.\n"+
+					"- Required Storage Blob Data Contributor role assignment has a condition")
 				for _, detail := range []string{
-					assignmentID, testWorkload, grant.principalID, grant.scope, grant.roleName,
+					assignmentID, testWorkload, grant.principalID, grant.scope,
 					roleID, "container name equals allowed", "2.0", "remove its condition", "different ID conflicts",
 				} {
-					assert.Contains(t, err.Error(), detail)
+					assert.NotContains(t, err.Error(), detail)
 				}
 			case "missing ID":
 				require.ErrorContains(t, err, "conditional role assignment ID is missing")
 			case "credential URL":
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), "https://example.test/path")
-				for _, secret := range []string{"user:password", "sig=secret", "#fragment"} {
+				for _, secret := range []string{"example.test", "user:password", "sig=secret", "#fragment"} {
 					assert.NotContains(t, err.Error(), secret)
 				}
 			default:

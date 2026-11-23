@@ -521,7 +521,8 @@ func TestBYORegistryValidationBeforeLifecycleWrites(t *testing.T) {
 		{name: "ABAC remote", abac: true, remote: true, expectedError: "does not authenticate"},
 		{name: "ABAC local", abac: true, expectedError: "check existing registry pull access"},
 		{name: "classic remote", remote: true, expectedError: "check existing registry pull access"},
-		{name: "invalid hosting", invalid: true, expectedError: "aks-version"},
+		{name: "invalid hosting", invalid: true,
+			expectedError: "The running Kubernetes version is below the required minimum"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv(synthesis.ACRReuseEnvVar, "true")
@@ -857,14 +858,14 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 			}
 			_, err = provider.Deploy(t.Context(), func(message string) { progress.WriteString(message) })
 			if scenario == "unknown Storage and known AKS failure" {
-				require.ErrorContains(t, err, "aks-version FAIL")
+				require.ErrorContains(t, err, "The running Kubernetes version is below the required minimum of 1.31")
 				assert.Zero(t, requests.writes)
 			} else if scenario == "known missing Storage reference" {
 				require.ErrorContains(t, err, "does not exist")
 				assert.Contains(t, requests.requests, "GET "+missingStorage)
 				assert.Zero(t, requests.writes)
 			} else if scenario == "overlapping selected Node subnet" {
-				require.ErrorContains(t, err, "agent-subnet FAIL")
+				require.ErrorContains(t, err, "Agent subnet overlaps the selected AKS node pool's node subnet")
 				assert.Zero(t, requests.writes)
 			} else {
 				require.NoError(t, err, progress.String())

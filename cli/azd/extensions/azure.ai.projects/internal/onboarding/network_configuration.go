@@ -44,16 +44,16 @@ func subnetPrefixes(subnet *armnetwork.Subnet) ([]netip.Prefix, error) {
 func delegatedSubnetCheck(
 	subnet *armnetwork.Subnet, parent *armnetwork.VirtualNetwork, related []netip.Prefix,
 ) Check {
-	c := resourceCheck("agent-subnet", resourceValue(subnet.ID),
-		"private non-overlapping delegated subnet, at least /27, contained in its VNet")
+	c := resourceCheck("agent-subnet", resourceValue(subnet.ID), networkResourceType,
+		"Agent subnet address space could not be verified")
 	prefixes, err := subnetPrefixes(subnet)
 	if err != nil {
-		c.Observed, c.Cause = "subnet CIDR evidence could not be validated", err
+		c.Cause = err
 		return c
 	}
 	if parent == nil || parent.Properties == nil || parent.Properties.AddressSpace == nil ||
 		len(parent.Properties.AddressSpace.AddressPrefixes) == 0 {
-		c.Missing = "parent VNet address space"
+		c.FailureReasons = []string{"Parent virtual network address space could not be verified"}
 		return c
 	}
 	var parents []netip.Prefix
@@ -61,7 +61,7 @@ func delegatedSubnetCheck(
 		prefix, err := netip.ParsePrefix(resourceValue(raw))
 		if err != nil {
 			c.Cause = err
-			c.Missing = "parseable parent address spaces"
+			c.FailureReasons = []string{"Parent virtual network address space could not be parsed"}
 			return c
 		}
 		parents = append(parents, prefix)
@@ -82,10 +82,17 @@ func delegatedSubnetCheck(
 			return parent.Bits() <= prefix.Bits() && parent.Contains(prefix.Addr()) && parent.Contains(end)
 		})
 		if !valid || !contained {
-			return resourceResult(c, Fail, "subnet must be a private IPv4 CIDR, /27 or larger, within parent VNet")
+			c.FailureReasons = nil
+			addFailureReason(&c, true, prefix.Addr().Is4() && prefix.Addr().IsPrivate() && end.IsPrivate(), "",
+				"Agent subnet must use private IPv4 address space")
+			if prefix.Addr().Is4() {
+				addFailureReason(&c, true, prefix.Bits() <= 27, "", "Agent subnet must be /27 or larger")
+			}
+			addFailureReason(&c, true, contained, "", "Agent subnet is not contained within its parent virtual network")
+			return resourceResult(c, Fail)
 		}
 		if slices.ContainsFunc(related, prefix.Overlaps) {
-			return resourceResult(c, Fail, "delegated subnet overlaps the selected AKS pool Node subnet")
+			return resourceResult(c, Fail, "Agent subnet overlaps the selected AKS node pool's node subnet")
 		}
 	}
 	delegated := slices.ContainsFunc(subnet.Properties.Delegations, func(d *armnetwork.Delegation) bool {
@@ -93,9 +100,9 @@ func delegatedSubnetCheck(
 			strings.EqualFold(resourceValue(d.Properties.ServiceName), "Microsoft.App/environments")
 	})
 	if !delegated {
-		return resourceResult(c, Fail, "subnet is not delegated to Microsoft.App/environments")
+		return resourceResult(c, Fail, "Agent subnet is not delegated to Microsoft.App/environments")
 	}
-	return resourceResult(c, Pass, "ARM CIDR containment/non-overlap and Microsoft.App/environments delegation verified")
+	return resourceResult(c, Pass)
 }
 
 func (c *sdkResourceChecker) selectAgentPool(
@@ -149,13 +156,11 @@ func (c *sdkResourceChecker) networkChecks(
 	}
 	report = append(report, nodeReport...)
 	if missing := plan.AgentSubnet.Missing + plan.AgentSubnet.LifecycleMissing; missing != "" {
-		return append(report, SkippedCheck("agent-subnet", plan.AgentSubnet.diagnosticScope(),
-			"existing Agent subnet configuration", missing))
+		return append(report, SkippedCheck("agent-subnet", plan.AgentSubnet.diagnosticScope(), networkResourceType))
 	}
 	if !checkSubnet {
 		report = append(report, resourceResult(resourceCheck("agent-subnet", plan.AgentSubnet.ID,
-			"existing standard network.agentSubnet selection"), NotApplicable,
-			"no existing customer Agent subnet selected; standard network configuration is unchanged"))
+			networkResourceType), NotApplicable))
 		return report
 	}
 	report = append(report, parentReport...)
@@ -165,20 +170,11 @@ func (c *sdkResourceChecker) networkChecks(
 	}
 	subnetCheck := delegatedSubnetCheck(subnet, parent, related)
 	if plan.Cluster.Missing != "" {
-		if subnetCheck.Status == Pass {
-			subnetCheck.Expected = "private IPv4 CIDR, at least /27, contained in its VNet and delegated"
-			subnetCheck.Observed = "ARM CIDR containment and Microsoft.App/environments delegation verified"
-		}
-		return append(report, subnetCheck, SkippedCheck("agent-subnet", plan.AgentSubnet.ID,
-			"selected AKS Node subnet non-overlap", plan.Cluster.Missing))
+		return append(report, subnetCheck, SkippedCheck("agent-subnet", plan.AgentSubnet.ID, networkResourceType))
 	}
 	if !nodeMetadataKnown && subnetCheck.Status == Pass {
-		subnetCheck.Status = Unverified
-		subnetCheck.Observed = "ARM CIDR containment and Microsoft.App/environments delegation verified; " +
-			"non-overlap with the selected AKS pool Node subnet could not be verified"
-		subnetCheck.Missing = "selected AKS pool Node subnet ARM CIDR metadata"
-		subnetCheck.Remediation = "ensure the selected AKS pool Node subnet CIDRs are readable and complete, " +
-			"then rerun preflight to verify non-overlap"
+		subnetCheck = resourceResult(subnetCheck, Unverified,
+			"Non-overlap with the selected AKS node pool's node subnet could not be verified")
 	}
 	report = append(report, subnetCheck)
 	return report
@@ -202,12 +198,12 @@ func (c *sdkResourceChecker) readNodeSubnetPrefixes(
 				if subnet.Properties != nil {
 					state = resourceValue(subnet.Properties.ProvisioningState)
 				}
-				readiness := resourceReadiness(subnetID, resourceValue(subnet.ID), state, "subnets/read")
+				readiness := resourceReadiness(subnetID, resourceValue(subnet.ID), state, networkResourceType)
 				report = append(report, readiness)
 				prefixes, err := subnetPrefixes(subnet)
 				if err != nil {
-					metadata := resourceCheck("agent-subnet", subnetID, "parseable selected AKS pool Node subnet CIDRs")
-					metadata.Missing = "ARM subnet addressPrefix/addressPrefixes"
+					metadata := resourceCheck("agent-subnet", subnetID, networkResourceType,
+						"The selected AKS node pool's node subnet address space could not be verified")
 					metadata.Cause = err
 					report = append(report, metadata)
 				}

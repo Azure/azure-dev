@@ -38,6 +38,7 @@ const defaultWorkloadID = suppliedGroupID +
 	"/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cog-abcdefghijklm-workload-mi"
 const suppliedHostingPrincipal = "22222222-2222-4222-8222-222222222222"
 const suppliedWorkloadPrincipal = "33333333-3333-4333-8333-333333333333"
+const byoRequirementsURL = "https://aka.ms/byo-aks-onboarding-prerequisites"
 
 type suppliedCredential struct{}
 
@@ -186,6 +187,18 @@ func byoPreparationStages(progress []string) []string {
 	return slices.Compact(slices.DeleteFunc(slices.Clone(progress), func(message string) bool {
 		return strings.HasPrefix(message, "Checking AKS and supporting resources: ")
 	}))
+}
+
+func roundTripProvisioningError(t *testing.T, err error) error {
+	t.Helper()
+	envelope := azdext.NewProvisioningEnvelope()
+	message := new(azdext.ProvisioningMessage)
+	envelope.SetError(message, err)
+	wire, marshalErr := proto.Marshal(message)
+	require.NoError(t, marshalErr)
+	received := new(azdext.ProvisioningMessage)
+	require.NoError(t, proto.Unmarshal(wire, received))
+	return envelope.GetError(received)
 }
 
 func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
@@ -348,24 +361,33 @@ func TestBYOSuppliedPreflightBlocksDeployAndWhatIfBeforeMutations(t *testing.T) 
 		} {
 			t.Run(fmt.Sprintf("%s/preview=%t", failure, preview), func(t *testing.T) {
 				p, fake, _ := suppliedProvider(t, 7)
+				var reason string
 				switch failure {
 				case "missing Storage":
+					reason = "Storage account does not exist"
 					fake.overrides[strings.ToLower(suppliedStorageID)] = suppliedReply{404,
 						map[string]any{"error": map[string]string{"code": "ResourceNotFound"}}}
 				case "forbidden Storage":
+					reason = "Permission to read Storage account was denied"
 					fake.overrides[strings.ToLower(suppliedStorageID)] = suppliedReply{403,
 						map[string]any{"error": map[string]string{"code": "AuthorizationFailed"}}}
 				case "missing identity":
+					reason = "Managed identity does not exist"
 					fake.overrides[strings.ToLower(suppliedHostingID)] = suppliedReply{404,
 						map[string]any{"error": map[string]string{"code": "ResourceNotFound"}}}
 				case "tenant":
+					reason = "Referenced and target subscriptions do not belong to the same tenant"
 					fake.overrides["/subscriptions/cluster-sub"] = suppliedReply{200,
 						map[string]any{"tenantId": "other-tenant"}}
 				case "grant":
+					reason = "Required Managed Identity Federated Identity Credential Contributor permission " +
+						"is missing or conditional"
 					fake.missingGrant = suppliedWorkloadID
 				case "Automatic cluster":
+					reason = "AKS Standard is required; the cluster does not use the supported Base SKU"
 					fake.base.clusterSKUName = "Automatic"
 				case "missing cluster SKU name":
+					reason = "AKS Standard cluster type could not be verified"
 					fake.base.clusterSKUName = ""
 				}
 				var progress []string
@@ -376,7 +398,8 @@ func TestBYOSuppliedPreflightBlocksDeployAndWhatIfBeforeMutations(t *testing.T) 
 				} else {
 					_, err = p.Deploy(t.Context(), writeProgress)
 				}
-				require.ErrorContains(t, err, "preflight blocked")
+				require.ErrorContains(t, err, "does not meet requirements.")
+				assert.Contains(t, err.Error(), reason)
 				initialProgress := "Preparing Foundry provisioning template..."
 				if preview {
 					initialProgress = "Computing deployment plan..."
@@ -388,10 +411,11 @@ func TestBYOSuppliedPreflightBlocksDeployAndWhatIfBeforeMutations(t *testing.T) 
 				}, byoPreparationStages(progress))
 				assert.NotContains(t, err.Error(), "BYO-AKS preflight report:")
 				assert.NotContains(t, err.Error(), "resource-refs PASS")
-				if failure == "Automatic cluster" || failure == "missing cluster SKU name" {
-					assert.Contains(t, err.Error(), "aks-type")
-					assert.Contains(t, err.Error(), offlineClusterID)
-					assert.Contains(t, err.Error(), "sku.name=Base")
+				for _, hidden := range []string{
+					"aks-type", offlineClusterID, suppliedStorageID, suppliedHostingID, suppliedWorkloadID,
+					"Scope:", "Observed:", "Remediation:",
+				} {
+					assert.NotContains(t, err.Error(), hidden)
 				}
 				assert.Zero(t, fake.base.writes)
 				assert.Zero(t, fake.base.previews)
@@ -405,6 +429,7 @@ func TestBYOSuppliedPreflightBlocksDeployAndWhatIfBeforeMutations(t *testing.T) 
 }
 
 func TestBYOConditionalGrantRetainsExitDiagnostic(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
 	for _, test := range []struct {
 		name, scope, identity, principal, role, roleID string
 		mask                                           int
@@ -451,25 +476,27 @@ func TestBYOConditionalGrantRetainsExitDiagnostic(t *testing.T) {
 				} else {
 					_, err = p.Deploy(t.Context(), func(string) {})
 				}
-				require.ErrorContains(t, err, "BYO-AKS preflight blocked")
+				resourceType := "Hosting managed identity"
+				if test.role == "Storage Blob Data Contributor" {
+					resourceType = "Workload managed identity"
+				}
+				expected := resourceType + " does not meet requirements. Review the requirements (" +
+					byoRequirementsURL + ") and edit your configuration before proceeding.\n" +
+					"- Required " + test.role + " role assignment has a condition"
+				require.EqualError(t, err, expected)
 				assert.Zero(t, fake.base.writes)
 				assert.Zero(t, fake.base.previews)
 				assert.Empty(t, p.virtualEnv)
-				envelope := azdext.NewProvisioningEnvelope()
-				message := new(azdext.ProvisioningMessage)
-				envelope.SetError(message, err)
-				wire, marshalErr := proto.Marshal(message)
-				require.NoError(t, marshalErr)
-				received := new(azdext.ProvisioningMessage)
-				require.NoError(t, proto.Unmarshal(wire, received))
-				exitErr := fmt.Errorf("provisioning deploy failed: %w", envelope.GetError(received))
+				exitErr := fmt.Errorf("provisioning deploy failed: %w", roundTripProvisioningError(t, err))
 				exitOutput := (&ux.ActionResult{Err: exitErr}).ToString("")
+				assert.Equal(t, "ERROR: provisioning deploy failed: "+expected, strings.TrimSpace(exitOutput))
 				for _, detail := range []string{
-					"ERROR:", assignmentID, test.identity, test.principal, test.scope, test.role, roleID,
+					assignmentID, test.identity, test.principal, test.scope, roleID,
 					"restricted test condition", "remove its condition", "replace it with an unconditional",
 					"different ID conflicts", "azd does not modify existing conditions",
+					"resolve existing BYO AKS role assignments",
 				} {
-					assert.Contains(t, exitOutput, detail)
+					assert.NotContains(t, exitOutput, detail)
 				}
 			})
 		}
@@ -509,7 +536,12 @@ func TestBYOReadFailuresPreserveCausesWithoutReport(t *testing.T) {
 				} else {
 					_, err = p.Deploy(t.Context(), writeProgress)
 				}
-				require.ErrorContains(t, err, "BYO-AKS preflight blocked")
+				require.ErrorContains(t, err, "AKS does not meet requirements.")
+				reason := "AKS cluster could not be read"
+				if failure == "authentication" {
+					reason = "Permission to read AKS cluster was denied"
+				}
+				assert.Contains(t, err.Error(), "- "+reason)
 				blocked, ok := errors.AsType[*onboarding.BlockedError](err)
 				require.True(t, ok)
 				switch failure {
@@ -523,14 +555,7 @@ func TestBYOReadFailuresPreserveCausesWithoutReport(t *testing.T) {
 				case "decoding":
 					require.ErrorContains(t, errors.Join(blocked.Unwrap()...), "cannot unmarshal")
 				}
-				envelope := azdext.NewProvisioningEnvelope()
-				message := new(azdext.ProvisioningMessage)
-				envelope.SetError(message, err)
-				wire, marshalErr := proto.Marshal(message)
-				require.NoError(t, marshalErr)
-				received := new(azdext.ProvisioningMessage)
-				require.NoError(t, proto.Unmarshal(wire, received))
-				exitErr := fmt.Errorf("provisioning failed: %w", envelope.GetError(received))
+				exitErr := fmt.Errorf("provisioning failed: %w", roundTripProvisioningError(t, err))
 				if failure == "authentication" {
 					service, ok := errors.AsType[*azdext.ServiceError](exitErr)
 					require.True(t, ok)
@@ -539,13 +564,15 @@ func TestBYOReadFailuresPreserveCausesWithoutReport(t *testing.T) {
 				}
 				exitOutput := (&ux.ActionResult{Err: exitErr}).ToString("")
 				assert.Contains(t, exitOutput, "ERROR:")
-				assert.Contains(t, exitOutput, "BYO-AKS preflight blocked")
+				assert.Contains(t, exitOutput, "AKS does not meet requirements.")
+				assert.Contains(t, exitOutput, "- "+reason)
 				assert.NotContains(t, progress.String(), "preflight")
 				for _, output := range []string{err.Error(), exitOutput, progress.String()} {
 					assert.NotContains(t, output, "BYO-AKS preflight report:")
 					assert.NotContains(t, output, "resource-refs PASS")
 					assert.NotContains(t, output, "  Expected:")
 					assert.NotContains(t, output, "  Cause:")
+					assert.NotContains(t, output, offlineClusterID)
 					for _, secret := range []string{"cause-user", "cause-password", "sig=", "cause-secret", "cause-fragment"} {
 						assert.NotContains(t, output, secret)
 					}
@@ -555,6 +582,114 @@ func TestBYOReadFailuresPreserveCausesWithoutReport(t *testing.T) {
 				assert.Empty(t, p.virtualEnv)
 			})
 		}
+	}
+}
+
+func TestBYOBlockedErrorPresentationSurvivesTransport(t *testing.T) {
+	for _, terminal := range []bool{false, true} {
+		t.Run(fmt.Sprintf("terminal=%t", terminal), func(t *testing.T) {
+			t.Setenv("FORCE_COLOR", "")
+			if terminal {
+				t.Setenv("FORCE_COLOR", "1")
+			}
+			t.Setenv("NO_COLOR", "")
+			t.Setenv("CI", "")
+			t.Setenv("TERM", "xterm-256color")
+			t.Setenv("WT_SESSION", "test-terminal")
+			t.Setenv("TERM_PROGRAM", "")
+			p, fake, _ := suppliedProvider(t, 7)
+			fake.base.clusterSKUName = "Automatic"
+			fake.overrides[strings.ToLower(suppliedStorageID)] = suppliedReply{404,
+				map[string]any{"error": map[string]string{"code": "ResourceNotFound"}}}
+			_, err := p.Deploy(t.Context(), func(string) {})
+			require.Error(t, err)
+			link := "requirements (" + byoRequirementsURL + ")"
+			if terminal {
+				link = "\x1b]8;;" + byoRequirementsURL + "\x1b\\requirements\x1b]8;;\x1b\\"
+			}
+			expected := "Storage account does not meet requirements. Review the " + link +
+				" and edit your configuration before proceeding.\n" +
+				"- Storage account does not exist\n- Storage configuration could not be read\n\n" +
+				"AKS does not meet requirements. Review the " + link +
+				" and edit your configuration before proceeding.\n" +
+				"- AKS Standard is required; the cluster does not use the supported Base SKU"
+			assert.EqualError(t, err, expected)
+			transported := roundTripProvisioningError(t, err)
+			service, ok := errors.AsType[*azdext.ServiceError](transported)
+			require.True(t, ok)
+			assert.Equal(t, "ResourceNotFound", service.ErrorCode)
+			assert.Equal(t, http.StatusNotFound, service.StatusCode)
+			exitOutput := (&ux.ActionResult{Err: transported}).ToString("")
+			assert.Equal(t, "ERROR: "+expected, strings.TrimSpace(exitOutput))
+			if !terminal {
+				assert.NotContains(t, exitOutput, "\x1b")
+			}
+			assert.Zero(t, fake.base.writes)
+		})
+	}
+}
+
+func TestBYORoleAssignmentReadFailureKeepsContext(t *testing.T) {
+	for _, preview := range []bool{false, true} {
+		t.Run(fmt.Sprintf("preview=%t", preview), func(t *testing.T) {
+			p, fake, _ := suppliedProvider(t, 2)
+			scope := offlineClusterID + "/providers/Microsoft.Authorization/roleAssignments"
+			fake.overrides[strings.ToLower(scope)] = suppliedReply{403,
+				map[string]any{"error": map[string]string{"code": "AuthorizationFailed"}}}
+			var err error
+			if preview {
+				_, err = p.Preview(t.Context(), func(string) {})
+			} else {
+				_, err = p.Deploy(t.Context(), func(string) {})
+			}
+			require.ErrorContains(t, err, "resolve existing BYO AKS role assignments: read applicable role assignments")
+			_, blocked := errors.AsType[*onboarding.BlockedError](err)
+			assert.False(t, blocked)
+			service, ok := errors.AsType[*azcore.ResponseError](err)
+			require.True(t, ok)
+			assert.Equal(t, http.StatusForbidden, service.StatusCode)
+			transported := roundTripProvisioningError(t, err)
+			assert.Contains(t, transported.Error(), "resolve existing BYO AKS role assignments:")
+			assert.NotContains(t, transported.Error(), "does not meet requirements")
+			wireService, ok := errors.AsType[*azdext.ServiceError](transported)
+			require.True(t, ok)
+			assert.Equal(t, "AuthorizationFailed", wireService.ErrorCode)
+			assert.Zero(t, fake.base.writes)
+			assert.Zero(t, fake.base.previews)
+		})
+	}
+}
+
+func TestBYOCanceledReadsRetainCancellation(t *testing.T) {
+	for _, preview := range []bool{false, true} {
+		t.Run(fmt.Sprintf("preview=%t", preview), func(t *testing.T) {
+			p, fake, _ := suppliedProvider(t, 7)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			p.armClientOptions.Transport = acrTestTransport(func(request *http.Request) (*http.Response, error) {
+				if request.URL.Path == offlineClusterID {
+					cancel()
+					return nil, ctx.Err()
+				}
+				return fake.Do(request)
+			})
+			var err error
+			if preview {
+				_, err = p.Preview(ctx, func(string) {})
+			} else {
+				_, err = p.Deploy(ctx, func(string) {})
+			}
+			require.ErrorIs(t, err, context.Canceled)
+			assert.NotContains(t, err.Error(), "does not meet requirements")
+			transported := roundTripProvisioningError(t, err)
+			require.ErrorIs(t, transported, context.Canceled)
+			local, ok := errors.AsType[*azdext.LocalError](transported)
+			require.True(t, ok)
+			assert.Equal(t, azdext.LocalErrorCategoryUser, local.Category)
+			assert.Equal(t, "canceled", local.Code)
+			assert.Zero(t, fake.base.writes)
+			assert.Zero(t, fake.base.previews)
+		})
 	}
 }
 

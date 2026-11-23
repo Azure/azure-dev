@@ -295,6 +295,7 @@ func (g *promptGraph) resolve(ctx context.Context, progress azdext.ProgressRepor
 			strings.Join(unrecognized, ", "),
 		)
 	}
+	warnUnreferencedSkillUses(ctx, g)
 
 	for _, n := range g.nodes {
 		if n.Resolve == nil {

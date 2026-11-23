@@ -102,13 +102,32 @@ func validateSkillDependencies(ctx context.Context, g *promptGraph, skills []str
 	for _, skill := range skills {
 		name := promptSkillServiceName(skill)
 		service, exists := g.projectServices[name]
-		if !exists || service.GetHost() != foundrySkillHost {
+		if !exists || service == nil {
 			return exterrors.Dependency(
 				exterrors.CodeFoundryDependencyNotReady,
 				fmt.Sprintf("skill %q has no enabled %s sibling service", name, foundrySkillHost),
 				fmt.Sprintf(
-					"add an %s service named %q with 'azd ai skill add %s ...' and run 'azd deploy --all'",
-					foundrySkillHost, name, name,
+					"add an %s service named %q with 'azd ai skill add %s ...', list %q in the agent "+
+						"service's uses:, and run 'azd deploy --all', or replace the versionless skills: "+
+						"entry with '{name: %q, version: \"<version>\"}' to pin an already-published "+
+						"Foundry skill",
+					foundrySkillHost, name, name, name, name,
+				),
+			)
+		}
+		if service.GetHost() != foundrySkillHost {
+			return exterrors.Dependency(
+				exterrors.CodeFoundryDependencyNotReady,
+				fmt.Sprintf(
+					"skill %q cannot resolve because service %q uses host %q instead of %s",
+					name, name, service.GetHost(), foundrySkillHost,
+				),
+				fmt.Sprintf(
+					"rename or remove the conflicting service %q (or choose a distinct skill name and "+
+						"update skills: and uses:) before running 'azd ai skill add ...' and "+
+						"'azd deploy --all', or replace the versionless skills: entry with "+
+						"'{name: %q, version: \"<version>\"}' to pin an already-published Foundry skill",
+					name, name,
 				),
 			)
 		}
@@ -134,6 +153,78 @@ func validateSkillDependencies(ctx context.Context, g *promptGraph, skills []str
 		}
 	}
 	return nil
+}
+
+// warnUnreferencedSkillUses reports enabled sibling `host: azure.ai.skill`
+// services listed in the agent service's uses: block that are absent from
+// managed.Skills. Such skills are deployed as standalone services but are not
+// attached to the prompt agent unless also declared under skills:.
+func warnUnreferencedSkillUses(ctx context.Context, g *promptGraph) {
+	if g == nil || g.warn == nil || g.managed == nil || g.agentService == nil || g.projectServices == nil {
+		return
+	}
+	uses := g.agentService.GetUses()
+	if len(uses) == 0 {
+		return
+	}
+
+	seen := make(map[string]struct{}, len(uses))
+	var unreferenced []string
+	for _, raw := range uses {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+
+		svc, ok := g.projectServices[name]
+		if !ok || svc == nil || svc.GetHost() != foundrySkillHost {
+			continue
+		}
+		if slices.ContainsFunc(g.managed.Skills, func(ref agent_yaml.HarnessSkillRef) bool {
+			return skillNameMatches(ref.Name, name)
+		}) {
+			continue
+		}
+		if g.dependencyEnabled != nil {
+			enabled, err := g.dependencyEnabled(ctx, name)
+			if err != nil || !enabled {
+				continue
+			}
+		}
+		unreferenced = append(unreferenced, fmt.Sprintf("%q", name))
+	}
+	if len(unreferenced) == 0 {
+		return
+	}
+
+	agentLabel := "the agent service"
+	if name := strings.TrimSpace(g.agentService.GetName()); name != "" {
+		agentLabel = fmt.Sprintf("agent service %q", name)
+	} else if name := strings.TrimSpace(g.managed.Name); name != "" {
+		agentLabel = fmt.Sprintf("prompt agent %q", name)
+	}
+
+	verb, pronoun := "is", "it"
+	if len(unreferenced) != 1 {
+		verb, pronoun = "are", "them"
+	}
+
+	g.warnf(
+		"%s lists %s sibling %s %s in uses: that %s omitted from skills: and will not be attached "+
+			"to the agent. Add %s to the skills: list in the prompt agent definition (inline or in "+
+			"its referenced file), or remove %s from uses: if unneeded.",
+		agentLabel,
+		foundrySkillHost,
+		pluralize("service", len(unreferenced)),
+		strings.Join(unreferenced, ", "),
+		verb,
+		pronoun,
+		pronoun,
+	)
 }
 
 func promptSkillServiceName(skill string) string {

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -30,8 +30,8 @@ func TestScopeGetDeployment(t *testing.T) {
 	}
 
 	// mocked response for get deployment from subscription
-	deploymentWithOptions := &armresources.DeploymentsClientGetAtSubscriptionScopeResponse{
-		DeploymentExtended: armresources.DeploymentExtended{
+	deploymentWithOptions := &armdeployments.DeploymentsClientGetAtSubscriptionScopeResponse{
+		DeploymentExtended: armdeployments.DeploymentExtended{
 			ID: new(
 				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME",
 			),
@@ -39,15 +39,15 @@ func TestScopeGetDeployment(t *testing.T) {
 			Type:     new("Microsoft.Resources/deployments"),
 			Tags:     map[string]*string{},
 			Name:     new("DEPLOYMENT_NAME"),
-			Properties: &armresources.DeploymentPropertiesExtended{
-				ProvisioningState: to.Ptr(armresources.ProvisioningStateCreated),
+			Properties: &armdeployments.DeploymentPropertiesExtended{
+				ProvisioningState: to.Ptr(armdeployments.ProvisioningStateCreated),
 				Outputs:           outputs,
 				Timestamp:         new(time.Now().UTC()),
 			},
 		},
 	}
-	deploymentResourceGroupWithOptions := &armresources.DeploymentsClientGetResponse{
-		DeploymentExtended: armresources.DeploymentExtended{
+	deploymentResourceGroupWithOptions := &armdeployments.DeploymentsClientGetResponse{
+		DeploymentExtended: armdeployments.DeploymentExtended{
 			ID: new(
 				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME",
 			),
@@ -55,8 +55,8 @@ func TestScopeGetDeployment(t *testing.T) {
 			Type:     new("Microsoft.Resources/deployments"),
 			Tags:     map[string]*string{},
 			Name:     new("DEPLOYMENT_NAME"),
-			Properties: &armresources.DeploymentPropertiesExtended{
-				ProvisioningState: to.Ptr(armresources.ProvisioningStateCreated),
+			Properties: &armdeployments.DeploymentPropertiesExtended{
+				ProvisioningState: to.Ptr(armdeployments.ProvisioningStateCreated),
 				Outputs:           outputs,
 				Timestamp:         new(time.Now().UTC()),
 			},
@@ -140,14 +140,14 @@ func TestScopeGetDeployment(t *testing.T) {
 	})
 }
 
-var deploymentExtended = armresources.DeploymentExtended{
+var deploymentExtended = armdeployments.DeploymentExtended{
 	ID:       new("/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME"),
 	Location: new("eastus2"),
 	Type:     new("Microsoft.Resources/deployments"),
 	Tags:     map[string]*string{},
 	Name:     new("DEPLOYMENT_NAME"),
-	Properties: &armresources.DeploymentPropertiesExtended{
-		ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+	Properties: &armdeployments.DeploymentPropertiesExtended{
+		ProvisioningState: to.Ptr(armdeployments.ProvisioningStateSucceeded),
 		Timestamp:         new(time.Now().UTC()),
 	},
 }
@@ -166,7 +166,7 @@ func TestScopeDeploy(t *testing.T) {
 			return mocks.CreateHttpResponseWithBody(
 				request,
 				http.StatusCreated,
-				armresources.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
+				armdeployments.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
 					DeploymentExtended: deploymentExtended,
 				},
 			)
@@ -197,7 +197,7 @@ func TestScopeDeploy(t *testing.T) {
 			return mocks.CreateHttpResponseWithBody(
 				request,
 				http.StatusCreated,
-				armresources.DeploymentsClientCreateOrUpdateResponse{
+				armdeployments.DeploymentsClientCreateOrUpdateResponse{
 					DeploymentExtended: deploymentExtended,
 				},
 			)
@@ -215,13 +215,13 @@ func TestScopeDeploy(t *testing.T) {
 	})
 }
 
-var deploymentOperationsListResult = armresources.DeploymentOperationsListResult{
-	Value: []*armresources.DeploymentOperation{
+var deploymentOperationsListResult = armdeployments.DeploymentOperationsListResult{
+	Value: []*armdeployments.DeploymentOperation{
 		{
 			ID:          new("operation-1"),
 			OperationID: new("operation-1"),
-			Properties: &armresources.DeploymentOperationProperties{
-				TargetResource: &armresources.TargetResource{
+			Properties: &armdeployments.DeploymentOperationProperties{
+				TargetResource: &armdeployments.TargetResource{
 					//nolint:lll
 					ID: new(
 						"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/Microsoft.Storage/storageAccounts/storage-account-name",
@@ -248,7 +248,7 @@ func TestScopeGetResourceOperations(t *testing.T) {
 			return mocks.CreateHttpResponseWithBody(
 				request,
 				http.StatusOK,
-				armresources.DeploymentOperationsClientListAtScopeResponse{
+				armdeployments.DeploymentOperationsClientListAtScopeResponse{
 					DeploymentOperationsListResult: deploymentOperationsListResult,
 				},
 			)
@@ -278,7 +278,7 @@ func TestScopeGetResourceOperations(t *testing.T) {
 			return mocks.CreateHttpResponseWithBody(
 				request,
 				http.StatusOK,
-				armresources.DeploymentOperationsClientListAtSubscriptionScopeResponse{
+				armdeployments.DeploymentOperationsClientListAtSubscriptionScopeResponse{
 					DeploymentOperationsListResult: deploymentOperationsListResult,
 				},
 			)

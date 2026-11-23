@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -313,7 +313,7 @@ func TestPipeline_DeploymentErrorLine_LocationNotAvailableForResourceType(t *tes
 }
 
 // A failed what-if returns HTTP 200 with the failure in the payload, so the
-// preview path builds its error from an armresources.ErrorResponse rather than
+// preview path builds its error from an armdeployments.ErrorResponse rather than
 // from an HTTP error. The actionable cause sits two levels deep, under a
 // top-level code that getErrorsFromMap does NOT blank out (unlike
 // DeploymentFailed), so the pipeline must keep searching past the outer node.
@@ -338,7 +338,7 @@ func TestPipeline_PreviewErrorResponse_NestedQuota(t *testing.T) {
 	  }
 	}`
 
-	var whatIfResult armresources.WhatIfOperationResult
+	var whatIfResult armdeployments.WhatIfOperationResult
 	require.NoError(t, json.Unmarshal([]byte(whatIfBody), &whatIfResult))
 	require.NotNil(t, whatIfResult.Error)
 

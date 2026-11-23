@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -30,7 +30,7 @@ func TestDeploymentHost(t *testing.T) {
 		{
 			name: "ContainerApp deployment",
 			deploymentResult: &azapi.ResourceDeployment{
-				Resources: []*armresources.ResourceReference{
+				Resources: []*armdeployments.ResourceReference{
 					{
 						ID: new("/subscriptions/sub-id/resourceGroups/rg-name/" +
 							"providers/Microsoft.App/containerApps/my-container-app"),
@@ -44,7 +44,7 @@ func TestDeploymentHost(t *testing.T) {
 		{
 			name: "ContainerAppJob deployment",
 			deploymentResult: &azapi.ResourceDeployment{
-				Resources: []*armresources.ResourceReference{
+				Resources: []*armdeployments.ResourceReference{
 					{
 						ID: new("/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/my-job"),
 					},
@@ -57,7 +57,7 @@ func TestDeploymentHost(t *testing.T) {
 		{
 			name: "WebSite deployment",
 			deploymentResult: &azapi.ResourceDeployment{
-				Resources: []*armresources.ResourceReference{
+				Resources: []*armdeployments.ResourceReference{
 					{
 						ID: new("/subscriptions/sub-id/resourceGroups/rg-name/" +
 							"providers/Microsoft.Web/sites/my-web-app"),
@@ -71,7 +71,7 @@ func TestDeploymentHost(t *testing.T) {
 		{
 			name: "Unknown resource type",
 			deploymentResult: &azapi.ResourceDeployment{
-				Resources: []*armresources.ResourceReference{
+				Resources: []*armdeployments.ResourceReference{
 					{
 						ID: new("/subscriptions/sub-id/resourceGroups/rg-name/" +
 							"providers/Microsoft.Storage/storageAccounts/my-storage"),
@@ -84,7 +84,7 @@ func TestDeploymentHost(t *testing.T) {
 		{
 			name: "No resources in deployment",
 			deploymentResult: &azapi.ResourceDeployment{
-				Resources: []*armresources.ResourceReference{},
+				Resources: []*armdeployments.ResourceReference{},
 			},
 			expectError:      true,
 			expectedErrorMsg: "didn't find any known application host from the deployment",
@@ -98,7 +98,7 @@ func TestDeploymentHost(t *testing.T) {
 		{
 			name: "Multiple resources with container app",
 			deploymentResult: &azapi.ResourceDeployment{
-				Resources: []*armresources.ResourceReference{
+				Resources: []*armdeployments.ResourceReference{
 					{
 						ID: new("/subscriptions/sub-id/resourceGroups/rg-name/" +
 							"providers/Microsoft.Storage/storageAccounts/my-storage"),
@@ -116,7 +116,7 @@ func TestDeploymentHost(t *testing.T) {
 		{
 			name: "Multiple resources with container app job",
 			deploymentResult: &azapi.ResourceDeployment{
-				Resources: []*armresources.ResourceReference{
+				Resources: []*armdeployments.ResourceReference{
 					{
 						ID: new("/subscriptions/sub-id/resourceGroups/rg-name/" +
 							"providers/Microsoft.Storage/storageAccounts/my-storage"),

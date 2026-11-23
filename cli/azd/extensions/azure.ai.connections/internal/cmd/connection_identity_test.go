@@ -18,7 +18,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -118,7 +118,7 @@ func TestConnectionContextCustomDomainCRUD(t *testing.T) {
 				case request.Method == http.MethodGet && request.URL.Path == tt.projectID:
 					metadataCalls++
 					assert.Equal(t, "management.azure.com", request.URL.Host)
-					assert.Equal(t, "2025-06-01", request.URL.Query().Get("api-version"))
+					assert.Equal(t, "2025-09-01", request.URL.Query().Get("api-version"))
 					return identityResponse(request, http.StatusOK,
 						`{"properties":{"endpoints":{"AI Foundry API":"`+advertisedEndpoint+`"}}}`), nil
 				case request.URL.Path == identityProjectID+"/connections" && request.Method == http.MethodGet:

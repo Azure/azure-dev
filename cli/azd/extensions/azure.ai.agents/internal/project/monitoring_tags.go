@@ -7,7 +7,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 )
 
 // monitoringTagsClient is the subset of armresources.TagsClient used to refresh the component.
@@ -17,8 +17,23 @@ type monitoringTagsClient interface {
 	) (armresources.TagsClientGetAtScopeResponse, error)
 	UpdateAtScope(
 		ctx context.Context, scope string, parameters armresources.TagsPatchResource,
-		options *armresources.TagsClientUpdateAtScopeOptions,
+		options *armresources.TagsClientBeginUpdateAtScopeOptions,
 	) (armresources.TagsClientUpdateAtScopeResponse, error)
+}
+
+type pollingMonitoringTagsClient struct {
+	*armresources.TagsClient
+}
+
+func (c pollingMonitoringTagsClient) UpdateAtScope(
+	ctx context.Context, scope string, parameters armresources.TagsPatchResource,
+	options *armresources.TagsClientBeginUpdateAtScopeOptions,
+) (armresources.TagsClientUpdateAtScopeResponse, error) {
+	poller, err := c.BeginUpdateAtScope(ctx, scope, parameters, options)
+	if err != nil {
+		return armresources.TagsClientUpdateAtScopeResponse{}, err
+	}
+	return poller.PollUntilDone(ctx, nil)
 }
 
 // refreshMonitoringRoleSyncTag merges the sync tag onto the component. When the assignment already

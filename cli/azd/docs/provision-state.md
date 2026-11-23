@@ -4,7 +4,9 @@ The Azure Developer CLI introduced the `provision state` on version `1.4.0`. Pro
 
 ## Specification
 
-Provision state is enabled by default (You don't need to opt-in). azd creates a `hash` from the ARM template (template and input parameters), which is persisted on Azure as part of the `deployment` and it is used to find out if the template changes. When running `azd provision`, azd creates the `hash` for the current template and checks if there is a previous deployment on Azure with provision state. azd will only submit the deployment if the current `hash` is different than what is previously stored in the provision state, or if there is no provision state.
+Provision state is enabled by default. azd stores hashes of the ARM template and its input parameters in Azure as part of the deployment. When running `azd provision`, azd compares the current inputs against the previous deployment's state. It can skip provisioning when the hashes match.
+
+When the Deployment Stacks alpha feature is enabled, provision state also tracks the resolved `infra.deploymentStacks` settings. Changing an environment variable that affects those settings, or removing the block, triggers a stack update even if the template and its parameters are unchanged. The first provision against a stack with the older, parameters-only hash also runs an update.
 
 You can use the flag `--no-state`, when running `azd provision`, to provision your infrastructure regardless of any provision-state.
 
@@ -26,4 +28,3 @@ The next table describes some common cases where provision state is either used 
 You can take advantage of `provision state` for any continuous integration pipeline like GitHub or Azure DevOps. azd will automatically skip provisioning when no changes are detected which helps speed up CI/CD deployments.
 
 Alternatively, if you'd like to ensure that no infrastructure drift ever occurs due to updates outside of azd,  run with `azd provision --no-state`.
-

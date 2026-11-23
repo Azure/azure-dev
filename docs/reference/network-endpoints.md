@@ -156,7 +156,7 @@ Used by `azd init` and `azd template list`.
 | `aka.ms` → `aka.ms/awesome-azd/templates.json` | Default template gallery source. Defined in [`cli/azd/pkg/templates/source_manager.go`](../../cli/azd/pkg/templates/source_manager.go) |
 | `github.com` | Cloning template repositories (e.g. `github.com/Azure-Samples/<template>`). Defined in [`cli/azd/pkg/templates/path.go`](../../cli/azd/pkg/templates/path.go) |
 | `raw.githubusercontent.com`, `api.github.com` | Resolved to `github.com` when normalizing template source URLs. Defined in [`cli/azd/pkg/templates/gh_source.go`](../../cli/azd/pkg/templates/gh_source.go) |
-| `azure.github.io` | Template gallery info links (`awesome-azd`, `ai-app-templates`) shown in help text |
+| `azure.github.io` | The `awesome-azd` template gallery link shown in help text |
 
 ---
 

@@ -88,7 +88,7 @@ go build
 Choose the publishing path for your extension:
 
 - **Microsoft-authored:** Submit to the azd dev registry first. Once the extension is stable and meets the quality bar, submit it to the main registry.
-- **Community-authored or organization-internal:** Host your own registry for now. Follow the [publishing workflow](../../cli/azd/docs/extensions/extension-framework.md#publishing-workflow) to package and release your extension, then provide a file or URL registry source to your users. See [extension sources](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#extension-sources) for source formats and registration.
+- **Community-authored or organization-internal:** Host your own registry for now. Follow the [publishing workflow](../../cli/azd/docs/extensions/extension-framework.md#publishing-workflow) to package and release your extension. Create a registry file containing `{"schemaVersion":"1.0","extensions":[]}`, then replace the workflow's final command with `azd x publish --repo owner/repo --registry "<path-to-registry.json>"`. Host the updated file and provide its file path or URL to your users. See [extension sources](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#extension-sources) for source formats and registration.
 
 #### Microsoft-authored extensions: dev registry
 

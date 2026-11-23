@@ -11,9 +11,13 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"runtime"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -185,7 +189,7 @@ func checkWithID(t *testing.T, report Report, id string) Check {
 
 func TestResourceCheckerReadsOnlySupportingResources(t *testing.T) {
 	fake := resourceFake()
-	facts, report, err := NewResourceChecker(testCredential{}, fake.options(), nil).Check(t.Context(), suppliedPlan(t))
+	facts, report, err := NewResourceChecker(testCredential{}, fake.options(), nil, nil).Check(t.Context(), suppliedPlan(t))
 	require.NoError(t, err)
 	assert.Equal(t, "hosting-principal", facts.HostingIdentity.PrincipalID)
 	assert.Equal(t, "workload-principal", facts.WorkloadIdentity.PrincipalID)
@@ -203,6 +207,159 @@ func TestResourceCheckerReadsOnlySupportingResources(t *testing.T) {
 		assert.Equal(t, http.MethodGet, request.method)
 		assert.NotContains(t, request.path, "Microsoft.Network")
 	}
+}
+
+func TestResourceCheckerProgressTracksConcurrentReads(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		order     []string
+		forbidden bool
+	}{
+		{"AKS finishes first", []string{
+			testCluster, testCluster + "/agentPools", testStorage, testHosting, testWorkload,
+		}, false},
+		{"identities finish first", []string{
+			testWorkload, testHosting, testStorage, testCluster, testCluster + "/agentPools",
+		}, false},
+		{"failed Storage read leaves other reads running", []string{
+			testStorage, testCluster, testHosting, testCluster + "/agentPools", testWorkload,
+		}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				fake := resourceFake()
+				if test.forbidden {
+					fake.replies[strings.ToLower(testStorage)] = readReply{403, map[string]any{
+						"error": map[string]string{"code": "AuthorizationFailed", "message": "offline forbidden"},
+					}}
+				}
+				gates := map[string]chan struct{}{}
+				for _, path := range append(slices.Clone(test.order), "/subscriptions/cluster-sub", testSubscription) {
+					gates[strings.ToLower(path)] = make(chan struct{})
+				}
+				fake.handler = func(request *http.Request) (readReply, bool) {
+					if gate := gates[strings.ToLower(request.URL.Path)]; gate != nil {
+						<-gate
+					}
+					return readReply{}, false
+				}
+				release := func(path string) {
+					gate := gates[strings.ToLower(path)]
+					select {
+					case <-gate:
+					default:
+						close(gate)
+					}
+				}
+				var progress []string
+				var callbacks atomic.Int32
+				checker := NewResourceChecker(testCredential{}, fake.options(), nil, func(detail string) {
+					assert.Equal(t, int32(1), callbacks.Add(1), "progress callbacks must not overlap")
+					runtime.Gosched()
+					progress = append(progress, detail)
+					callbacks.Add(-1)
+				})
+				finished := make(chan struct{})
+				var checkErr error
+				go func() {
+					_, _, checkErr = checker.Check(t.Context(), suppliedPlan(t))
+					close(finished)
+				}()
+				defer func() {
+					for path := range gates {
+						release(path)
+					}
+					<-finished
+				}()
+
+				synctest.Wait()
+				require.NotEmpty(t, progress)
+				assert.Equal(t, "reading subscription tenants", progress[len(progress)-1])
+				release("/subscriptions/cluster-sub")
+				synctest.Wait()
+				assert.Equal(t, "reading subscription tenants", progress[len(progress)-1],
+					"one completed subscription read must not clear the other")
+				release(testSubscription)
+				synctest.Wait()
+				assert.Equal(t, "reading AKS, Storage, hosting identity, workload identity", progress[len(progress)-1])
+
+				active := map[string]string{
+					testCluster: "AKS", testStorage: "Storage",
+					testHosting: "hosting identity", testWorkload: "workload identity",
+				}
+				for _, path := range test.order {
+					release(path)
+					synctest.Wait()
+					delete(active, path)
+					if path == testCluster {
+						active[testCluster+"/agentPools"] = "node pools"
+					}
+					detail := ""
+					if len(active) > 0 {
+						detail = "reading " + strings.Join(slices.Sorted(maps.Values(active)), ", ")
+					}
+					assert.Equal(t, detail, progress[len(progress)-1], "after reading %s", path)
+				}
+				<-finished
+				if test.forbidden {
+					service, ok := errors.AsType[*azcore.ResponseError](checkErr)
+					require.True(t, ok)
+					assert.Equal(t, http.StatusForbidden, service.StatusCode)
+				} else {
+					require.NoError(t, checkErr)
+				}
+				assert.Contains(t, progress, "checking AKS agent pool and network")
+				assert.Contains(t, progress, "validating AKS hosting configuration")
+				assert.Equal(t, !test.forbidden, slices.Contains(progress, "validating Storage configuration"))
+				assert.Len(t, fake.requests, 7, "progress must not add resource queries")
+				for _, detail := range progress {
+					assert.NotContains(t, detail, "\n")
+					assert.NotContains(t, detail, "\r")
+					assert.NotContains(t, detail, "PASS")
+					assert.NotContains(t, detail, "FAIL")
+				}
+			})
+		})
+	}
+}
+
+func TestResourceCheckerProgressClearsOnCancellation(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		fake := resourceFake()
+		fake.handler = func(request *http.Request) (readReply, bool) {
+			if strings.EqualFold(request.URL.Path, testStorage) {
+				<-request.Context().Done()
+				return readReply{403, map[string]any{
+					"error": map[string]string{"code": "AuthorizationFailed", "message": "offline canceled read"},
+				}}, true
+			}
+			return readReply{}, false
+		}
+		var progress []string
+		checker := NewResourceChecker(testCredential{}, fake.options(), nil, func(detail string) {
+			progress = append(progress, detail)
+		})
+		finished := make(chan struct{})
+		var checkErr error
+		go func() {
+			_, _, checkErr = checker.Check(ctx, suppliedPlan(t))
+			close(finished)
+		}()
+		defer func() {
+			cancel()
+			<-finished
+		}()
+
+		synctest.Wait()
+		require.NotEmpty(t, progress)
+		assert.Equal(t, "reading Storage", progress[len(progress)-1])
+		cancel()
+		synctest.Wait()
+		<-finished
+		require.ErrorIs(t, checkErr, context.Canceled)
+		assert.Empty(t, progress[len(progress)-1], "no completed read should remain displayed as active")
+	})
 }
 
 func TestResourceCheckerSelectsOnePoolWithCompleteNetworkEvidence(t *testing.T) {
@@ -333,7 +490,7 @@ func TestResourceCheckerSelectsOnePoolWithCompleteNetworkEvidence(t *testing.T) 
 					require.True(t, ok)
 					body["sku"] = map[string]any{"name": "Automatic"}
 				}
-				_, report, err := NewResourceChecker(testCredential{}, fake.options(), nil).Check(t.Context(), plan)
+				_, report, err := NewResourceChecker(testCredential{}, fake.options(), nil, nil).Check(t.Context(), plan)
 				if test.blocked {
 					require.Error(t, err)
 					require.Error(t, report.Err())
@@ -414,7 +571,8 @@ func TestResourceCheckerRequiresStandardAKS(t *testing.T) {
 			if test.name == "missing SKU" {
 				delete(body, "sku")
 			}
-			_, report, err := NewResourceChecker(testCredential{}, fake.options(), nil).Check(t.Context(), suppliedPlan(t))
+			checker := NewResourceChecker(testCredential{}, fake.options(), nil, nil)
+			_, report, err := checker.Check(t.Context(), suppliedPlan(t))
 			check := checkWithID(t, report, "aks-type")
 			assert.Equal(t, test.status, check.Status)
 			assert.Equal(t, testCluster, check.Scope)
@@ -505,7 +663,8 @@ func TestResourceCheckerRejectsIncompleteOrMismatchedEvidence(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			fake := resourceFake()
 			test.change(fake)
-			_, report, err := NewResourceChecker(testCredential{}, fake.options(), nil).Check(t.Context(), suppliedPlan(t))
+			checker := NewResourceChecker(testCredential{}, fake.options(), nil, nil)
+			_, report, err := checker.Check(t.Context(), suppliedPlan(t))
 			require.Error(t, err)
 			require.Error(t, report.Err())
 			if test.name == "read forbidden" {

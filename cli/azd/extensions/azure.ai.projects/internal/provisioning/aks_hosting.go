@@ -20,6 +20,7 @@ import (
 	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/google/uuid"
 )
 
@@ -30,7 +31,9 @@ type byoHostingParameters struct {
 	WorkloadIdentityResourceID          json.RawMessage `json:"workloadIdentityResourceId"`
 }
 
-func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *templateSource) error {
+func (p *FoundryProvisioningProvider) prepareBYO(
+	ctx context.Context, source *templateSource, progress grpcbroker.ProgressFunc,
+) error {
 	hosting, err := byoHostingParameter(source)
 	if err != nil {
 		return err
@@ -154,14 +157,28 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 		}
 		identity.id = resource.ID
 	}
+	resourceProgress := func(detail string) {
+		message := "Checking AKS and supporting resources"
+		if detail != "" {
+			message += ": " + detail
+		}
+		progress(message + "...")
+	}
 	pipeline := onboarding.Pipeline{
-		Resources: onboarding.NewResourceChecker(p.credential, p.armClientOptions, evidence),
+		Resources: onboarding.NewResourceChecker(p.credential, p.armClientOptions, evidence, resourceProgress),
 		Access:    evidence,
+		BeforeResourceCheck: func() {
+			resourceProgress("")
+		},
+		BeforeAccessCheck: func() {
+			progress("Checking required permissions...")
+		},
 	}
 	facts, _, err := pipeline.Preflight(ctx, plan)
 	if err != nil {
 		return err
 	}
+	progress("Resolving deployment identity and role bindings...")
 	_, needsKubelet := hostBindings["kubeletObjectId"]
 	if facts.KubeletObjectID == "" && (plan.Cluster.Missing == "" || needsKubelet || includeAcr) {
 		return fmt.Errorf("BYO AKS requires a kubelet principal object ID from preflight")

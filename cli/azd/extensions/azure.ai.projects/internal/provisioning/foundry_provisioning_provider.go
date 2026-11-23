@@ -1530,7 +1530,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err := p.validateACRRemoteBuild(ctx, src); err != nil {
 		return nil, err
 	}
-	if err := p.prepareBYO(ctx, src); err != nil {
+	if err := p.prepareBYO(ctx, src, progress); err != nil {
 		return nil, err
 	}
 	if err := p.recoverDeployedACRBinding(ctx); err != nil {
@@ -1893,7 +1893,7 @@ func (p *FoundryProvisioningProvider) Preview(
 	if err := p.validateExistingProjectTemplateIdentity(ctx, src); err != nil {
 		return nil, err
 	}
-	if err := p.prepareBYO(ctx, src); err != nil {
+	if err := p.prepareBYO(ctx, src, progress); err != nil {
 		return nil, err
 	}
 	if p.greenfieldAcrMode == "reuse-connect" {

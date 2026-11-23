@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -181,6 +182,12 @@ func suppliedProvider(t *testing.T, mask int) (*FoundryProvisioningProvider, *su
 	return p, fake, compiler
 }
 
+func byoPreparationStages(progress []string) []string {
+	return slices.Compact(slices.DeleteFunc(slices.Clone(progress), func(message string) bool {
+		return strings.HasPrefix(message, "Checking AKS and supporting resources: ")
+	}))
+}
+
 func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
 	for mask := range 8 {
 		for _, registry := range []bool{false, true} {
@@ -268,6 +275,71 @@ func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
 	}
 }
 
+func TestBYODeployProgressFollowsPreparationStages(t *testing.T) {
+	for _, failWrite := range []bool{false, true} {
+		t.Run(fmt.Sprintf("deployment failure=%t", failWrite), func(t *testing.T) {
+			p, fake, _ := suppliedProvider(t, 7)
+			fake.base.failWrite = failWrite
+			var progress []string
+			resourcesStarted, permissionsStarted := false, false
+			_, err := p.Deploy(t.Context(), func(message string) {
+				progress = append(progress, message)
+				if strings.HasPrefix(message, "Checking AKS and supporting resources") {
+					assert.False(t, permissionsStarted, "resource progress must finish before the permission stage")
+				}
+				switch message {
+				case "Preparing Foundry provisioning template...":
+					assert.Empty(t, fake.requests)
+				case "Checking AKS and supporting resources...":
+					if !resourcesStarted {
+						assert.NotContains(t, fake.requests, "GET "+offlineClusterID)
+						resourcesStarted = true
+					}
+				case "Checking required permissions...":
+					permissionsStarted = true
+					for _, id := range []string{
+						offlineClusterID, offlineClusterID + "/agentPools",
+						suppliedStorageID, suppliedHostingID, suppliedWorkloadID,
+					} {
+						assert.Contains(t, fake.requests, "GET "+id)
+					}
+					for _, request := range fake.requests {
+						assert.NotContains(t, request, "/roleAssignments")
+					}
+				case "Resolving deployment identity and role bindings...":
+					for _, scope := range []string{offlineClusterID, suppliedWorkloadID, suppliedStorageID} {
+						assert.Contains(t, fake.requests,
+							"GET "+scope+"/providers/Microsoft.Authorization/roleAssignments")
+					}
+					assert.Zero(t, fake.base.writes)
+				}
+			})
+			if failWrite {
+				require.ErrorContains(t, err, "offline deployment failure")
+			} else {
+				require.NoError(t, err)
+			}
+			stages := byoPreparationStages(progress)
+			require.GreaterOrEqual(t, len(stages), 4)
+			assert.Equal(t, []string{
+				"Preparing Foundry provisioning template...",
+				"Checking AKS and supporting resources...",
+				"Checking required permissions...",
+				"Resolving deployment identity and role bindings...",
+			}, stages[:4])
+			for _, operation := range []string{
+				"subscription tenants", "reading AKS", "node pools", "Storage", "hosting identity", "workload identity",
+			} {
+				assert.True(t, slices.ContainsFunc(progress, func(message string) bool {
+					return strings.HasPrefix(message, "Checking AKS and supporting resources: ") &&
+						strings.Contains(message, operation)
+				}), "missing resource-check progress for %s: %v", operation, progress)
+			}
+			assert.Equal(t, 1, fake.base.writes)
+		})
+	}
+}
+
 func TestBYOSuppliedPreflightBlocksDeployAndWhatIfBeforeMutations(t *testing.T) {
 	for _, preview := range []bool{false, true} {
 		for _, failure := range []string{
@@ -296,13 +368,24 @@ func TestBYOSuppliedPreflightBlocksDeployAndWhatIfBeforeMutations(t *testing.T) 
 				case "missing cluster SKU name":
 					fake.base.clusterSKUName = ""
 				}
+				var progress []string
+				writeProgress := func(message string) { progress = append(progress, message) }
 				var err error
 				if preview {
-					_, err = p.Preview(t.Context(), func(string) {})
+					_, err = p.Preview(t.Context(), writeProgress)
 				} else {
-					_, err = p.Deploy(t.Context(), func(string) {})
+					_, err = p.Deploy(t.Context(), writeProgress)
 				}
 				require.ErrorContains(t, err, "preflight blocked")
+				initialProgress := "Preparing Foundry provisioning template..."
+				if preview {
+					initialProgress = "Computing deployment plan..."
+				}
+				assert.Equal(t, []string{
+					initialProgress,
+					"Checking AKS and supporting resources...",
+					"Checking required permissions...",
+				}, byoPreparationStages(progress))
 				assert.NotContains(t, err.Error(), "BYO-AKS preflight report:")
 				assert.NotContains(t, err.Error(), "resource-refs PASS")
 				if failure == "Automatic cluster" || failure == "missing cluster SKU name" {
@@ -477,8 +560,17 @@ func TestBYOReadFailuresPreserveCausesWithoutReport(t *testing.T) {
 
 func TestBYOSuppliedPreviewUsesNormalWhatIfAfterReadOnlyChecks(t *testing.T) {
 	p, fake, _ := suppliedProvider(t, 7)
-	result, err := p.Preview(t.Context(), func(string) {})
+	var progress []string
+	result, err := p.Preview(t.Context(), func(message string) { progress = append(progress, message) })
 	require.NoError(t, err)
+	stages := byoPreparationStages(progress)
+	require.GreaterOrEqual(t, len(stages), 4)
+	assert.Equal(t, []string{
+		"Computing deployment plan...",
+		"Checking AKS and supporting resources...",
+		"Checking required permissions...",
+		"Resolving deployment identity and role bindings...",
+	}, stages[:4])
 	require.Len(t, result.Preview.Changes, 1)
 	assert.Equal(t, 1, fake.base.previews)
 	assert.Zero(t, fake.base.writes)
@@ -548,7 +640,7 @@ func TestBYODisabledSupportingSelectionsRetainARMPrecedence(t *testing.T) {
 			"enabled": false, "storageAccountResourceId": suppliedStorageID,
 		}},
 	}}
-	require.NoError(t, p.prepareBYO(t.Context(), source))
+	require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
 	assert.Equal(t, map[string]any{"value": map[string]any{
 		"enabled": false, "storageAccountResourceId": suppliedStorageID,
 	}}, source.parameters["agentHosting"])

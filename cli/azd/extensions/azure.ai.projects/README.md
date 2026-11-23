@@ -408,6 +408,8 @@ Determinate mandatory failures, including nonexistent references, incompatible c
 
 Preflight returns blocking errors with their underlying causes. It does not render check reports or publish them to command output, progress, or logs.
 
+On interactive terminals, provisioning updates its current progress line while preparing the template, checking AKS and supporting resources, checking required permissions, and resolving deployment identity and role bindings. During resource checks, that same line names the active reads or current validation. Concurrent reads are listed together and removed individually as they finish; finishing a read does not mean its checks passed. These messages identify current work, not successful check results.
+
 Supplied Storage must have a successful provisioning state, StorageV2 kind, Hot tier, HNS disabled, HTTPS-only transport, and TLS 1.2 or later. When account properties are available, an omitted `isHnsEnabled` is treated as `false`. Missing HTTPS and TLS properties use the Storage API's documented defaults. Preflight does not change supplied Storage settings.
 
 The three identity-role checks run only when the hosting-management identity, workload identity, and Storage are all supplied. In that case the template does not create these role assignments, and missing required roles block provision and preview:

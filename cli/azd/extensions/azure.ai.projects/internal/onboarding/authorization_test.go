@@ -310,17 +310,28 @@ func (s accessStub) Check(context.Context, Plan, Facts) (Report, error) {
 func TestPipelineCollectsMandatoryFailuresAndPreservesServiceErrors(t *testing.T) {
 	cause := errors.New("original resource read error")
 	called := false
+	var stages []string
 	pipeline := Pipeline{
 		Resources: resourceStub{report: Report{{ID: "storage-type", Status: Fail, Mandatory: true, Cause: cause}}},
 		Access:    accessStub{called: &called},
+		BeforeResourceCheck: func() {
+			stages = append(stages, "resources")
+		},
+		BeforeAccessCheck: func() {
+			assert.False(t, called, "permission progress must precede permission checks")
+			stages = append(stages, "permissions")
+		},
 	}
 	_, report, err := pipeline.Preflight(t.Context(), suppliedPlan(t))
 	require.ErrorIs(t, err, cause)
 	assert.True(t, called)
 	assert.Len(t, report, 2)
+	assert.Equal(t, []string{"resources", "permissions"}, stages)
 	called = false
+	stages = nil
 	pipeline.Resources = resourceStub{err: context.Canceled}
 	_, _, err = pipeline.Preflight(t.Context(), suppliedPlan(t))
 	require.ErrorIs(t, err, context.Canceled)
 	assert.False(t, called)
+	assert.Equal(t, []string{"resources"}, stages)
 }

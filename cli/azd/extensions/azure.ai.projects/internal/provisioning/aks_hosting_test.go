@@ -346,7 +346,8 @@ func TestBYOPrepareFeatureGateUsesProcessEnvironment(t *testing.T) {
 				p.credential = nil
 			}
 
-			err = p.prepareBYO(t.Context(), source)
+			var progress []string
+			err = p.prepareBYO(t.Context(), source, func(message string) { progress = append(progress, message) })
 			if test.enabled {
 				require.NoError(t, err)
 				assert.Subset(t, fake.reads, []string{
@@ -363,6 +364,7 @@ func TestBYOPrepareFeatureGateUsesProcessEnvironment(t *testing.T) {
 				assert.Nil(t, p.credential)
 				assert.Empty(t, fake.reads)
 				assert.Empty(t, fake.base.requests)
+				assert.Empty(t, progress)
 				current, err := json.Marshal(source.parameters)
 				require.NoError(t, err)
 				assert.JSONEq(t, string(original), string(current))
@@ -896,7 +898,8 @@ func TestNativeFoundryDeployKeepsStandardOutputsWithoutAKSReads(t *testing.T) {
 		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n")})
 	require.NoError(t, err)
 	p.synthResult = result
-	deployed, err := p.Deploy(t.Context(), func(string) {})
+	var progress []string
+	deployed, err := p.Deploy(t.Context(), func(message string) { progress = append(progress, message) })
 	require.NoError(t, err)
 	require.NotNil(t, deployed.Deployment)
 	require.Contains(t, deployed.Deployment.Outputs, "AZURE_AI_PROJECT_ID")
@@ -905,6 +908,15 @@ func TestNativeFoundryDeployKeepsStandardOutputsWithoutAKSReads(t *testing.T) {
 	assert.NotContains(t, fake.parameters, "agentHosting")
 	assert.NotContains(t, fake.parameters, "kubeletObjectId")
 	assert.Equal(t, 1, fake.writes)
+	require.NotEmpty(t, progress)
+	assert.Equal(t, "Preparing Foundry provisioning template...", progress[0])
+	for _, message := range []string{
+		"Checking AKS and supporting resources...",
+		"Checking required permissions...",
+		"Resolving deployment identity and role bindings...",
+	} {
+		assert.NotContains(t, progress, message)
+	}
 }
 
 func TestBYOPrepareOnlySuppliesDeclaredHostBindings(t *testing.T) {
@@ -919,7 +931,7 @@ func TestBYOPrepareOnlySuppliesDeclaredHostBindings(t *testing.T) {
 	} {
 		delete(definitions, name)
 	}
-	require.NoError(t, p.prepareBYO(t.Context(), source))
+	require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
 	assert.NotContains(t, source.parameters, "kubeletObjectId")
 	assert.NotContains(t, source.parameters, "federatedIdentityRoleDefinitionId")
 	assert.NotContains(t, source.parameters, "hostingPrincipalId")
@@ -947,7 +959,7 @@ func TestBYOPreflightAcceptsExternalRegistry(t *testing.T) {
 			case "binding":
 				p.acrBinding = acrTestBinding()
 			}
-			require.NoError(t, p.prepareBYO(t.Context(), source))
+			require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
 			assert.NotEmpty(t, fake.requests)
 		})
 	}
@@ -981,7 +993,7 @@ func TestBYORejectsLocalConflictsBeforeAuthentication(t *testing.T) {
 			source, err := p.resolveTemplate(t.Context(), func(string) {})
 			require.NoError(t, err)
 			source.parameters[test.key] = map[string]any{"value": test.value}
-			require.ErrorContains(t, p.prepareBYO(t.Context(), source), test.expected)
+			require.ErrorContains(t, p.prepareBYO(t.Context(), source, func(string) {}), test.expected)
 			assert.Empty(t, fake.requests)
 		})
 	}

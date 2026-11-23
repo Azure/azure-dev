@@ -75,7 +75,7 @@ func TestBYOPrepareValidatesSuppliedKubeletForACR(t *testing.T) {
 				if test.duplicate {
 					source.parameters["kubeletObjectId"] = test.parameter
 				}
-				err = p.prepareBYO(t.Context(), source)
+				err = p.prepareBYO(t.Context(), source, func(string) {})
 				if includeAcr && !test.valid {
 					require.ErrorContains(t, err, "kubeletObjectId")
 					if test.name == "different" {
@@ -238,12 +238,21 @@ func TestBYOSuppliedUsesEffectiveDeploymentInputs(t *testing.T) {
 				delete(definitions, "agentHosting")
 				source.parameters["AGENTHOSTING"] = map[string]any{"value": "leave undeclared parameters to ARM"}
 			}
-			require.NoError(t, p.prepareBYO(t.Context(), source))
+			var progress []string
+			require.NoError(t, p.prepareBYO(t.Context(), source, func(message string) {
+				progress = append(progress, message)
+			}))
 			assert.NotContains(t, source.parameters, "agentHosting")
 			if name == "disabled" || name == "undeclared" {
 				assert.Empty(t, fake.requests)
 				assert.NotContains(t, source.parameters, "federatedIdentityRoleDefinitionId")
+				assert.Empty(t, progress)
 			} else {
+				assert.Equal(t, []string{
+					"Checking AKS and supporting resources...",
+					"Checking required permissions...",
+					"Resolving deployment identity and role bindings...",
+				}, byoPreparationStages(progress))
 				assert.Contains(t, fake.requests, "GET "+clusterID)
 				assert.NotContains(t, fake.requests, "GET "+offlineClusterID)
 				assert.Equal(t, map[string]any{"value": suppliedHostingPrincipal}, source.parameters["hostingPrincipalId"])

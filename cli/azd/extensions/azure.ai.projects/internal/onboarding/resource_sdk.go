@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -27,13 +28,19 @@ type sdkResourceChecker struct {
 	options     *arm.ClientOptions
 	readClients *resourceClients
 	reads       *AuthorizationEvidence
+	onProgress  func(string)
+	progress    *resourceProgress
 }
 
 // NewResourceChecker constructs read-only ARM adapters using an already resolved user-access-tenant credential.
+// The optional progress callback receives current activity, not check results.
 func NewResourceChecker(
 	credential azcore.TokenCredential, options *arm.ClientOptions, evidence *AuthorizationEvidence,
+	progress func(string),
 ) ResourceChecker {
-	return &sdkResourceChecker{credential: credential, options: onboardingARMOptions(options), reads: evidence}
+	return &sdkResourceChecker{
+		credential: credential, options: onboardingARMOptions(options), reads: evidence, onProgress: progress,
+	}
 }
 
 func onboardingARMOptions(options *arm.ClientOptions) *arm.ClientOptions {
@@ -130,6 +137,7 @@ func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan)
 	tasks := make([]func(), 0, len(keys))
 	for i, subscription := range keys {
 		tasks = append(tasks, func() {
+			defer c.progress.start("subscription tenants")()
 			tenants[i], checks[i] = readSubscriptionTenant(ctx, c.reads, subscription)
 		})
 	}
@@ -180,10 +188,12 @@ func readSubscriptionTenant(ctx context.Context, reader *AuthorizationEvidence, 
 func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Report, error) {
 	local := *c
 	local.readClients = &resourceClients{}
+	local.progress = &resourceProgress{notify: c.onProgress, active: map[string]int{}}
 	if local.reads == nil {
 		local.reads = NewAuthorizationEvidence(c.credential, c.options)
 	}
 	c = &local
+	defer c.reportProgress("")
 	tenant, report := c.subscriptionTenants(ctx, plan)
 	report = append(slices.Clone(plan.SkippedChecks), report...)
 	facts := Facts{}
@@ -205,12 +215,12 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	}
 	if plan.Hosting.Supplied || plan.Hosting.PrincipalRequired {
 		tasks = append(tasks, func() {
-			identities[0], identityReports[0] = c.readIdentity(ctx, plan.Hosting, tenant)
+			identities[0], identityReports[0] = c.readIdentity(ctx, plan.Hosting, tenant, "hosting identity")
 		})
 	}
 	if plan.Workload.Supplied || plan.Workload.PrincipalRequired {
 		tasks = append(tasks, func() {
-			identities[1], identityReports[1] = c.readIdentity(ctx, plan.Workload, tenant)
+			identities[1], identityReports[1] = c.readIdentity(ctx, plan.Workload, tenant, "workload identity")
 		})
 	}
 	parallelReads(tasks...)
@@ -222,8 +232,10 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	}
 	report = append(report, storageReport...)
 	report = append(report, clusterReport...)
+	c.reportProgress("checking AKS agent pool and network")
 	selected, networkReport := c.selectAgentPool(ctx, plan, cluster, pools)
 	if cluster != nil {
+		c.reportProgress("validating AKS hosting configuration")
 		kubelet, checks := aksResourceChecks(*cluster, pools, poolsKnown, selected)
 		facts.KubeletObjectID = kubelet
 		report = append(report, checks...)
@@ -243,6 +255,7 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 		}
 	} else if plan.Storage.Supplied {
 		if storage != nil {
+			c.reportProgress("validating Storage configuration")
 			report = append(report, storageResourceChecks(*storage)...)
 		} else {
 			for _, id := range []string{"storage-type", "storage-security"} {
@@ -277,7 +290,9 @@ func (c *sdkResourceChecker) readCluster(
 	if err != nil {
 		return nil, nil, false, Report{readFailure("resource-refs", resource.ID, "managedClusters/read", err)}
 	}
+	done := c.progress.start("AKS")
 	response, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
+	done()
 	if err != nil {
 		return nil, nil, false, Report{readFailure("resource-refs", resource.ID,
 			"Microsoft.ContainerService/managedClusters/read", err)}
@@ -300,6 +315,7 @@ func (c *sdkResourceChecker) readAgentPools(
 	if err != nil {
 		return nil, err
 	}
+	defer c.progress.start("node pools")()
 	var pools []*armcontainerservice.AgentPool
 	pager := client.NewListPager(id.ResourceGroupName, id.Name, nil)
 	for pager.More() {
@@ -328,6 +344,7 @@ func (c *sdkResourceChecker) readStorage(
 	if err != nil {
 		return nil, Report{readFailure("resource-refs", resource.ID, "Microsoft.Storage/storageAccounts/read", err)}
 	}
+	defer c.progress.start("Storage")()
 	response, err := client.GetProperties(ctx, id.ResourceGroupName, id.Name, nil)
 	if err != nil {
 		return nil, Report{readFailure("resource-refs", resource.ID, "Microsoft.Storage/storageAccounts/read", err)}
@@ -342,7 +359,7 @@ func (c *sdkResourceChecker) readStorage(
 }
 
 func (c *sdkResourceChecker) readIdentity(
-	ctx context.Context, resource Resource, tenant string,
+	ctx context.Context, resource Resource, tenant, description string,
 ) (Identity, Check) {
 	if resource.Missing != "" {
 		return Identity{}, SkippedCheck("resource-refs", resource.diagnosticScope(),
@@ -363,6 +380,7 @@ func (c *sdkResourceChecker) readIdentity(
 		check.Cause = err
 		return Identity{}, check
 	}
+	defer c.progress.start(description)()
 	response, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
 	if err != nil {
 		return Identity{}, readFailure("resource-refs", resource.ID,
@@ -379,4 +397,39 @@ func (c *sdkResourceChecker) readIdentity(
 		return Identity{}, resourceResult(check, Fail, "identity ID or owning tenant does not match")
 	}
 	return identity, resourceResult(check, Pass, "existing identity metadata matches")
+}
+
+func (c *sdkResourceChecker) reportProgress(detail string) {
+	if c.onProgress != nil {
+		c.onProgress(detail)
+	}
+}
+
+type resourceProgress struct {
+	mu     sync.Mutex
+	active map[string]int
+	notify func(string)
+}
+
+func (p *resourceProgress) start(resource string) func() {
+	if p == nil || p.notify == nil {
+		return func() {}
+	}
+	update := func(delta int) {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+
+		p.active[resource] += delta
+		if p.active[resource] == 0 {
+			delete(p.active, resource)
+		}
+		detail := ""
+		if len(p.active) > 0 {
+			detail = "reading " + strings.Join(slices.Sorted(maps.Keys(p.active)), ", ")
+		}
+		// Serialize delivery as well as state changes so an older snapshot cannot overwrite a newer one.
+		p.notify(detail)
+	}
+	update(1)
+	return func() { update(-1) }
 }

@@ -477,7 +477,7 @@ func TestExtensionsMiddleware_Run_NoListenCapabilities(t *testing.T) {
 			Id:           "test.ext",
 			DisplayName:  "Test Extension",
 			Version:      "1.0.0",
-			Capabilities: []extensions.CapabilityType{"some-other-capability"},
+			Capabilities: []extensions.CapabilityType{extensions.AddProviderCapability},
 		},
 		"test.generator": {
 			Id:           "test.generator",

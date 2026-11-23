@@ -135,8 +135,8 @@ func TestAddServicePayloadValidationBeforeSaving(t *testing.T) {
 func TestAddHostCommandDelegatesServiceWriteToRPC(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("fastapi\n"), 0o600))
-	prompts := &addPromptServer{hostProject: dir, layerName: "application"}
-	saved, output, host, err := runAddTest(t, "name: example\n", nil, prompts)
+	prompts := &addPromptServer{hostProject: dir}
+	saved, output, host, err := runAddTest(t, "name: example\n", []string{"--layer", "application"}, prompts)
 	require.NoError(t, err)
 	require.Len(t, host.project.requests, 1)
 	request := host.project.requests[0]
@@ -151,6 +151,7 @@ func TestAddHostCommandDelegatesServiceWriteToRPC(t *testing.T) {
 	require.Len(t, host.project.layerRequests, 1)
 	require.Equal(t, "infra.layers", host.project.layerRequests[0].Path)
 	require.Contains(t, output, "Added service")
+	require.Contains(t, output, "Run 'azd up' to apply these changes.\n")
 }
 
 func TestAddHostCommandRestoresProjectAfterServiceRPCFailure(t *testing.T) {
@@ -158,17 +159,16 @@ func TestAddHostCommandRestoresProjectAfterServiceRPCFailure(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("fastapi\n"), 0o600))
 	prompts := &addPromptServer{
 		hostProject: dir, serviceError: status.Error(codes.PermissionDenied, "service update denied"),
-		layerName: "application",
 	}
 	original := "name: example\n"
-	saved, output, host, err := runAddTest(t, original, nil, prompts)
+	saved, output, host, err := runAddTest(t, original, []string{"--layer", "application"}, prompts)
 	require.ErrorContains(t, err, "saving services.")
 	require.ErrorContains(t, err, "azure.yaml was left unchanged")
 	require.Len(t, host.project.requests, 1)
 	require.Equal(t, []string{"services", "infra"}, host.project.unsetRequests)
 	require.Zero(t, host.writes)
-	require.Empty(t, prompts.commands)
 	require.NotContains(t, output, "azure.yaml updated:")
+	require.NotContains(t, output, "to apply these changes")
 	require.Equal(t, original, saved, "the layer written before the failed service must be rolled back")
 }
 
@@ -177,18 +177,17 @@ func TestAddLayerRPCFailureStopsBeforeServiceWrites(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("fastapi\n"), 0o600))
 	prompts := &addPromptServer{
 		hostProject: dir, layerError: status.Error(codes.PermissionDenied, "layer update denied"),
-		layerName: "application",
 	}
 	original := "name: example\n"
-	saved, output, host, err := runAddTest(t, original, nil, prompts)
+	saved, output, host, err := runAddTest(t, original, []string{"--layer", "application"}, prompts)
 	require.ErrorContains(t, err, `saving infrastructure layer "application"`)
 	require.ErrorContains(t, err, "layer update denied")
 	require.Equal(t, original, saved)
 	require.Len(t, host.project.layerRequests, 1)
 	require.Empty(t, host.project.requests)
 	require.Zero(t, host.writes)
-	require.Empty(t, prompts.commands)
 	require.NotContains(t, output, "azure.yaml updated:")
+	require.NotContains(t, output, "to apply these changes")
 }
 
 func TestAddReadRPCFailureStopsBeforePromptsOrWrites(t *testing.T) {

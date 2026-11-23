@@ -38,6 +38,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -171,6 +172,42 @@ func newCommandConsole(
 }
 
 // Registers common Azd dependencies
+func newExtensionHost(
+	cmd *cobra.Command,
+	addProviders *grpcserver.AddProviderRegistry,
+	projectService azdext.ProjectServiceServer,
+	environmentService azdext.EnvironmentServiceServer,
+	promptService azdext.PromptServiceServer,
+	userConfigService azdext.UserConfigServiceServer,
+	deploymentService azdext.DeploymentServiceServer,
+	eventService azdext.EventServiceServer,
+	composeService v1beta.ComposeServiceServer,
+	workflowService azdext.WorkflowServiceServer,
+	extensionService azdext.ExtensionServiceServer,
+	serviceTargetService azdext.ServiceTargetServiceServer,
+	frameworkService azdext.FrameworkServiceServer,
+	containerService azdext.ContainerServiceServer,
+	accountService azdext.AccountServiceServer,
+	aiModelService azdext.AiModelServiceServer,
+	copilotService v1beta.CopilotServiceServer,
+	provisioningService azdext.ProvisioningServiceServer,
+	validationService azdext.ValidationServiceServer,
+	telemetryService azdext.TelemetryServiceServer,
+	commandResultService v1beta.CommandResultServiceServer,
+	infraGenerationService v1beta.InfraGenerationServiceServer,
+) *grpcserver.Server {
+	host := grpcserver.NewServer(
+		projectService, environmentService, promptService, userConfigService, deploymentService, eventService,
+		composeService, workflowService, extensionService, serviceTargetService, frameworkService, containerService,
+		accountService, aiModelService, copilotService, provisioningService, validationService, telemetryService,
+		commandResultService, infraGenerationService,
+	)
+	if cmd.Name() == "add" && cmd.Parent() == cmd.Root() {
+		host.SetAddProviderRegistry(addProviders)
+	}
+	return host
+}
+
 func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Core bootstrapping registrations
 	ioc.RegisterInstance(container, container)
@@ -1018,7 +1055,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// gRPC Server
-	container.MustRegisterScoped(grpcserver.NewServer)
+	container.MustRegisterScoped(grpcserver.NewAddProviderRegistry)
+	container.MustRegisterScoped(newExtensionHost)
 	container.MustRegisterScoped(grpcserver.NewProjectService)
 	container.MustRegisterScoped(grpcserver.NewEnvironmentService)
 	container.MustRegisterScoped(func(

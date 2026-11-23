@@ -66,33 +66,25 @@ func (w *Wizard) run(ctx context.Context) (*Result, error) {
 			return nil, fmt.Errorf("invalid resource configuration: %w", err)
 		}
 	}
-	category, err := w.choose(ctx, "What would you like to add?", []string{
-		"Database", "Host service", "AI", "Messaging", "Storage account", "Key Vault", "Existing resource",
-	})
+	itemType, err := w.selectItemType(ctx)
 	if err != nil {
 		return nil, err
 	}
 	result := &Result{Resources: w.Resources, Services: w.Services, Environment: map[string]string{}}
 	var name string
 	var definition resources.Definition
-	if category == "Existing resource" {
+	if itemType == ExistingResource {
 		name, definition, err = w.configureExisting(ctx, result.Environment)
-	} else {
-		var resourceType string
-		resourceType, err = w.selectResourceType(ctx, category)
+	} else if isHost(itemType) {
+		var service map[string]any
+		name, definition, service, err = w.configureHost(ctx, itemType)
 		if err == nil {
-			if isHost(resourceType) {
-				var service map[string]any
-				name, definition, service, err = w.configureHost(ctx, resourceType)
-				if err == nil {
-					w.Services[name] = service
-					result.HasService = true
-					definition.Uses, err = w.selectUses(ctx, name, resourceType)
-				}
-			} else {
-				name, definition, err = w.configureResource(ctx, resourceType, result.Environment)
-			}
+			w.Services[name] = service
+			result.HasService = true
+			definition.Uses, err = w.selectUses(ctx, name, itemType)
 		}
+	} else {
+		name, definition, err = w.configureResource(ctx, itemType, result.Environment)
 	}
 	if err != nil {
 		return nil, err
@@ -109,6 +101,22 @@ func (w *Wizard) run(ctx context.Context) (*Result, error) {
 	}
 	result.Name = name
 	return result, nil
+}
+
+func (w *Wizard) selectItemType(ctx context.Context) (string, error) {
+	if w.ItemType != "" {
+		return w.ItemType, nil
+	}
+	category, err := w.choose(ctx, "What would you like to add?", []string{
+		"Database", "Host service", "AI", "Messaging", "Storage account", "Key Vault", "Existing resource",
+	})
+	if err != nil {
+		return "", err
+	}
+	if category == "Existing resource" {
+		return ExistingResource, nil
+	}
+	return w.selectResourceType(ctx, category)
 }
 
 func (w *Wizard) selectResourceType(ctx context.Context, category string) (string, error) {

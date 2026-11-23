@@ -6,8 +6,6 @@ package add
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,13 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
-
-func filepath_join(parts ...string) string { return filepath.Join(parts...) }
-
-func writeFile(t *testing.T, path, content string) {
-	t.Helper()
-	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
-}
 
 // testConsole embeds *mockinput.MockConsole to provide programmable MultiSelect
 // and PromptFs, which MockConsole does not register helpers for.
@@ -307,74 +298,6 @@ func TestFillStorageDetails_MultiSelectError(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestSelectDatabase_FirstOption(t *testing.T) {
-	t.Parallel()
-	c := newTestConsole()
-	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).Respond(0)
-	r, err := selectDatabase(c, t.Context(), PromptOptions{})
-	require.NoError(t, err)
-	// The list is sorted by display name; the specific type is not important
-	// but it should be a db.* type.
-	assert.True(t, len(string(r.Type)) > 0)
-	assert.Contains(t, string(r.Type), "db.")
-}
-
-func TestSelectDatabase_Error(t *testing.T) {
-	t.Parallel()
-	c := newTestConsole()
-	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).
-		RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
-	_, err := selectDatabase(c, t.Context(), PromptOptions{})
-	require.Error(t, err)
-}
-
-func TestSelectHost_DefaultIsContainerApp(t *testing.T) {
-	t.Parallel()
-	c := newTestConsole()
-	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).Respond(0)
-	r, err := selectHost(c, t.Context(), PromptOptions{})
-	require.NoError(t, err)
-	// index 0 is the default (ContainerApp).
-	assert.Equal(t, project.ResourceTypeHostContainerApp, r.Type)
-}
-
-func TestSelectHost_Error(t *testing.T) {
-	t.Parallel()
-	c := newTestConsole()
-	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).
-		RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
-	_, err := selectHost(c, t.Context(), PromptOptions{})
-	require.Error(t, err)
-}
-
-func TestSelectMessaging_FirstOption(t *testing.T) {
-	t.Parallel()
-	c := newTestConsole()
-	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).Respond(0)
-	r, err := selectMessaging(c, t.Context(), PromptOptions{})
-	require.NoError(t, err)
-	assert.Contains(t, string(r.Type), "messaging.")
-}
-
-func TestSelectMessaging_Error(t *testing.T) {
-	t.Parallel()
-	c := newTestConsole()
-	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).
-		RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
-	_, err := selectMessaging(c, t.Context(), PromptOptions{})
-	require.Error(t, err)
-}
-
-func TestSelectAiType_SelectError(t *testing.T) {
-	t.Parallel()
-	c := newTestConsole()
-	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).
-		RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
-	a := &AddAction{}
-	_, err := a.selectAiType(c, t.Context(), PromptOptions{})
-	require.Error(t, err)
-}
-
 func TestConfigureExisting_PromptsForName(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
@@ -491,51 +414,6 @@ func TestFillUses_MultiSelectError(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestPromptUsedBy_ReturnsSelectedServices(t *testing.T) {
-	t.Parallel()
-	c := newTestConsole()
-	c.multiSelectFn = func(opts input.ConsoleOptions) ([]string, error) {
-		return []string{"web"}, nil
-	}
-	r := &project.ResourceConfig{
-		Type: project.ResourceTypeDbRedis,
-		Name: "redis",
-	}
-	opts := PromptOptions{PrjConfig: &project.ProjectConfig{
-		Resources: map[string]*project.ResourceConfig{
-			"web": {Type: project.ResourceTypeHostContainerApp, Name: "web"},
-		},
-	}}
-	got, err := promptUsedBy(t.Context(), r, c, opts)
-	require.NoError(t, err)
-	assert.Equal(t, []string{"web"}, got)
-}
-
-func TestPromptUsedBy_MultiSelectError(t *testing.T) {
-	t.Parallel()
-	c := newTestConsole()
-	c.multiSelectFn = func(opts input.ConsoleOptions) ([]string, error) {
-		return nil, assertErr()
-	}
-	r := &project.ResourceConfig{
-		Type: project.ResourceTypeDbRedis,
-		Name: "redis",
-	}
-	opts := PromptOptions{PrjConfig: &project.ProjectConfig{
-		Resources: map[string]*project.ResourceConfig{
-			"web": {Type: project.ResourceTypeHostContainerApp, Name: "web"},
-		},
-	}}
-	_, err := promptUsedBy(t.Context(), r, c, opts)
-	require.Error(t, err)
-}
-
-// testWriter is a simple bytes.Buffer-like type so we can read resulting
-// bytes written by previewWriter without importing bytes into test scope.
-type testWriter struct{ b []byte }
-
-func (w *testWriter) String() string { return string(w.b) }
-
 func TestConfigure_AiSearchDuplicate(t *testing.T) {
 	t.Parallel()
 	r := &project.ResourceConfig{Type: project.ResourceTypeAiSearch}
@@ -594,26 +472,6 @@ func TestFillUses_InteractiveTabAlign(t *testing.T) {
 	assert.NotEmpty(t, got.Uses)
 }
 
-func TestConfigureLive_ExistingReturnsAsIs(t *testing.T) {
-	t.Parallel()
-	a := &AddAction{}
-	r := &project.ResourceConfig{Existing: true, Name: "x", Type: project.ResourceTypeDbRedis}
-	c := newTestConsole()
-	got, err := a.ConfigureLive(t.Context(), r, c, PromptOptions{})
-	require.NoError(t, err)
-	assert.Same(t, r, got)
-}
-
-func TestConfigureLive_NonLiveTypePassthrough(t *testing.T) {
-	t.Parallel()
-	a := &AddAction{}
-	r := &project.ResourceConfig{Name: "x", Type: project.ResourceTypeDbRedis}
-	c := newTestConsole()
-	got, err := a.ConfigureLive(t.Context(), r, c, PromptOptions{})
-	require.NoError(t, err)
-	assert.Same(t, r, got)
-}
-
 func TestConfigure_UnknownTypePassthrough(t *testing.T) {
 	t.Parallel()
 	r := &project.ResourceConfig{Name: "x", Type: project.ResourceType("custom.thing")}
@@ -667,15 +525,6 @@ func TestFillUses_CrossHostSkipped(t *testing.T) {
 	got, err := fillUses(t.Context(), r, c, PromptOptions{PrjConfig: prj})
 	require.NoError(t, err)
 	assert.Empty(t, got.Uses)
-}
-
-func TestConfigureHost_UnsupportedHostType(t *testing.T) {
-	t.Parallel()
-	a := &AddAction{console: newTestConsole()}
-	c := newTestConsole()
-	_, _, err := a.configureHost(c, t.Context(), PromptOptions{}, project.ResourceType("not.a.host"))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported host type")
 }
 
 func containsCI(hay, needle string) bool {

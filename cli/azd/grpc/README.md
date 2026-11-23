@@ -12,8 +12,8 @@ The extension wire contracts have two public channels:
 The beta channel is a superset of stable. New additive contract fields,
 methods, and beta-only services can incubate there and graduate additively
 into stable after they have been validated. `ComposeService`,
-`CommandResultService`, `CopilotService`, and `InfraGenerationService` are currently
-beta-only. Removing or renumbering fields, changing field types, and reusing
+`CommandResultService`, `CopilotService`, `InfraGenerationService`, and
+`AddProviderService` are currently beta-only. Removing or renumbering fields, changing field types, and reusing
 reserved names or numbers remain breaking changes in either channel.
 
 `TelemetryService.ReportUsage` and `AccountService.GetCurrentPrincipal`
@@ -45,6 +45,10 @@ send structured messages. See the extension contract versioning guide for host
 routing and compatibility behavior.
 
 ## Generate contracts
+
+`AddProviderService.Stream` registers one list of add items per extension.
+The host invokes an item by ID on the stream that advertised it and can cancel
+the invocation without unregistering a responsive provider.
 
 `InfraGenerationService.Stream` is beta-only. It carries generation provider
 registration and generation requests/results. Extensions write their own files

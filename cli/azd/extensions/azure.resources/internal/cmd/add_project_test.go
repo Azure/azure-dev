@@ -235,7 +235,7 @@ func TestAddRejectsUnsupportedProjectShapes(t *testing.T) {
 	for _, test := range []struct {
 		name, source, layer string
 	}{
-		{name: "empty layer", source: "name: example\n"},
+		{name: "invalid automatic layer", source: "infra:\n  layers:\n    - name: ../outside\n      provider: resources\n"},
 		{name: "path traversal", source: "name: example\n", layer: "../outside"},
 		{name: "legacy", source: "resources:\n  cache:\n    type: db.redis\n", layer: "data"},
 		{name: "flat infra", source: "infra:\n  provider: bicep\n", layer: "data"},

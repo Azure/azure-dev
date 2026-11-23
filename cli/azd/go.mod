@@ -72,7 +72,6 @@ require (
 	github.com/otiai10/copy v1.14.1
 	github.com/psanford/memfs v0.0.0-20241019191636-4ef911798f9b
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
-	github.com/sergi/go-diff v1.4.0
 	github.com/sethvargo/go-retry v0.5.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10

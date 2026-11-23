@@ -248,8 +248,7 @@ func (c Config) Validate() error {
 			definition.Type != AppService &&
 			definition.Type != OpenAIModel &&
 			counts[definition.Type] > 1 {
-			return fmt.Errorf("the generator supports at most one %s resource per infrastructure entry",
-				definition.Type)
+			return DuplicateManagedResourceError(definition.Type)
 		}
 	}
 
@@ -283,6 +282,41 @@ func (c Config) Validate() error {
 		}
 	}
 	return validateGeneratedNames(c)
+}
+
+// DuplicateManagedResourceError explains the per-layer limit and how to extend the existing resource.
+func DuplicateManagedResourceError(resourceType string) error {
+	var name, guidance string
+	switch resourceType {
+	case EventHubs:
+		name = "an Event Hubs namespace"
+		guidance = "To add another hub, update its hubs list in azure.yaml."
+	case ServiceBus:
+		name = "a Service Bus namespace"
+		guidance = "To add another queue, update its queues list in azure.yaml."
+	case Storage:
+		name = "a storage account"
+		guidance = "To add another blob container, update its containers list in azure.yaml."
+	case AIProject:
+		name = "a Foundry project"
+		guidance = "To add another model, update its models list in azure.yaml."
+	case Mongo:
+		name = "a Cosmos DB for MongoDB resource"
+	case Cosmos:
+		name = "a Cosmos DB for NoSQL resource"
+	case Redis:
+		name = "a Redis resource"
+	case AISearch:
+		name = "an AI Search service"
+	case KeyVault:
+		name = "a Key Vault"
+	default:
+		return fmt.Errorf("this layer supports at most one managed resource of type %q", resourceType)
+	}
+	if guidance == "" {
+		guidance = "To create another one, define it in a separate infrastructure layer using Bicep or Terraform."
+	}
+	return fmt.Errorf("this layer already manages %s. %s", name, guidance)
 }
 
 func validateDefinition(name string, d Definition) error {

@@ -15,10 +15,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"azure.ai.content-understanding/internal/analysis"
 	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/cuclient"
+	"azure.ai.content-understanding/internal/exterrors"
 	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -235,6 +237,92 @@ func TestAnalyzerTestPartialFailureCancellationAndPublicationRace(t *testing.T) 
 			}
 		})
 	}
+}
+
+func TestAnalyzerTestFailuresIncludeSafeSampleReasons(t *testing.T) {
+	for _, format := range []string{"default", "json", "none"} {
+		for _, save := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/report=%t", format, save), func(t *testing.T) {
+				f := newAnalyzeFixture(t)
+				samples := []string{schemaFile(t, "unsupported"), schemaFile(t, "denied"), schemaFile(t, "ok")}
+				output := filepath.Join(testutil.TempDir(t), "report.json")
+				f.client.call = func(_ context.Context, request cuclient.AnalyzeRequest) (cuclient.AnalyzeResponse, error) {
+					body, err := io.ReadAll(request.Input.Body)
+					require.NoError(t, err)
+					switch string(body) {
+					case "unsupported":
+						return cuclient.AnalyzeResponse{}, &cuclient.Error{
+							Kind: cuclient.ErrorService, Code: "InvalidRequest",
+							Message: "Unsupported document format.\n" +
+								"See https://user:private-password@example.com/?sig=private-signature\n" +
+								"Authorization: Bearer private-token\ncontent: private-document",
+						}
+					case "denied":
+						return cuclient.AnalyzeResponse{}, &cuclient.Error{
+							Kind: cuclient.ErrorAuthentication, Code: "Forbidden",
+							Message: "Access to the analyzer was denied.",
+						}
+					}
+					return cuclient.AnalyzeResponse{JSON: json.RawMessage(analyzeEnvelope)}, nil
+				}
+				args := append([]string{"invoice"}, samples...)
+				args = append(args, "-o", format)
+				if save {
+					args = append(args, "--output-file", output)
+				}
+				stdout, err := executeAnalyzerTest(f, t.Context(), args...)
+				require.Error(t, err)
+				service, ok := errors.AsType[*azdext.ServiceError](err)
+				require.True(t, ok)
+				assert.Equal(t, "analyzer_test_failed", service.ErrorCode)
+				assert.Contains(t, service.Message, "2 analyzer test sample(s) failed.")
+				assert.Contains(t, service.Message, "Sample 1: Unsupported document format.")
+				assert.Contains(t, service.Message, "Sample 2: Access to the analyzer was denied.")
+				assert.NotContains(t, service.Message, "Sample 3:")
+				assert.NotContains(t, service.Message, "private-")
+				assert.NotContains(t, service.Message, "\x1b")
+				assert.LessOrEqual(t, len(service.Message), exterrors.MaxDiagnosticBytes)
+				assert.Contains(t, service.Suggestion, "--output-file")
+				assert.Empty(t, stdout)
+				assert.Equal(t, 1, f.closes)
+				if save {
+					body, readErr := os.ReadFile(output) // #nosec G304 -- Reads only the test's private report.
+					require.NoError(t, readErr)
+					var report analysis.TestReport
+					require.NoError(t, json.Unmarshal(body, &report))
+					assert.Equal(t, 2, report.Summary.Failed)
+					assert.Equal(t, 1, report.Summary.OK)
+					assert.Contains(t, report.Samples[0].Error, "Unsupported document format.")
+					assert.NotContains(t, string(body), "private-")
+				}
+			})
+		}
+	}
+}
+
+func TestAnalyzerTestFailureDiagnosticsAreBounded(t *testing.T) {
+	f := newAnalyzeFixture(t)
+	var samples []string
+	for range 12 {
+		samples = append(samples, schemaFile(t, "sample"))
+	}
+	f.client.call = func(context.Context, cuclient.AnalyzeRequest) (cuclient.AnalyzeResponse, error) {
+		return cuclient.AnalyzeResponse{}, &cuclient.Error{
+			Kind: cuclient.ErrorService, Code: "InvalidRequest",
+			Message: "Unsupported document format. " + strings.Repeat("\u754c", 160),
+		}
+	}
+	stdout, err := executeAnalyzerTest(f, t.Context(), append([]string{"invoice"}, samples...)...)
+	require.Error(t, err)
+	service, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	assert.Contains(t, service.Message, "12 analyzer test sample(s) failed.")
+	assert.Contains(t, service.Message, "Sample 1: Unsupported document format.")
+	assert.Contains(t, service.Message, "Additional diagnostics omitted.")
+	assert.NotContains(t, service.Message, "Diagnostic omitted because it exceeds")
+	assert.LessOrEqual(t, len(service.Message), exterrors.MaxDiagnosticBytes)
+	assert.True(t, utf8.ValidString(service.Message))
+	assert.Empty(t, stdout)
 }
 
 func TestAnalyzerTestWirePipelineForBothAPIVersions(t *testing.T) {

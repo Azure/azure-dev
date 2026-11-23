@@ -243,6 +243,58 @@ func TestCopyInputValidationAndFailedResult(t *testing.T) {
 	assert.Contains(t, domain.Suggestion, "destination resource")
 }
 
+func TestCopyFailuresPreserveServiceDiagnostics(t *testing.T) {
+	for _, test := range []struct {
+		name, stage, serviceCode, expectedCode, suggestion string
+		kind                                               cuclient.ErrorKind
+		status                                             int
+	}{
+		{"operation", "destination:copy", "analyzer_operation_failed", "copy_failed",
+			"destination resource", cuclient.ErrorService, 200},
+		{"source authorization", "source:get:source", "Forbidden", "copy_source_authorization_failed",
+			"source resource", cuclient.ErrorAuthentication, 403},
+		{"destination authorization", "destination:get:destination", "Forbidden", "copy_destination_authorization_failed",
+			"destination resource", cuclient.ErrorAuthentication, 403},
+		{"grant authorization", "source:grant", "Forbidden", "copy_source_authorization_failed",
+			"source resource", cuclient.ErrorAuthentication, 403},
+		{"copy authorization", "destination:copy", "Forbidden", "copy_destination_authorization_failed",
+			"expired", cuclient.ErrorAuthentication, 403},
+		{"conflict", "destination:copy", "Conflict", "copy_destination_exists",
+			"new versioned destination ID", cuclient.ErrorConflict, 409},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source, destination, _ := copyFixture()
+			original := &cuclient.Error{
+				Kind: test.kind, Code: test.serviceCode, StatusCode: test.status,
+				Message: "Service reason: The requested operation is not permitted.\n" +
+					"See https://user:private-password@example.com/?sig=private-signature#private-fragment\n" +
+					"Authorization: Bearer private-token\ncontent: private-document",
+				Cause: errors.New("private-unstructured-cause"),
+			}
+			source.failures[test.stage] = original
+			_, err := Copy(t.Context(), source, destination, crossRequest())
+			require.Error(t, err)
+			domain, ok := errors.AsType[*cuclient.Error](err)
+			require.True(t, ok)
+			assert.Equal(t, test.expectedCode, domain.Code)
+			assert.Equal(t, test.kind, domain.Kind)
+			assert.Equal(t, test.status, domain.StatusCode)
+			assert.Contains(t, domain.Message, "The requested operation is not permitted.")
+			assert.Contains(t, domain.Suggestion, test.suggestion)
+			assert.NotContains(t, domain.Message, "private-")
+			assert.NotContains(t, domain.Message, "\x1b")
+			assert.ErrorIs(t, err, original)
+		})
+	}
+}
+
+func TestCopyFailureDoesNotExposeUnstructuredCause(t *testing.T) {
+	original := errors.New("private-unstructured-cause")
+	err := failedCopy(original)
+	assert.Equal(t, "The copied analyzer has failed status at the destination.", err.Error())
+	assert.ErrorIs(t, err, original)
+}
+
 func TestCustomDependenciesWireShapesAndInvalidDefinitions(t *testing.T) {
 	for _, raw := range []string{
 		`{}`, `{"config":null}`, `{"config":{}}`, `{"config":{"contentCategories":null}}`,

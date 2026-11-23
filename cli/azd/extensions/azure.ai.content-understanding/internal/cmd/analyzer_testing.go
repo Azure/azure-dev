@@ -148,8 +148,19 @@ func runAnalyzerTest(
 		return runErr
 	}
 	if report.Summary.Failed != 0 {
+		message := fmt.Sprintf("%d analyzer test sample(s) failed.", report.Summary.Failed)
+		for i, sample := range report.Samples {
+			if sample.Status != "error" {
+				continue
+			}
+			var truncated bool
+			message, truncated = exterrors.AppendDiagnostic(message, fmt.Sprintf("Sample %d: %s", i+1, sample.Error))
+			if truncated {
+				break
+			}
+		}
 		return &cuclient.Error{Kind: cuclient.ErrorService, Code: "analyzer_test_failed",
-			Message:    fmt.Sprintf("%d analyzer test sample(s) failed.", report.Summary.Failed),
+			Message:    message,
 			Suggestion: "Use --output-file to retain the complete per-sample report."}
 	}
 	return writeServiceResult(cmd, extCtx.OutputFormat, report)

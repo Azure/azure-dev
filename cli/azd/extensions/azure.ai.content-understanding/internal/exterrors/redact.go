@@ -6,6 +6,7 @@ package exterrors
 import (
 	"errors"
 	"regexp"
+	"unicode/utf8"
 
 	"azure.ai.content-understanding/internal/cuclient"
 
@@ -21,6 +22,24 @@ var diagnosticCode = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
 // Unknown unstructured errors must still use FromError's fixed fallback message.
 func Redact(message string) string {
 	return cuclient.RedactDiagnostic(message)
+}
+
+// AppendDiagnostic adds safe diagnostic text without losing the summary to the size limit.
+func AppendDiagnostic(message, diagnostic string) (string, bool) {
+	message, diagnostic = Redact(message), Redact(diagnostic)
+	if diagnostic == "" {
+		return message, false
+	}
+	combined := message + "\n" + diagnostic
+	if len(combined) <= MaxDiagnosticBytes {
+		return combined, false
+	}
+	const omitted = "\nAdditional diagnostics omitted."
+	end := MaxDiagnosticBytes - len(omitted)
+	for !utf8.RuneStart(combined[end]) {
+		end--
+	}
+	return combined[:end] + omitted, true
 }
 
 func safeCode(value string) string {

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"azure.ai.content-understanding/internal/cuclient"
+	"azure.ai.content-understanding/internal/exterrors"
 )
 
 type Request struct {
@@ -125,12 +126,11 @@ func Copy(
 }
 
 func failedCopy(cause error) error {
-	return &cuclient.Error{
+	return copyErrorWithCause(&cuclient.Error{
 		Kind: cuclient.ErrorService, Code: "copy_failed",
 		Message:    "The copied analyzer has failed status at the destination.",
 		Suggestion: "Inspect the analyzer at the destination resource before explicit deletion or retrying with a new ID.",
-		Cause:      cause,
-	}
+	}, cause)
 }
 
 func missing(err error) bool {
@@ -139,12 +139,11 @@ func missing(err error) bool {
 }
 
 func destinationExists(cause error) error {
-	return &cuclient.Error{
+	return copyErrorWithCause(&cuclient.Error{
 		Kind: cuclient.ErrorConflict, Code: "copy_destination_exists", StatusCode: 409,
 		Message:    "The destination analyzer already exists; nothing was replaced.",
 		Suggestion: "Use a new versioned destination ID, or inspect and explicitly delete it at the destination resource.",
-		Cause:      cause,
-	}
+	}, cause)
 }
 
 func scopedError(err error, side string, grant bool) error {
@@ -157,12 +156,23 @@ func scopedError(err error, side string, grant bool) error {
 	if grant {
 		suggestion += " The copy grant may have expired; retry the copy command to request a fresh authorization."
 	}
-	return &cuclient.Error{
+	return copyErrorWithCause(&cuclient.Error{
 		Kind: cuclient.ErrorAuthentication, Code: "copy_" + side + "_authorization_failed",
 		StatusCode: domain.StatusCode,
 		Message:    "The identity could not authorize the analyzer copy on the " + side + " resource.",
-		Suggestion: suggestion, Cause: err,
+		Suggestion: suggestion,
+	}, err)
+}
+
+func copyErrorWithCause(result *cuclient.Error, cause error) error {
+	result.Cause = cause
+	if domain, ok := errors.AsType[*cuclient.Error](cause); ok {
+		result.Message, _ = exterrors.AppendDiagnostic(result.Message, domain.Message)
+		if result.StatusCode == 0 {
+			result.StatusCode = domain.StatusCode
+		}
 	}
+	return result
 }
 
 func customDependencies(raw json.RawMessage) ([]string, error) {

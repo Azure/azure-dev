@@ -41,8 +41,8 @@ func (t copyWireTransport) Do(request *http.Request) (*http.Response, error) { r
 
 func TestAnalyzerCopyCommandThroughARMAndCUPipelines(t *testing.T) {
 	for _, version := range []string{cuclient.DefaultAPIVersion, cuclient.PreviewAPIVersion} {
-		for _, failed := range []bool{false, true} {
-			t.Run(version+map[bool]string{false: "/ready", true: "/failed"}[failed], func(t *testing.T) {
+		for _, outcome := range []string{"ready", "failed result", "failed operation"} {
+			t.Run(version+"/"+outcome, func(t *testing.T) {
 				_ = newAnalyzerFixture(t)
 				credential := &copyWireCredential{}
 				sourceID := "/subscriptions/source-sub/resourceGroups/source-group" +
@@ -99,12 +99,19 @@ func TestAnalyzerCopyCommandThroughARMAndCUPipelines(t *testing.T) {
 						case "GET target.services.ai.azure.com/contentunderstanding/analyzers/" +
 							"destination/operations/copy-operation":
 							status := "ready"
-							if failed {
+							if outcome == "failed result" {
 								status = "failed"
 							}
 							body = `{"id":"copy-operation","status":"Succeeded",` +
 								`"result":{"analyzerId":"destination","status":"` + status +
 								`","warnings":[{"code":"Notice","message":"visible warning"}],"unknown":9007199254740993}}`
+							if outcome == "failed operation" {
+								body = `{"id":"copy-operation","status":"Failed","error":{` +
+									`"message":"The analyzer could not be copied.","details":[{` +
+									`"code":"ModelNotSupported",` +
+									`"message":"Provided model 'gpt-6-luna' is not supported by this analyzer.\n` +
+									`Authorization: Bearer private-wire-token\ncontent: private-document"}]}}`
+							}
 						default:
 							t.Errorf("unexpected copy pipeline request: %s", action)
 							result.StatusCode = 500
@@ -138,9 +145,19 @@ func TestAnalyzerCopyCommandThroughARMAndCUPipelines(t *testing.T) {
 				root.SetArgs([]string{"analyzer", "copy", "source", "destination",
 					"--source-resource", sourceID, "--destination-resource", targetID, "--api-version", version})
 				err = root.ExecuteContext(t.Context())
-				if failed {
+				if outcome != "ready" {
 					require.Error(t, err)
 					assert.Contains(t, err.Error(), "destination")
+					assert.NotContains(t, err.Error(), "private")
+					if outcome == "failed operation" {
+						var service *azdext.ServiceError
+						require.ErrorAs(t, err, &service)
+						assert.Equal(t, "copy_failed", service.ErrorCode)
+						assert.Contains(t, service.Message, "ModelNotSupported")
+						assert.Contains(t, service.Message, "gpt-6-luna")
+						assert.Contains(t, service.Message, "is not supported by this analyzer")
+						assert.Contains(t, service.Message, "The analyzer could not be copied.")
+					}
 					assert.Empty(t, stdout.String())
 				} else {
 					require.NoError(t, err)

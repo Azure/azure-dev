@@ -404,6 +404,11 @@ azd ai cu analyzer test \
 An analyzer test sends local samples to the service and reports
 field population and confidence, not extraction accuracy. Its concurrency
 defaults to 4 and accepts 1-16. Its `--dry-run` mode is fully offline.
+If samples fail, the command returns a nonzero exit status and includes sanitized
+per-sample failure reasons in the terminal error, numbered in report order.
+Long diagnostics are shortened with an explicit omission notice. Use
+`--output-file` to retain the complete structured report, including each sample's
+sanitized diagnostic.
 
 ## Manage analyzers and defaults
 
@@ -434,6 +439,8 @@ as account names, ARM resource IDs, or HTTPS endpoints. Use the corresponding
 subscription and resource-group flags to narrow discovery. Missing custom
 analyzer dependencies must be copied explicitly. Copy never replaces an
 existing destination.
+Copy failures retain the service's sanitized explanation alongside the copy
+context and recovery guidance, including authorization and destination conflicts.
 
 Delete the copied analyzer when it is no longer needed:
 

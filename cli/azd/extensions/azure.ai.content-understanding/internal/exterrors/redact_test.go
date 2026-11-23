@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"azure.ai.content-understanding/internal/cuclient"
 
@@ -73,6 +74,43 @@ func TestRedactionAtStructuredErrorBoundary(t *testing.T) {
 		body, err := json.Marshal(azdext.WrapError(safe))
 		require.NoError(t, err)
 		assert.NotContains(t, string(body), "private")
+	}
+}
+
+func TestAppendDiagnostic(t *testing.T) {
+	const summary = "2 analyzer test sample(s) failed."
+	message, truncated := AppendDiagnostic(summary, "")
+	assert.Equal(t, summary, message)
+	assert.False(t, truncated)
+
+	message, truncated = AppendDiagnostic(summary,
+		"Unsupported document format.\n"+
+			"See https://user:private-password@example.com/?sig=private-signature#private-fragment\n"+
+			"Authorization: Bearer private-token\ncontent: private-document")
+	assert.False(t, truncated)
+	assert.Contains(t, message, summary)
+	assert.Contains(t, message, "Unsupported document format.")
+	assert.NotContains(t, message, "private-")
+	assert.Equal(t, message, Redact(message))
+
+	for _, size := range []int{MaxDiagnosticBytes - 1, MaxDiagnosticBytes, MaxDiagnosticBytes + 1} {
+		message, truncated = AppendDiagnostic(summary, strings.Repeat("x", size-len(summary)-1))
+		assert.Equal(t, size > MaxDiagnosticBytes, truncated)
+		assert.Len(t, message, min(size, MaxDiagnosticBytes))
+		assert.Contains(t, message, summary)
+	}
+
+	for _, diagnostic := range []string{
+		strings.Repeat("x", MaxDiagnosticBytes),
+		strings.Repeat("\u754c", MaxDiagnosticBytes/3),
+	} {
+		message, truncated = AppendDiagnostic(summary, diagnostic)
+		assert.True(t, truncated)
+		assert.True(t, utf8.ValidString(message))
+		assert.LessOrEqual(t, len(message), MaxDiagnosticBytes)
+		assert.Contains(t, message, summary)
+		assert.Contains(t, message, "Additional diagnostics omitted.")
+		assert.Equal(t, message, Redact(message))
 	}
 }
 

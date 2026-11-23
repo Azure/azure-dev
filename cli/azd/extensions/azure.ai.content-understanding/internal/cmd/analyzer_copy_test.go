@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -300,4 +301,56 @@ func TestAnalyzerCopyUnknownErrorRedaction(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, stdout)
 	assert.NotContains(t, err.Error(), "secret")
+}
+
+func TestAnalyzerCopyFailureDiagnosticsReachHost(t *testing.T) {
+	for _, test := range []struct {
+		name, serviceCode, expectedCode, context, suggestion string
+		kind                                                 cuclient.ErrorKind
+		status                                               int
+	}{
+		{"operation", "analyzer_operation_failed", "copy_failed", "failed status at the destination",
+			"destination resource", cuclient.ErrorService, 200},
+		{"authorization", "Forbidden", "copy_destination_authorization_failed", "could not authorize",
+			"Cognitive Services User", cuclient.ErrorAuthentication, 403},
+		{"conflict", "Conflict", "copy_destination_exists", "already exists",
+			"new versioned destination ID", cuclient.ErrorConflict, 409},
+	} {
+		for _, format := range []string{"default", "json", "none"} {
+			t.Run(test.name+"/"+format, func(t *testing.T) {
+				f := newCommandCopyFixture(t)
+				f.source.copyErr = &cuclient.Error{
+					Kind: test.kind, Code: test.serviceCode, StatusCode: test.status,
+					Message: "Service reason: The requested operation is not permitted.\n" +
+						"See https://user:private-password@example.com/?sig=private-signature#private-fragment\n" +
+						"Authorization: Bearer private-token\ncontent: private-document",
+					Cause: errors.New("private-unstructured-cause"),
+				}
+				stdout, err := f.execute(t.Context(), "source", "destination", "-o", format)
+				require.Error(t, err)
+				if test.kind == cuclient.ErrorAuthentication {
+					local, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					assert.Equal(t, test.expectedCode, local.Code)
+					assert.Equal(t, azdext.LocalErrorCategoryAuth, local.Category)
+					assert.Contains(t, local.Suggestion, test.suggestion)
+				} else {
+					service, ok := errors.AsType[*azdext.ServiceError](err)
+					require.True(t, ok)
+					assert.Equal(t, test.expectedCode, service.ErrorCode)
+					assert.Equal(t, test.status, service.StatusCode)
+					assert.Contains(t, service.Suggestion, test.suggestion)
+				}
+				assert.Contains(t, err.Error(), test.context)
+				assert.Contains(t, err.Error(), "The requested operation is not permitted.")
+				wire, marshalErr := json.Marshal(azdext.WrapError(err))
+				require.NoError(t, marshalErr)
+				assert.Contains(t, string(wire), "The requested operation is not permitted.")
+				assert.NotContains(t, string(wire), "private-")
+				assert.NotContains(t, err.Error(), "\x1b")
+				assert.Empty(t, stdout)
+				assert.Equal(t, 1, f.closes)
+			})
+		}
+	}
 }

@@ -106,6 +106,8 @@ func TestRecordedAnalyzerFieldReport(t *testing.T) {
 						assert.Equal(t, 43*time.Second, time.Since(start), "all 43 Running polls retain their intervals")
 						if test.failed {
 							require.ErrorContains(t, runErr, "1 analyzer test sample(s) failed")
+							require.ErrorContains(t, runErr, "Unsupported document format.")
+							assert.NotContains(t, runErr.Error(), "synthetic-private-message-not-for-field-report")
 							failure, err := json.Marshal(map[string]any{
 								"analyzerId": "prebuilt-invoice",
 								"summary": map[string]any{

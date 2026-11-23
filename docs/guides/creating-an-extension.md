@@ -75,7 +75,7 @@ If your extension creates role assignments, use the stable [`Account().GetCurren
 
 Extensions that resolve local Foundry configuration `$ref` files should use [`foundry.ResolveFileRefs`](../../cli/azd/pkg/foundry/includes.go). Each referenced file must contain exactly one YAML or JSON object; additional documents, trailing content, arrays, and scalars are rejected. Resolution retains YAML value types, aliases, and sibling overlays. Pass only the selected configuration when unrelated references should remain unopened. Extensions must consume an SDK release containing this validation before their binaries enforce it.
 
-The default scaffolds and SDK `EventManager` use the stable `v1` contract.
+The generated Go scaffold currently pins SDK v1.30.0 and uses the frozen legacy bridge. Before using the stable `v1` APIs described here, upgrade its `github.com/azure/azure-dev/cli/azd` dependency to a published SDK v1.34.1 or later that contains the APIs you need, run `go mod tidy`, and run `azd x build` to rebuild and reinstall. Keep `requiredAzdVersion` at `>=1.34.1` or raise it for APIs that need a newer host. With the updated SDK, `EventManager` uses stable `v1`.
 Go extensions can return structured messages from service
 `predeploy`/`postdeploy` handlers with
 `ExtensionHost.WithServiceEventResponseHandler` (azd 1.39.0 or later). See

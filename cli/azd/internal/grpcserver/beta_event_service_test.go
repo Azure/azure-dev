@@ -1542,6 +1542,7 @@ func newServerWithEventService(eventService azdext.EventServiceServer) *Server {
 		azdext.UnimplementedValidationServiceServer{},
 		azdext.UnimplementedTelemetryServiceServer{},
 		v1beta.UnimplementedCommandResultServiceServer{},
+		v1beta.UnimplementedInfraGenerationServiceServer{},
 	)
 }
 

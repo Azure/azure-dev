@@ -54,7 +54,7 @@ func testOptions(t *testing.T, name string) *azdext.ProvisioningOptions {
 
 func TestInitializePreservesOptionsAndOwnsFiles(t *testing.T) {
 	executor := &testExecutor{}
-	provider := &Provider{executionProvider: executor, generator: &resources.Generator{}}
+	provider := &Provider{executionProvider: executor}
 	options := testOptions(t, "data")
 	original := proto.Clone(options)
 	require.NoError(t, provider.Initialize(t.Context(), t.TempDir(), options))
@@ -75,7 +75,7 @@ func TestInitializePreservesOptionsAndOwnsFiles(t *testing.T) {
 func TestInitializeFailureRemovesGeneratedFiles(t *testing.T) {
 	expected := errors.New("compilation failed")
 	executor := &testExecutor{initializeErr: expected}
-	provider := &Provider{executionProvider: executor, generator: &resources.Generator{}}
+	provider := &Provider{executionProvider: executor}
 	err := provider.Initialize(t.Context(), t.TempDir(), testOptions(t, "data"))
 	require.ErrorIs(t, err, expected)
 	_, err = os.Stat(executor.options.Path)
@@ -85,7 +85,7 @@ func TestInitializeFailureRemovesGeneratedFiles(t *testing.T) {
 
 func TestCloseFailureRetainsFilesForRetry(t *testing.T) {
 	executor := &testExecutor{}
-	provider := &Provider{executionProvider: executor, generator: &resources.Generator{}}
+	provider := &Provider{executionProvider: executor}
 	require.NoError(t, provider.Initialize(t.Context(), t.TempDir(), testOptions(t, "data")))
 	t.Cleanup(func() { executor.closeErr = nil; require.NoError(t, provider.Close()) })
 	executor.closeErr = errors.New("executor still busy")
@@ -99,7 +99,7 @@ func TestCloseFailureRetainsFilesForRetry(t *testing.T) {
 func TestEnvironmentSetupFailureRemovesGeneratedFiles(t *testing.T) {
 	expected := errors.New("interactive input required")
 	executor := &testExecutor{ensureEnvErr: expected}
-	provider := &Provider{executionProvider: executor, generator: &resources.Generator{}}
+	provider := &Provider{executionProvider: executor}
 	require.ErrorIs(t, provider.Initialize(t.Context(), t.TempDir(), testOptions(t, "data")), expected)
 	require.True(t, executor.ensured)
 	require.Empty(t, provider.tempDir)
@@ -107,8 +107,8 @@ func TestEnvironmentSetupFailureRemovesGeneratedFiles(t *testing.T) {
 }
 
 func TestSameProviderInstancesAreIndependent(t *testing.T) {
-	first := &Provider{executionProvider: &testExecutor{}, generator: &resources.Generator{}}
-	second := &Provider{executionProvider: &testExecutor{}, generator: &resources.Generator{}}
+	first := &Provider{executionProvider: &testExecutor{}}
+	second := &Provider{executionProvider: &testExecutor{}}
 	require.NoError(t, first.Initialize(t.Context(), t.TempDir(), testOptions(t, "data")))
 	t.Cleanup(func() { require.NoError(t, first.Close()) })
 	require.NoError(t, second.Initialize(t.Context(), t.TempDir(), testOptions(t, "api")))

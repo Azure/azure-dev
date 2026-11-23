@@ -51,6 +51,10 @@ func TestRegisterBetaServicesUsesGeneratedBetaDescriptorsAndServers(t *testing.T
 	require.Same(t, &v1beta.ComposeService_ServiceDesc, registrar.services[composeService])
 	require.IsType(t, v1beta.UnimplementedComposeServiceServer{}, registrar.implementations[composeService])
 
+	const generationService = "azd.extensions.v1beta.InfraGenerationService"
+	require.Same(t, &v1beta.InfraGenerationService_ServiceDesc, registrar.services[generationService])
+	require.IsType(t, v1beta.UnimplementedInfraGenerationServiceServer{}, registrar.implementations[generationService])
+
 	const telemetryService = "azd.extensions.v1beta.TelemetryService"
 	require.Same(t, &v1beta.TelemetryService_ServiceDesc, registrar.services[telemetryService])
 	require.IsType(t, &betaTelemetryServiceAdapter{}, registrar.implementations[telemetryService])
@@ -368,24 +372,25 @@ func detailTypeURLs(st *status.Status) []string {
 
 func stableServiceImplementations() map[BetaService]any {
 	return map[BetaService]any{
-		BetaAccountService:       v1.UnimplementedAccountServiceServer{},
-		BetaAiModelService:       v1.UnimplementedAiModelServiceServer{},
-		BetaComposeService:       v1beta.UnimplementedComposeServiceServer{},
-		BetaContainerService:     v1.UnimplementedContainerServiceServer{},
-		BetaCopilotService:       v1beta.UnimplementedCopilotServiceServer{},
-		BetaDeploymentService:    v1.UnimplementedDeploymentServiceServer{},
-		BetaEnvironmentService:   v1.UnimplementedEnvironmentServiceServer{},
-		BetaEventService:         v1.UnimplementedEventServiceServer{},
-		BetaExtensionService:     v1.UnimplementedExtensionServiceServer{},
-		BetaCommandResultService: v1beta.UnimplementedCommandResultServiceServer{},
-		BetaFrameworkService:     v1.UnimplementedFrameworkServiceServer{},
-		BetaProjectService:       v1.UnimplementedProjectServiceServer{},
-		BetaPromptService:        v1.UnimplementedPromptServiceServer{},
-		BetaProvisioningService:  v1.UnimplementedProvisioningServiceServer{},
-		BetaServiceTargetService: v1.UnimplementedServiceTargetServiceServer{},
-		BetaTelemetryService:     v1.UnimplementedTelemetryServiceServer{},
-		BetaUserConfigService:    v1.UnimplementedUserConfigServiceServer{},
-		BetaValidationService:    v1.UnimplementedValidationServiceServer{},
-		BetaWorkflowService:      v1.UnimplementedWorkflowServiceServer{},
+		BetaAccountService:         v1.UnimplementedAccountServiceServer{},
+		BetaAiModelService:         v1.UnimplementedAiModelServiceServer{},
+		BetaComposeService:         v1beta.UnimplementedComposeServiceServer{},
+		BetaContainerService:       v1.UnimplementedContainerServiceServer{},
+		BetaCopilotService:         v1beta.UnimplementedCopilotServiceServer{},
+		BetaDeploymentService:      v1.UnimplementedDeploymentServiceServer{},
+		BetaEnvironmentService:     v1.UnimplementedEnvironmentServiceServer{},
+		BetaEventService:           v1.UnimplementedEventServiceServer{},
+		BetaExtensionService:       v1.UnimplementedExtensionServiceServer{},
+		BetaCommandResultService:   v1beta.UnimplementedCommandResultServiceServer{},
+		BetaInfraGenerationService: v1beta.UnimplementedInfraGenerationServiceServer{},
+		BetaFrameworkService:       v1.UnimplementedFrameworkServiceServer{},
+		BetaProjectService:         v1.UnimplementedProjectServiceServer{},
+		BetaPromptService:          v1.UnimplementedPromptServiceServer{},
+		BetaProvisioningService:    v1.UnimplementedProvisioningServiceServer{},
+		BetaServiceTargetService:   v1.UnimplementedServiceTargetServiceServer{},
+		BetaTelemetryService:       v1.UnimplementedTelemetryServiceServer{},
+		BetaUserConfigService:      v1.UnimplementedUserConfigServiceServer{},
+		BetaValidationService:      v1.UnimplementedValidationServiceServer{},
+		BetaWorkflowService:        v1.UnimplementedWorkflowServiceServer{},
 	}
 }

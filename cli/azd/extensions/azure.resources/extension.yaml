@@ -11,7 +11,11 @@ capabilities:
     - custom-commands
     - metadata
     - provisioning-provider
+    - infra-generation-provider
 providers:
     - name: resources
       type: provisioning-provider
       description: Generate and provision Azure resources using Bicep.
+    - name: resources
+      type: infra-generation-provider
+      description: Export resource declarations to Bicep and replace the infrastructure entry.

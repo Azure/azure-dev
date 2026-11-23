@@ -72,6 +72,7 @@ func newExtensionsMiddlewareTestServer() *grpcserver.Server {
 		azdext.UnimplementedValidationServiceServer{},
 		azdext.UnimplementedTelemetryServiceServer{},
 		contracts.UnimplementedCommandResultServiceServer{},
+		contracts.UnimplementedInfraGenerationServiceServer{},
 	)
 }
 
@@ -184,6 +185,56 @@ func TestExtensionsMiddleware_Run_ContinuesAfterExtensionStartFailure(t *testing
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 1, *calls)
+}
+
+func TestStartAndWaitExtension_StopsListenerThatNeverBecomesReady(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	extensionPath := filepath.Join("extensions", "test-ext", "bin", "test-ext")
+	fullPath := filepath.Join(configDir, extensionPath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
+	require.NoError(t, os.WriteFile(fullPath, []byte("test"), 0o600))
+
+	runner := &listenerCancellationCommandRunner{
+		started: make(chan struct{}),
+		stopped: make(chan struct{}),
+	}
+	extension := &extensions.Extension{
+		Id:   "test-ext",
+		Path: extensionPath,
+	}
+	serverInfo := &grpcserver.ServerInfo{
+		Address:    "127.0.0.1:1234",
+		SigningKey: []byte("01234567890123456789012345678901"),
+	}
+
+	// The readiness deadline comes from this parent, standing in for AZD_EXT_TIMEOUT.
+	readyParentCtx, cancelReady := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancelReady()
+
+	processCtx, cancelProcesses := context.WithCancel(context.WithoutCancel(t.Context()))
+	defer cancelProcesses()
+
+	process, err := startAndWaitExtension(
+		readyParentCtx,
+		processCtx,
+		extension,
+		extensions.NewRunner(runner),
+		serverInfo,
+		extensionStartOptions{},
+	)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.NotNil(t, process)
+
+	select {
+	case <-process.done:
+	default:
+		t.Fatal("listener was still running after it failed to become ready")
+	}
+
+	// Only the failed listener is stopped. Other extensions share processCtx and must keep running.
+	require.NoError(t, processCtx.Err())
 }
 
 func TestShutdownExtensionProcesses_AutomaticallyCancelsUnresponsiveListener(t *testing.T) {

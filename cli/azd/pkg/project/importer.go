@@ -448,6 +448,8 @@ func pathHasModule(path, module string) (bool, error) {
 // GenerateAllInfrastructure returns a file system containing all infrastructure for the project,
 // rooted at the project directory.
 func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
+	// This function won't work for custom extension providers. Look
+	// at [InfraGenerationManager] for extension infra generation.
 	for _, entry := range projectConfig.InfrastructureConfigs() {
 		if entry.Provider != provisioning.NotSpecified &&
 			!slices.Contains(provisioning.BuiltInProviderKinds(), entry.Provider) {

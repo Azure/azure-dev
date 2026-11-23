@@ -54,6 +54,9 @@ func NewFoundryMemoryStoreClient(
 			azsdk.NewMsCorrelationPolicy(),
 			azsdk.NewUserAgentPolicy(useragent.Default()),
 		},
+		PerRetryPolicies: []policy.Policy{
+			exterrors.NewResponseReadClassificationPolicy(),
+		},
 	}
 	if recordproxy.Transport != nil {
 		clientOptions.Transport = &http.Client{Transport: recordproxy.Transport}
@@ -146,7 +149,7 @@ func (c *FoundryMemoryStoreClient) CreateMemoryStore(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -185,7 +188,7 @@ func (c *FoundryMemoryStoreClient) GetMemoryStore(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 

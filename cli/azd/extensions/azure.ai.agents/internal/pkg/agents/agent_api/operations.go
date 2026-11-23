@@ -77,6 +77,9 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 			azsdk.NewMsCorrelationPolicy(),
 			azsdk.NewUserAgentPolicy(useragent.Default()),
 		},
+		PerRetryPolicies: []policy.Policy{
+			exterrors.NewResponseReadClassificationPolicy(),
+		},
 	}
 	if recordproxy.Transport != nil {
 		clientOptions.Transport = &http.Client{Transport: recordproxy.Transport}
@@ -188,7 +191,7 @@ func (c *AgentClient) getAgent(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -245,7 +248,7 @@ func (c *AgentClient) CreateAgentWithHeaders(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -302,7 +305,7 @@ func (c *AgentClient) doVoiceJSONAgentRequest(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -343,7 +346,7 @@ func (c *AgentClient) GetVoiceAgent(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -415,7 +418,7 @@ func (c *AgentClient) GetTelephonyBinding(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 	if !runtime.HasStatusCode(resp, http.StatusOK) {
@@ -462,7 +465,7 @@ func (c *AgentClient) CreateTelephonyBinding(
 	}
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
@@ -513,7 +516,7 @@ func (c *AgentClient) UpdateAgentWithHeaders(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -560,7 +563,7 @@ func (c *AgentClient) PatchAgent(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -593,7 +596,7 @@ func (c *AgentClient) DeleteAgent(ctx context.Context, agentName, apiVersion str
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -657,7 +660,7 @@ func (c *AgentClient) ListAgents(ctx context.Context, params *ListAgentQueryPara
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -706,7 +709,7 @@ func (c *AgentClient) CreateAgentVersion(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -826,7 +829,7 @@ func (c *AgentClient) zipDeployRequest(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -885,7 +888,7 @@ func (c *AgentClient) getAgentVersion(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -922,7 +925,7 @@ func (c *AgentClient) DeleteAgentVersion(ctx context.Context, agentName, agentVe
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -991,7 +994,7 @@ func (c *AgentClient) ListAgentVersions(ctx context.Context, agentName string, p
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -1034,7 +1037,7 @@ func (c *AgentClient) CreateOrUpdateAgentEventHandler(ctx context.Context, agent
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -1066,7 +1069,7 @@ func (c *AgentClient) GetAgentEventHandler(ctx context.Context, agentName, event
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -1098,7 +1101,7 @@ func (c *AgentClient) DeleteAgentEventHandler(ctx context.Context, agentName, ev
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -1246,7 +1249,7 @@ func (c *AgentClient) UploadSessionFile(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return fmt.Errorf("HTTP request failed: %w", err)
+		return exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -1291,7 +1294,7 @@ func (c *AgentClient) DownloadSessionFile(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 
 	if !runtime.HasStatusCode(resp, http.StatusOK) {
@@ -1342,7 +1345,7 @@ func (c *AgentClient) DownloadAgentCode(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 
 	if !runtime.HasStatusCode(resp, http.StatusOK) {
@@ -1390,7 +1393,7 @@ func (c *AgentClient) ListSessionFiles(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -1446,7 +1449,7 @@ func (c *AgentClient) RemoveSessionFile(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return fmt.Errorf("HTTP request failed: %w", err)
+		return exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -1497,7 +1500,7 @@ func (c *AgentClient) MkdirSessionFile(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return fmt.Errorf("HTTP request failed: %w", err)
+		return exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -1538,7 +1541,7 @@ func (c *AgentClient) StatSessionFile(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -1607,7 +1610,7 @@ func (c *AgentClient) CreateSession(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -1657,7 +1660,7 @@ func (c *AgentClient) GetSession(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -1707,7 +1710,7 @@ func (c *AgentClient) DeleteSession(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return fmt.Errorf("HTTP request failed: %w", err)
+		return exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -1751,7 +1754,7 @@ func (c *AgentClient) StopSession(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return fmt.Errorf("HTTP request failed: %w", err)
+		return exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -1799,7 +1802,7 @@ func (c *AgentClient) ListSessions(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 

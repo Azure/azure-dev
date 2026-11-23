@@ -22,8 +22,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/recordproxy"
 )
 
@@ -1429,4 +1431,53 @@ func TestCreateTelephonyBinding_PostsAgentScopedBinding(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(reqBody), `"connection_name":"telephony-twilio"`)
 	require.NotContains(t, string(reqBody), `"agent_ref"`)
+}
+
+func TestGetAgentTruncated200ClassifiesAsResponseRead(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", "100")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"partial"`))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		if hj, ok := w.(http.Hijacker); ok {
+			if conn, _, err := hj.Hijack(); err == nil {
+				_ = conn.Close()
+			}
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	pipeline := runtime.NewPipeline(
+		"test",
+		"v0.0.0-test",
+		runtime.PipelineOptions{},
+		&policy.ClientOptions{
+			Retry: policy.RetryOptions{
+				MaxRetries: 1,
+				RetryDelay: time.Millisecond,
+			},
+		},
+	)
+	client := &AgentClient{
+		endpoint: srv.URL + "/api/projects/proj",
+		pipeline: pipeline,
+	}
+
+	_, err := client.GetAgent(t.Context(), "test-agent", AgentEndpointAPIVersion, false)
+	require.Error(t, err)
+	require.Equal(t, 2, attempts)
+
+	var readErr *exterrors.ResponseReadError
+	require.ErrorAs(t, err, &readErr)
+
+	classified := exterrors.ServiceFromAzure(err, exterrors.OpGetAgent)
+	localErr, ok := errors.AsType[*azdext.LocalError](classified)
+	require.True(t, ok, "expected *azdext.LocalError, got %T: %v", classified, classified)
+	require.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
+	require.Equal(t, exterrors.OpGetAgent+exterrors.SuffixResponseRead, localErr.Code)
 }

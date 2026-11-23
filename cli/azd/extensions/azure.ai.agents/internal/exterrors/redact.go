@@ -7,19 +7,38 @@ import (
 	"errors"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
+const redactedURLPlaceholder = "[redacted-url]"
+
 var httpURLPattern = regexp.MustCompile(`https?://[^\s"'<>]+`)
 
-// RedactURL strips userinfo, query parameters, and fragments from rawURL so
-// embedded credentials, SAS signatures, and tokens are never surfaced.
+// RedactURL strips userinfo, query parameters, and fragments so
+// credentials, SAS signatures, and tokens are never surfaced.
 func RedactURL(rawURL string) string {
 	if rawURL == "" {
 		return ""
 	}
 	parsed, err := url.Parse(rawURL)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+	if err != nil {
+		return redactedURLPlaceholder
+	}
+	if parsed.Opaque != "" {
+		if strings.EqualFold(parsed.Scheme, "http") ||
+			strings.EqualFold(parsed.Scheme, "https") ||
+			strings.ContainsAny(rawURL, "@?#") {
+			return redactedURLPlaceholder
+		}
+		return rawURL
+	}
+	if (strings.EqualFold(parsed.Scheme, "http") ||
+		strings.EqualFold(parsed.Scheme, "https")) && parsed.Host == "" {
+		return redactedURLPlaceholder
+	}
+	if parsed.Scheme == "" && parsed.Host == "" &&
+		parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == "" {
 		return rawURL
 	}
 	parsed.User = nil
@@ -35,6 +54,10 @@ func redactURLFromText(text, rawURL string) string {
 	redacted := RedactURL(rawURL)
 	if redacted == rawURL {
 		return text
+	}
+	quotedRaw := strconv.Quote(rawURL)
+	if quotedRaw != `"`+rawURL+`"` {
+		text = strings.ReplaceAll(text, quotedRaw, strconv.Quote(redacted))
 	}
 	text = strings.ReplaceAll(text, rawURL, redacted)
 	parsed, err := url.Parse(rawURL)

@@ -174,7 +174,7 @@ func runCommand() error {
 
 Prefer the dedicated helpers instead of hand-rolling conversions:
 
-- `exterrors.ServiceFromAzure(err, operation)` for Azure SDK and Foundry HTTP client calls (`azcore.ResponseError`, timeouts, credential failures, transport errors, and `WrapResponseRead` / `WrapResponseParse` post-2xx failures)
+- `exterrors.ServiceFromAzure(err, operation)` for Azure SDK and Foundry HTTP client calls (`azcore.ResponseError`, timeouts, credential failures, transport errors, and `NewResponseReadClassificationPolicy` / `WrapPipelineError` / `WrapResponseRead` / `WrapResponseParse` post-2xx failures)
 - `exterrors.FromHost(err, operation, context)` for azd host gRPC service calls
 - `exterrors.FromAiService(err, fallbackCode)` for azd host AI service calls
 - `exterrors.FromPrompt(err, contextMessage)` for prompt failures

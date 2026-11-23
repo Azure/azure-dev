@@ -103,7 +103,7 @@ func (c *AgentClient) DownloadTeamsAppPackage(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -166,7 +166,7 @@ func (c *AgentClient) PublishTeamsApp(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 

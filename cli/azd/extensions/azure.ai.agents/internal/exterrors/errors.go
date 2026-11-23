@@ -217,10 +217,9 @@ func isDeadlineOrTimeout(err error) bool {
 	return false
 }
 
-// classifyCredentialFailure detects Azure credential acquisition failures.
-// azidentity's credentialUnavailableError is unexported, so after checking
-// exported azidentity error types we fall back to matching the credential
-// type prefixes emitted by azidentity when token acquisition fails.
+// classifyCredentialFailure detects Azure credential failures.
+// Unexported azidentity errors are matched by credential prefix
+// on unwrapped non-URL causes.
 func classifyCredentialFailure(err error, safeMsg string) error {
 	if _, ok := errors.AsType[*azidentity.AuthenticationFailedError](err); ok {
 		return Auth(CodeAuthFailed, safeMsg, "run `azd auth login` to authenticate")
@@ -228,30 +227,94 @@ func classifyCredentialFailure(err error, safeMsg string) error {
 	if _, ok := errors.AsType[*azidentity.AuthenticationRequiredError](err); ok {
 		return Auth(CodeAuthFailed, safeMsg, "run `azd auth login` to authenticate")
 	}
-
-	text := err.Error()
-	for _, credentialName := range []string{
-		"AzureDeveloperCLICredential",
-		"DefaultAzureCredential",
-	} {
-		if strings.Contains(text, credentialName) {
-			if strings.Contains(text, "executable not found on path") ||
-				strings.Contains(text, "is not recognized") {
-				return Auth(
-					CodeCredentialCreationFailed,
-					safeMsg,
-					"check that `azd` is installed and on PATH",
-				)
-			}
-			return Auth(CodeAuthFailed, safeMsg, "run `azd auth login` to authenticate")
+	if isAuth, missingAzd := matchAzIdentityCredentialError(err); isAuth {
+		if missingAzd {
+			return Auth(
+				CodeCredentialCreationFailed,
+				safeMsg,
+				"check that `azd` is installed and on PATH",
+			)
 		}
+		return Auth(CodeAuthFailed, safeMsg, "run `azd auth login` to authenticate")
 	}
 	return nil
 }
 
-// isResponseReadError reports whether err failed while reading an HTTP response
-// body after headers arrived, including errors wrapped by azcore's unexported
-// bodyDownloadPolicy ("body download policy: ...").
+func matchAzIdentityCredentialError(err error) (bool, bool) {
+	if err == nil {
+		return false, false
+	}
+	if _, isURLErr := errors.AsType[*url.Error](err); !isURLErr {
+		msg := err.Error()
+		if hasCredentialPrefix(msg, "AzureDeveloperCLICredential") {
+			return true, isMissingExecutableMessage(msg)
+		}
+		if hasCredentialPrefix(msg, "DefaultAzureCredential") {
+			return true, hasMissingAzdInChain(msg)
+		}
+	}
+	if multi, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, nested := range multi.Unwrap() {
+			if isAuth, missingAzd := matchAzIdentityCredentialError(nested); isAuth {
+				return true, missingAzd
+			}
+		}
+		return false, false
+	}
+	return matchAzIdentityCredentialError(errors.Unwrap(err))
+}
+
+func hasCredentialPrefix(msg, credentialName string) bool {
+	return strings.HasPrefix(msg, credentialName+":") ||
+		strings.HasPrefix(msg, credentialName+".") ||
+		strings.HasPrefix(msg, credentialName+" ")
+}
+
+func isMissingExecutableMessage(msg string) bool {
+	return strings.Contains(msg, "executable not found on path") ||
+		strings.Contains(msg, "executable file not found") ||
+		strings.Contains(msg, "is not recognized")
+}
+
+func hasMissingAzdInChain(msg string) bool {
+	sawChainedCred := false
+	inAzdSection := false
+	for line := range strings.SplitSeq(msg, "\n") {
+		trimmed := strings.TrimLeft(line, " \t-*")
+		if hasCredentialPrefix(trimmed, "AzureDeveloperCLICredential") {
+			sawChainedCred = true
+			inAzdSection = true
+			if isMissingExecutableMessage(trimmed) {
+				return true
+			}
+			continue
+		}
+		if !hasCredentialPrefix(trimmed, "DefaultAzureCredential") &&
+			isChainedCredentialHeader(trimmed) {
+			sawChainedCred = true
+			inAzdSection = false
+			continue
+		}
+		if inAzdSection && isMissingExecutableMessage(trimmed) {
+			return true
+		}
+	}
+	if sawChainedCred {
+		return false
+	}
+	return isMissingExecutableMessage(msg)
+}
+
+func isChainedCredentialHeader(trimmed string) bool {
+	idx := strings.IndexAny(trimmed, ":. ")
+	if idx <= 0 {
+		return false
+	}
+	return strings.HasSuffix(trimmed[:idx], "Credential")
+}
+
+// isResponseReadError reports whether err failed while reading
+// an HTTP response body after a 2xx status arrived.
 func isResponseReadError(err error) bool {
 	if _, ok := errors.AsType[*ResponseReadError](err); ok {
 		return true
@@ -266,24 +329,27 @@ func isResponseReadError(err error) bool {
 
 func transportErrorSuggestion(err error) (string, bool) {
 	if _, ok := errors.AsType[*net.DNSError](err); ok {
-		return "check your network connection, VPN, or Private Endpoint DNS settings and retry", true
+		return "check your network connection, VPN, or Private Endpoint DNS settings", true
 	}
 	if isTLSHandshakeError(err) {
-		return "check your TLS proxy, firewall, or certificate configuration and retry", true
+		return "check your TLS proxy, firewall, or certificate configuration", true
 	}
 	if _, ok := errors.AsType[*net.OpError](err); ok {
-		return "check your network connection, proxy, or firewall settings and retry", true
+		return "check your network connection, proxy, or firewall settings", true
 	}
 	if netErr, ok := errors.AsType[net.Error](err); ok && !netErr.Timeout() {
-		return "check your network connection, proxy, or firewall settings and retry", true
+		return "check your network connection, proxy, or firewall settings", true
 	}
 	if _, ok := errors.AsType[*url.Error](err); ok {
-		return "check your network connection, proxy, or firewall settings and retry", true
+		return "check your network connection, proxy, or firewall settings", true
 	}
 	return "", false
 }
 
 func isTLSHandshakeError(err error) bool {
+	if _, ok := errors.AsType[tls.RecordHeaderError](err); ok {
+		return true
+	}
 	if _, ok := errors.AsType[*tls.RecordHeaderError](err); ok {
 		return true
 	}

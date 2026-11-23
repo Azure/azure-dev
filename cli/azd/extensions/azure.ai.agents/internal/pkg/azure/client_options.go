@@ -11,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/recordproxy"
 	"azureaiagent/internal/pkg/useragent"
 )
@@ -26,6 +27,9 @@ func NewArmClientOptions() *arm.ClientOptions {
 			PerCallPolicies: []policy.Policy{
 				azsdk.NewMsCorrelationPolicy(),
 				azsdk.NewUserAgentPolicy(useragent.Default()),
+			},
+			PerRetryPolicies: []policy.Policy{
+				exterrors.NewResponseReadClassificationPolicy(),
 			},
 		},
 	}

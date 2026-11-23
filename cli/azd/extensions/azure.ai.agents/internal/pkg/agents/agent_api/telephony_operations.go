@@ -23,6 +23,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/google/uuid"
+
+	"azureaiagent/internal/exterrors"
 )
 
 const (
@@ -474,6 +476,9 @@ func (c *AgentClient) gaTelephonyRequest(
 
 	resp, err := c.telephonyPipeline.Do(req)
 	if err != nil {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
 		if method != http.MethodGet {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return "", telephonyWriteOutcomeUnknown(ctxErr)
@@ -482,6 +487,10 @@ func (c *AgentClient) gaTelephonyRequest(
 		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return "", ctxErr
+		}
+		if _, ok := errors.AsType[*exterrors.ResponseReadError](err); ok ||
+			(resp != nil && resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices) {
+			return "", &exterrors.ResponseReadError{Context: "reading telephony response body failed"}
 		}
 		return "", fmt.Errorf("sending telephony request failed")
 	}

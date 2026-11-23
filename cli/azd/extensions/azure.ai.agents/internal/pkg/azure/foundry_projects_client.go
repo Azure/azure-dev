@@ -50,6 +50,9 @@ func NewFoundryProjectsClient(
 			azsdk.NewMsCorrelationPolicy(),
 			azsdk.NewUserAgentPolicy(useragent.Default()),
 		},
+		PerRetryPolicies: []policy.Policy{
+			exterrors.NewResponseReadClassificationPolicy(),
+		},
 	}
 
 	pipeline := runtime.NewPipeline(
@@ -137,7 +140,7 @@ func (c *FoundryProjectsClient) GetPagedConnections(ctx context.Context) (*Paged
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -171,7 +174,7 @@ func (c *FoundryProjectsClient) GetConnectionWithCredentials(ctx context.Context
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -267,7 +270,7 @@ func (c *FoundryProjectsClient) getNextPage(ctx context.Context, url string) (*P
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 

@@ -518,7 +518,46 @@ type failingReadCloser struct {
 func (f failingReadCloser) Read([]byte) (int, error) { return 0, f.err }
 func (f failingReadCloser) Close() error             { return nil }
 
+type nonRetriableReadError struct {
+	err error
+}
+
+func (e *nonRetriableReadError) Error() string { return e.err.Error() }
+func (e *nonRetriableReadError) Unwrap() error { return e.err }
+func (e *nonRetriableReadError) NonRetriable() {}
+
 func TestCreateAgentPost2xxReadAndParseClassification(t *testing.T) {
+	t.Run("preflight GetAgent truncated 200 body classifies as get_agent_response_read", func(t *testing.T) {
+		originalTransport := recordproxy.Transport
+		t.Cleanup(func() { recordproxy.Transport = originalTransport })
+
+		writeRequests := 0
+		recordproxy.Transport = hostedResourceErrorTransport(func(request *http.Request) (*http.Response, error) {
+			if request.Method != http.MethodGet {
+				writeRequests++
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": {"application/json"}},
+				Body:       failingReadCloser{err: &nonRetriableReadError{err: io.ErrUnexpectedEOF}},
+				Request:    request,
+			}, nil
+		})
+
+		env := map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example.test", "AZURE_LOCATION": "eastus"}
+		provider := &AgentServiceTargetProvider{
+			credential:    hostedResourceErrorCredential{},
+			dependencyEnv: env,
+		}
+
+		_, err := provider.createAgent(t.Context(), "my-service", hostedResourceRequest("1", "2Gi"), env)
+		require.Error(t, err)
+		require.Zero(t, writeRequests)
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok, "expected *azdext.LocalError, got %T: %v", err, err)
+		require.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
+		require.Equal(t, exterrors.OpGetAgent+exterrors.SuffixResponseRead, localErr.Code)
+	})
 	t.Run("truncated 200 body classifies as create_agent_response_read", func(t *testing.T) {
 		originalTransport := recordproxy.Transport
 		t.Cleanup(func() { recordproxy.Transport = originalTransport })

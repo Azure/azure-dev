@@ -32,7 +32,7 @@ func (c *AgentClient) CreateConversationAt(
 	}
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("HTTP request failed: %w", err)
+		return "", exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
@@ -67,7 +67,7 @@ func (c *AgentClient) CreateResponse(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -111,7 +111,7 @@ func (c *AgentClient) CreateResponseStreamAt(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated, http.StatusAccepted) {
 		return nil, nil, runtime.NewResponseError(resp)
@@ -141,7 +141,7 @@ func (c *AgentClient) DeleteResponse(ctx context.Context, responseID string) err
 	}
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return fmt.Errorf("HTTP request failed: %w", err)
+		return exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -167,7 +167,7 @@ func (c *AgentClient) doResponseRequest(
 	}
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 

@@ -53,8 +53,11 @@ func NewFoundryToolboxConnectionsClient(
 	if err != nil || !strings.EqualFold(id.ResourceType.String(), "Microsoft.CognitiveServices/accounts/projects") {
 		return nil, fmt.Errorf("a Foundry project ARM resource ID is required for toolbox connections")
 	}
+	var perRetry []policy.Policy
 	if options == nil {
 		options = &NewArmClientOptions().ClientOptions
+	} else {
+		perRetry = []policy.Policy{exterrors.NewResponseReadClassificationPolicy()}
 	}
 	return &FoundryToolboxConnectionsClient{
 		projectURL: "https://management.azure.com" + id.String(),
@@ -62,6 +65,7 @@ func NewFoundryToolboxConnectionsClient(
 			PerCall: []policy.Policy{runtime.NewBearerTokenPolicy(
 				credential, []string{"https://management.azure.com/.default"}, nil,
 			)},
+			PerRetry: perRetry,
 		}, options),
 	}, nil
 }
@@ -74,7 +78,7 @@ func (c *FoundryToolboxConnectionsClient) ProjectEndpoint(ctx context.Context) (
 	}
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return "", err
+		return "", exterrors.WrapPipelineError(resp, err, "")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -105,7 +109,7 @@ func (c *FoundryToolboxConnectionsClient) GetConnection(
 	}
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, exterrors.WrapPipelineError(resp, err, "")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
@@ -139,7 +143,7 @@ func (c *FoundryToolboxConnectionsClient) PutConnection(
 	}
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return err
+		return exterrors.WrapPipelineError(resp, err, "")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

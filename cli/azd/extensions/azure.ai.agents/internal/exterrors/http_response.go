@@ -3,7 +3,62 @@
 
 package exterrors
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+	"net/http"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+)
+
+type responseReadClassificationPolicy struct{}
+
+// NewResponseReadClassificationPolicy returns a per-retry policy that
+// tags post-2xx body read failures before auth policies drop resp.
+func NewResponseReadClassificationPolicy() policy.Policy {
+	return responseReadClassificationPolicy{}
+}
+
+func (responseReadClassificationPolicy) Do(req *policy.Request) (*http.Response, error) {
+	resp, err := req.Next()
+	if err != nil &&
+		resp != nil &&
+		resp.StatusCode >= http.StatusOK &&
+		resp.StatusCode < http.StatusMultipleChoices &&
+		!IsCancellation(err) &&
+		!isDeadlineOrTimeout(err) {
+		return resp, WrapResponseRead(err, "")
+	}
+	return resp, err
+}
+
+// WrapPipelineError wraps an azcore pipeline error, classifying
+// post-2xx body read failures as [ResponseReadError].
+func WrapPipelineError(resp *http.Response, err error, contextMessage string) error {
+	if err == nil {
+		return nil
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if existing, ok := errors.AsType[*ResponseReadError](err); ok && existing.Context == "" {
+		return &ResponseReadError{
+			Context: contextMessage,
+			Err:     existing.Err,
+		}
+	}
+	if resp != nil &&
+		resp.StatusCode >= http.StatusOK &&
+		resp.StatusCode < http.StatusMultipleChoices &&
+		!IsCancellation(err) &&
+		!isDeadlineOrTimeout(err) {
+		return WrapResponseRead(err, contextMessage)
+	}
+	if contextMessage == "" {
+		return err
+	}
+	return fmt.Errorf("%s: %w", contextMessage, err)
+}
 
 // ResponseReadError indicates that reading an HTTP response body failed after
 // the service returned a success status code.

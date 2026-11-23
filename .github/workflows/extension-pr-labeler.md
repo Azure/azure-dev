@@ -5,11 +5,14 @@ run-name: "Extension PR Labeler #${{ github.event.pull_request.number }}"
 on:
   pull_request_target:
     acknowledge-risk: true
+    forks: ["*"]
     types: [opened, reopened, synchronize]
     paths:
       - "cli/azd/extensions/**"
       - "cli/azd/docs/**"
   roles: [admin, maintainer, write, triage]
+features:
+  dangerously-allow-pull-request-target-forks-all: true # Workflow labels PR without checking out fork code, and above role checks still apply
 permissions:
   contents: read
   copilot-requests: write
@@ -19,7 +22,7 @@ max-ai-credits: 50
 max-daily-ai-credits: 5000
 engine:
   id: copilot
-  model: copilot/gpt-5.6-sol
+  model: copilot/gpt-6.2-sol
   args: ["--effort", "medium"]
 checkout: false
 strict: true
@@ -37,6 +40,7 @@ safe-outputs:
   report-failed-jobs: false
   # Short-lived runtime failures should not create tracking noise for this best-effort labeler.
   report-failure-as-issue:
+    - "!activation_failed"
     - "!missing_data"
     - "!missing_safe_outputs"
     - "!report_incomplete"

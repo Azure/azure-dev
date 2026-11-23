@@ -13,7 +13,7 @@ permissions:
   pull-requests: read
 engine:
   id: copilot
-  model: copilot/gpt-5.6-sol
+  model: copilot/gpt-6.2-sol
   args: ["--effort", "medium"]
 strict: true
 network:
@@ -28,6 +28,7 @@ safe-outputs:
   report-failed-jobs: false
   # Keep transient runtime failures and empty agent runs in workflow logs instead of opening issues.
   report-failure-as-issue:
+    - "!activation_failed"
     - "!missing_safe_outputs"
     - "!report_incomplete"
     - "!inference_access_error"

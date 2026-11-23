@@ -367,7 +367,6 @@ Raw output includes the returned headers without a formatted latency summary.` +
 	previewFlag(cmd, "long-running", featureflags.LongRunning)
 	previewFlag(cmd, "no-wait", featureflags.LongRunning)
 	previewHelp(cmd, featureflags.LongRunning, []string{invokeLongRunningHelp}, invokeLongRunningExamples)
-	previewHelp(cmd, featureflags.Voice, []string{invokeVoiceHelp}, nil)
 
 	return cmd
 }

@@ -42,8 +42,8 @@ Azure Developer CLI (azd) collects pseudonymized usage telemetry to understand h
 | Metric | What It Measures |
 |--------|-----------------|
 | **MAU** (Monthly Active Users) | Unique users per month (by hashed machine ID) |
-| **MEU** (Monthly Engaged Users) | Users who run engagement commands (provision, deploy, up) |
-| **MDU** (Monthly Dev Users) | Users in local dev environments (not CI/CD) |
+| **MEU** (Monthly Engaged Users) | Unique users active on 2 or more distinct days in a month (by hashed machine ID) |
+| **MDU** (Monthly Dedicated Users) | Unique users active on 10 or more distinct days in a month (by hashed machine ID) |
 | **Success Rate** | % of command executions that succeed |
 | **Error Rate by Category** | Top error categories (ARM, auth, build, network) |
 | **Template Adoption** | Which templates are used, by how many users |

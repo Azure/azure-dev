@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -1040,7 +1041,7 @@ func TestResolveTemplateRef(t *testing.T) {
 }
 
 func TestAgentListenersDoNotProjectSplitConnections(t *testing.T) {
-	t.Setenv(featureflags.Voice.EnvVar, "true")
+	t.Setenv(featureflags.A2A.EnvVar, "true")
 
 	for _, event := range []string{"preprovision", "predeploy"} {
 		t.Run(event, func(t *testing.T) {
@@ -1402,13 +1403,9 @@ func TestPredeployAgentRBACRunsPerService(t *testing.T) {
 }
 
 func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
-	clearPreviewProcess(t)
-	t.Setenv(featureflags.Voice.EnvVar, "true")
 	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
 	for _, kind := range []string{"voice", "prompt-voice"} {
 		t.Run(kind, func(t *testing.T) {
-			clearPreviewProcess(t)
-			t.Setenv(featureflags.Voice.EnvVar, "true")
 			t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
 			svc := &azdext.ServiceConfig{
 				Name: "voice-agent",
@@ -1430,8 +1427,7 @@ func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
 				Project: proj, Service: svc,
 			})
 			require.NoError(t, err)
-			require.Len(t, response.Messages, 1)
-			require.Contains(t, response.Messages[0].Message, "Preview feature enabled:")
+			require.Empty(t, response.Messages)
 			require.GreaterOrEqual(t, envServer.getCurrentCalls, 2)
 		})
 	}
@@ -1469,29 +1465,77 @@ func TestPredeployReturnsPreviewFeatureNotice(t *testing.T) {
 	require.Contains(t, response.Messages[0].Message, "Preview behavior may change.")
 }
 
-func TestPredeployRejectsDisabledVoiceBeforeMutation(t *testing.T) {
-	t.Setenv(featureflags.Voice.EnvVar, "")
+func TestPredeployWarnsAboutSecretsInCodePackage(t *testing.T) {
+	clearPreviewProcess(t)
+	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
+	root := t.TempDir()
+	srcDir := filepath.Join(root, "src")
+	require.NoError(t, os.MkdirAll(srcDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, ".agentignore"), []byte("!.env\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, ".env"), []byte("API_KEY=secret\n"), 0o600))
+	service := &azdext.ServiceConfig{
+		Name:         "code-agent",
+		Host:         AiAgentHost,
+		RelativePath: "src",
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind": "hosted", "name": "code-agent",
+			"codeConfiguration": map[string]any{"runtime": "python_3_13", "entryPoint": "main.py"},
+		}),
+	}
+	project := &azdext.ProjectConfig{
+		Path: root, Services: map[string]*azdext.ServiceConfig{"code-agent": service},
+	}
+	packageFile, err := os.CreateTemp(root, "code-*.zip")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Remove(packageFile.Name()) })
+	zipWriter := zip.NewWriter(packageFile)
+	zipEntry, err := zipWriter.Create(".env")
+	require.NoError(t, err)
+	_, err = zipEntry.Write([]byte("API_KEY=secret\n"))
+	require.NoError(t, err)
+	require.NoError(t, zipWriter.Close())
+	require.NoError(t, packageFile.Close())
+
+	client := newTestAzdClient(
+		t,
+		&testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}},
+		&testWorkflowServiceServer{},
+	)
+
+	response, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+		Project: project,
+		Service: service,
+		ServiceContext: &azdext.ServiceContext{Package: []*azdext.Artifact{{
+			Location: packageFile.Name(),
+			Metadata: map[string]string{"type": "code-zip"},
+		}}},
+	})
+	require.NoError(t, err)
+	require.Len(t, response.Messages, 1)
+	require.Equal(t, azdext.BetaServiceEventMessageWarning, response.Messages[0].Kind)
+	require.Contains(t, response.Messages[0].Message, ".agentignore re-includes them: .env")
+}
+
+func TestPredeployRejectsDisabledMemorySnapshotBeforeMutation(t *testing.T) {
+	clearPreviewProcess(t)
 	t.Setenv("AGENT_DEFINITION_PATH", "")
 	svc := &azdext.ServiceConfig{
-		Name: "voice-agent", Host: AiAgentHost,
+		Name: "snapshot-agent", Host: AiAgentHost,
 		AdditionalProperties: mustStruct(t, map[string]any{
-			"kind": "voice", "name": "voice-agent", "modelType": "managed",
-			"model": map[string]any{"id": "gpt-realtime"},
+			"kind": "hosted", "name": "snapshot-agent", "enableMemorySnapshot": true,
 		}),
 	}
 	proj := &azdext.ProjectConfig{
-		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{"voice-agent": svc},
+		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{"snapshot-agent": svc},
 	}
 	before := proto.Clone(proj)
 	envServer := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}}
 	client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
-
 	response, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
 		Project: proj, Service: svc,
 	})
-
 	require.Nil(t, response)
-	require.ErrorContains(t, err, featureflags.Voice.ID)
+	require.ErrorContains(t, err, featureflags.MemorySnapshot.ID)
 	require.True(t, proto.Equal(before, proj))
 	require.Zero(t, envServer.getCurrentCalls)
 	require.Zero(t, envServer.getValuesCalls)

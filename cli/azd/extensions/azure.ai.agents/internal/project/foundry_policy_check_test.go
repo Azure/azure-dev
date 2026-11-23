@@ -418,7 +418,8 @@ func TestCheckHostedContainerImagePolicyAndViolationsError(t *testing.T) {
 					ProjectID: projectID,
 					Assignments: []foundrypolicy.PolicyAssignment{
 						{
-							AssignmentID:          "/subscriptions/sub/providers/microsoft.authorization/policyassignments/deny-img",
+							AssignmentID: "/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/" +
+								"providers/microsoft.authorization/policyassignments/deny-img",
 							AssignmentDisplayName: "Block untrusted registries",
 							PolicyDefinitionID:    foundrypolicy.DeniedContainerImagesPolicyID,
 							AssignmentParameters: map[string]any{
@@ -747,6 +748,11 @@ func TestCheckHostedContainerImagePolicyAndViolationsError(t *testing.T) {
 		localLive, isLocal := errors.AsType[*azdext.LocalError](classifiedLive)
 		require.True(t, isLocal)
 		assert.Equal(t, exterrors.CodeToolBlockedByPolicy, localLive.Code)
+		assert.Contains(
+			t,
+			localLive.Message,
+			`The "restrict-foundry-tools" policy doesn't allow one or more tools configured on this agent.`,
+		)
 		assert.Contains(t, localLive.Suggestion, "View policy (restrict-foundry-tools): https://ai.azure.com/nextgen/r/")
 
 		// 2. Skylight #6450-style 403 forbidden with noncompliant policy message

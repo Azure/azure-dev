@@ -1774,7 +1774,6 @@ func resolveModelDeployments(
 		ModelName:    model.Name,
 		Options: &azdext.AiModelDeploymentOptions{
 			Locations: []string{location},
-			Capacity:  new(defaultDeploymentCapacity),
 		},
 		Quota: &azdext.QuotaCheckOptions{
 			MinRemainingCapacity: 1,
@@ -1784,7 +1783,15 @@ func resolveModelDeployments(
 		return nil, err
 	}
 
-	return resolveResp.Deployments, nil
+	deployments := make([]*azdext.AiModelDeployment, 0, len(resolveResp.GetDeployments()))
+	for _, candidate := range resolveResp.GetDeployments() {
+		if candidate == nil {
+			continue
+		}
+		deployments = append(deployments, cloneDeploymentWithCapacity(candidate, 0))
+	}
+
+	return deployments, nil
 }
 
 func selectBestModelDeploymentCandidate(

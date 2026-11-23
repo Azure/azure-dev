@@ -1408,21 +1408,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Optional execution harness for --kind prompt: 'microsoft_copilot_preview' (Microsoft Copilot Brain+Hand).")
 	previewFlag(cmd, "harness", featureflags.ManagedHarness,
 		agent_api.ManagedAgentHarnessMicrosoftCopilot, agent_api.ManagedAgentHarnessGitHubCopilot)
-	previewFlag(cmd, "kind", featureflags.Voice, kindFlagPromptVoice)
-	previewFlag(cmd, "protocol", featureflags.Voice, "invocations_ws")
-	previewFlagUsage(cmd, "protocol", featureflags.Voice,
-		"Protocols supported by the agent ("+strings.Join(protocolNames(false, true), ", ")+"). Can be specified multiple times.")
-	previewFlagUsage(cmd, "kind", featureflags.Voice,
-		"Agent runtime to initialize: 'hosted' (bring your own code/container) or 'prompt' "+
-			"(model + instructions; Foundry runs the agent). When omitted, the hosted runtime is used. "+
-			"With --no-prompt, 'prompt' requires --agent-name and either --model or --model-deployment.")
-	previewFlag(cmd, "voice", featureflags.Voice)
-	previewFlagUsage(cmd, "acr-connection", featureflags.Voice, acrConnectionUsage+" and --image")
-	previewFlagUsage(cmd, "model", featureflags.Voice, modelUsage)
 	previewFlagUsage(cmd, "instructions", featureflags.ManagedHarness,
 		"System instructions for a prompt agent. Written to azure.yaml; not supported for hosted agents.")
-	previewHelpText(cmd, featureflags.Voice, "a new prompt, hosted, or voice agent", "a new agent")
-	previewHelp(cmd, featureflags.Voice, []string{initVoiceHelp}, []string{initVoiceExamples})
 	previewHelp(cmd, featureflags.A2A, []string{initA2AHelp}, nil)
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
 		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+

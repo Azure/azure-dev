@@ -1,0 +1,41 @@
+# Tier 0: reject invalid env references before auth or writes.
+name: "init-env-reference-validation"
+command: >-
+  azd ai agent init -t ./template/azure.yaml --src ./target --no-prompt
+cwd: "~/working/azd-agents-env-reference-validation-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-env-reference-validation-{instance}"'
+    cwd: "~/working"
+    name: "reset working dir"
+  - run: >-
+      mkdir -p -- template &&
+      cp -r -- "{fixtures_dir}/init-env-reference-validation/." ./template
+    name: "seed invalid env-reference fixture"
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed. Do not sign in,
+    install extensions, fetch files, call Azure, or create cloud resources.
+    Run only the literal init command, inspect files read-only, and do not
+    edit the fixture.
+  - >-
+    Confirm init exits non-zero, names service "agent" and field
+    environmentVariables[0].value, reports an unsupported environment
+    variable reference, and suggests supported syntax.
+  - >-
+    Confirm the output omits test-user, test-password, sig=,
+    test-signature, and test-fragment. Credential, network, capability, or
+    missing-file errors do not pass.
+  - >-
+    Confirm template/azure.yaml matches
+    '{fixtures_dir}/init-env-reference-validation/azure.yaml' byte-for-byte
+    and no extra files or directories (such as target or .azure) exist.
+  - >-
+    Take a best-effort screenshot of the error output; capture failure
+    does not block product assertions. Report a finding for any prompt,
+    different error, secret leak, or file change, without retrying.

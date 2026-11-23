@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"azure.ai.projects/synthesis"
-	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -242,7 +241,6 @@ func TestACRReuseDisabledAgentRuntimeEntrypoints(t *testing.T) {
 		for _, operation := range []string{"package", "publish", "deploy"} {
 			t.Run(state+"/"+operation, func(t *testing.T) {
 				t.Setenv(synthesis.ACRReuseEnvVar, "")
-				t.Setenv(featureflags.Voice.EnvVar, "true")
 				root := t.TempDir()
 				env := &acrFeatureEnvironment{values: map[string]string{"AZURE_SUBSCRIPTION_ID": "sub"},
 					config: map[string][]byte{}}

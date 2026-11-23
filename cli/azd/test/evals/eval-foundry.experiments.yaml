@@ -24,7 +24,7 @@ matrix:
     path: /defaults/model
     values:
       - claude-sonnet-5: claude-sonnet-5
-      - gpt-5.6-terra: gpt-5.6-terra
+      - gpt-6.1-terra: gpt-6.1-terra
 
 # Control variant that deltas are measured against.
 baseline:

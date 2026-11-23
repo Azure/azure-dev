@@ -838,7 +838,9 @@ func ejectBicep(
 	layer bool,
 	params map[string]any,
 ) ([]ejectArtifact, error) {
-	written, err := writeEmbeddedTemplates(infraDir, artifactRoot, module, layer)
+	// Synthesis emits agentHosting only when an AKS host is configured.
+	_, byoAks := params["agentHosting"]
+	written, err := writeEmbeddedTemplates(infraDir, artifactRoot, module, layer, byoAks)
 	if err != nil {
 		return nil, err
 	}
@@ -1933,12 +1935,14 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 // files written (with sizes). On any error it removes the partial infraDir.
 //
 // Precompiled ARM templates and provider-runtime assets are skipped.
-// Existing-project entry points are skipped; shared modules are included.
+// Existing-project entry points are skipped; AKS-only sources require byoAks.
+// Shared source templates are rendered rather than copied.
 func writeEmbeddedTemplates(
 	infraDir string,
 	artifactRoot string,
 	module string,
 	layer bool,
+	byoAks bool,
 ) (_ []ejectArtifact, retErr error) {
 	//nolint:gosec // G301: ejected infra/ directory must be readable/traversable by IDEs, Git, and CI
 	if err := os.MkdirAll(infraDir, 0o755); err != nil {
@@ -1985,7 +1989,7 @@ func writeEmbeddedTemplates(
 		}
 
 		base := filepath.Base(p)
-		if base == "existing-project-eject.bicep.tmpl" {
+		if strings.HasSuffix(base, ".tmpl") || !byoAks && strings.HasPrefix(base, "byo-") {
 			return nil
 		}
 		if strings.HasPrefix(base, "container-registry-") {
@@ -2000,7 +2004,13 @@ func writeEmbeddedTemplates(
 			return nil
 		}
 
-		data, err := fs.ReadFile(tfs, p)
+		var data []byte
+		switch p {
+		case "templates/main.bicep", "templates/modules/resources.bicep", "templates/modules/acr.bicep":
+			data, err = synthesis.RenderBicepTemplate(p, byoAks)
+		default:
+			data, err = fs.ReadFile(tfs, p)
+		}
 		if err != nil {
 			return err
 		}

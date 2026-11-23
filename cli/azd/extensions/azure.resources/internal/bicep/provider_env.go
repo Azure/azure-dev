@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/constants"
 )
 
 type scope struct {
@@ -58,7 +59,9 @@ func (p *Provider) ensureEnv(ctx context.Context) error {
 		return err
 	}
 	resolved := &scope{
-		subscriptionID: values["AZURE_SUBSCRIPTION_ID"], tenantID: tenant, location: values["AZURE_LOCATION"],
+		subscriptionID: values[constants.SubscriptionIdEnvVarName],
+		tenantID:       tenant,
+		location:       values[constants.LocationEnvVarName],
 	}
 	if err := p.resolvePrincipal(ctx, resolved); err != nil {
 		return err
@@ -146,12 +149,12 @@ func (p *Provider) loadEnvironmentValues(ctx context.Context) (map[string]string
 		values[entry.Key] = entry.Value
 	}
 	maps.Copy(values, p.options.VirtualEnv)
-	values["AZURE_ENV_NAME"] = p.envName
+	values[constants.EnvNameEnvVarName] = p.envName
 	return values, nil
 }
 
 func (p *Provider) ensureSubscription(ctx context.Context, values map[string]string) (string, error) {
-	subscription := values["AZURE_SUBSCRIPTION_ID"]
+	subscription := values[constants.SubscriptionIdEnvVarName]
 	var tenant string
 	if subscription == "" {
 		selected, err := p.client.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
@@ -163,8 +166,8 @@ func (p *Provider) ensureSubscription(ctx context.Context, values map[string]str
 		if subscription == "" || tenant == "" {
 			return "", errors.New("subscription selection returned no subscription or user access tenant")
 		}
-		values["AZURE_SUBSCRIPTION_ID"] = subscription
-		if err := p.setEnv(ctx, "AZURE_SUBSCRIPTION_ID", subscription); err != nil {
+		values[constants.SubscriptionIdEnvVarName] = subscription
+		if err := p.setEnv(ctx, constants.SubscriptionIdEnvVarName, subscription); err != nil {
 			return "", err
 		}
 	}
@@ -182,21 +185,22 @@ func (p *Provider) ensureSubscription(ctx context.Context, values map[string]str
 }
 
 func (p *Provider) ensureLocation(ctx context.Context, values map[string]string, tenant string) error {
-	if values["AZURE_LOCATION"] != "" {
+	if values[constants.LocationEnvVarName] != "" {
 		return nil
 	}
 
 	selected, err := p.client.Prompt().PromptLocation(ctx, &azdext.PromptLocationRequest{
-		AzureContext: azureContext(values["AZURE_SUBSCRIPTION_ID"], tenant),
+		AzureContext: azureContext(
+			values[constants.SubscriptionIdEnvVarName], tenant, values[constants.LocationEnvVarName]),
 	})
 	if err != nil {
 		return fmt.Errorf("selecting location: %w", err)
 	}
-	values["AZURE_LOCATION"] = selected.GetLocation().GetName()
-	if values["AZURE_LOCATION"] == "" {
+	values[constants.LocationEnvVarName] = selected.GetLocation().GetName()
+	if values[constants.LocationEnvVarName] == "" {
 		return errors.New("location selection returned an empty location")
 	}
-	return p.setEnv(ctx, "AZURE_LOCATION", values["AZURE_LOCATION"])
+	return p.setEnv(ctx, constants.LocationEnvVarName, values[constants.LocationEnvVarName])
 }
 
 func (p *Provider) resolvePrincipal(ctx context.Context, resolved *scope) error {
@@ -220,8 +224,10 @@ func (p *Provider) resolvePrincipal(ctx context.Context, resolved *scope) error 
 	return nil
 }
 
-func azureContext(subscription, tenant string) *azdext.AzureContext {
-	return &azdext.AzureContext{Scope: &azdext.AzureScope{SubscriptionId: subscription, TenantId: tenant}}
+func azureContext(subscription, tenant, location string) *azdext.AzureContext {
+	return &azdext.AzureContext{Scope: &azdext.AzureScope{
+		SubscriptionId: subscription, TenantId: tenant, Location: location,
+	}}
 }
 
 func (p *Provider) setEnv(ctx context.Context, key, value string) error {

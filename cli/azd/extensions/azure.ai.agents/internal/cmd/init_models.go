@@ -33,7 +33,7 @@ const defaultVoiceModel = "gpt-realtime"
 
 // defaultDeploymentCapacity is the preferred deployment capacity for agent model deployments.
 // This overrides the lower SKU default (typically 10) which is insufficient for agents.
-const defaultDeploymentCapacity int32 = 50
+const defaultDeploymentCapacity int32 = 250
 
 // errModelSkipped is returned when the user explicitly skips a model.
 var errModelSkipped = errors.New("user skipped model")
@@ -234,17 +234,7 @@ func (a *modelSelector) getModelDetails(
 	}
 
 	for {
-		deploymentResp, err := a.azdClient.Prompt().PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
-			AzureContext: a.azureContext,
-			ModelName:    model.Name,
-			Options: &azdext.AiModelDeploymentOptions{
-				Locations: []string{currentLocation},
-				Capacity:  new(defaultDeploymentCapacity),
-			},
-			Quota: &azdext.QuotaCheckOptions{
-				MinRemainingCapacity: 1,
-			},
-		})
+		deploymentResp, err := a.promptAiDeploymentWithFallback(ctx, model.Name, currentLocation)
 		if err == nil {
 			return deploymentResp.Deployment, nil
 		}
@@ -276,36 +266,228 @@ func (a *modelSelector) getModelDetails(
 	}
 }
 
+func (a *modelSelector) promptAiDeploymentWithFallback(
+	ctx context.Context,
+	modelName string,
+	location string,
+) (*azdext.PromptAiDeploymentResponse, error) {
+	if fallback, scopeCandidate, ok := a.resolveFallbackPromptDeployment(ctx, modelName, location); ok {
+		retryOpts := &azdext.AiModelDeploymentOptions{
+			Locations: []string{location},
+			Capacity:  new(fallback.GetCapacity()),
+		}
+		if scopeCandidate {
+			if version := fallback.GetVersion(); version != "" {
+				retryOpts.Versions = []string{version}
+			}
+			if skuName := fallback.GetSku().GetName(); skuName != "" {
+				retryOpts.Skus = []string{skuName}
+			}
+		}
+		deploymentResp, err := a.azdClient.Prompt().PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
+			AzureContext: a.azureContext,
+			ModelName:    modelName,
+			Options:      retryOpts,
+			Quota: &azdext.QuotaCheckOptions{
+				MinRemainingCapacity: 1,
+			},
+		})
+		if err == nil || !hasAiErrorReason(err,
+			azdext.AiErrorReasonNoValidSkus,
+			azdext.AiErrorReasonNoDeploymentMatch,
+		) {
+			return deploymentResp, err
+		}
+	} else {
+		deploymentResp, err := a.azdClient.Prompt().PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
+			AzureContext: a.azureContext,
+			ModelName:    modelName,
+			Options: &azdext.AiModelDeploymentOptions{
+				Locations: []string{location},
+				Capacity:  new(defaultDeploymentCapacity),
+			},
+			Quota: &azdext.QuotaCheckOptions{
+				MinRemainingCapacity: 1,
+			},
+		})
+		if err == nil || !hasAiErrorReason(err,
+			azdext.AiErrorReasonNoValidSkus,
+			azdext.AiErrorReasonNoDeploymentMatch,
+		) {
+			return deploymentResp, err
+		}
+	}
+
+	return a.azdClient.Prompt().PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
+		AzureContext: a.azureContext,
+		ModelName:    modelName,
+		Options: &azdext.AiModelDeploymentOptions{
+			Locations: []string{location},
+		},
+		Quota: &azdext.QuotaCheckOptions{
+			MinRemainingCapacity: 1,
+		},
+	})
+}
+
+func (a *modelSelector) resolveFallbackPromptDeployment(
+	ctx context.Context,
+	modelName string,
+	location string,
+) (*azdext.AiModelDeployment, bool, bool) {
+	resolveResp, err := a.azdClient.Ai().ResolveModelDeployments(ctx, &azdext.ResolveModelDeploymentsRequest{
+		AzureContext: a.azureContext,
+		ModelName:    modelName,
+		Options: &azdext.AiModelDeploymentOptions{
+			Locations: []string{location},
+		},
+		Quota: &azdext.QuotaCheckOptions{
+			MinRemainingCapacity: 1,
+		},
+	})
+	if err != nil || len(resolveResp.GetDeployments()) == 0 {
+		return nil, false, false
+	}
+
+	candidates := make([]*azdext.AiModelDeployment, 0, len(resolveResp.GetDeployments()))
+	for _, candidate := range resolveResp.GetDeployments() {
+		if candidate == nil {
+			continue
+		}
+		candidates = append(candidates, cloneDeploymentWithCapacity(candidate, 0))
+	}
+
+	var model *azdext.AiModel
+	if a.modelCatalog != nil {
+		model = a.modelCatalog[modelName]
+	}
+	if model == nil {
+		model = &azdext.AiModel{Name: modelName}
+	}
+	best := selectBestModelDeploymentCandidate(model, candidates)
+	if best == nil || best.GetCapacity() <= 0 || best.GetCapacity() >= defaultDeploymentCapacity {
+		return nil, false, false
+	}
+	scopeCandidate := needsAgentCandidateScoping(candidates, best.GetCapacity())
+	return best, scopeCandidate, true
+}
+
+func needsAgentCandidateScoping(
+	candidates []*azdext.AiModelDeployment,
+	targetCapacity int32,
+) bool {
+	for _, candidate := range candidates {
+		if candidate == nil || candidate.GetSku() == nil {
+			continue
+		}
+		if !capacityValidForSku(candidate.GetSku(), targetCapacity) {
+			return true
+		}
+		if capVal, ok := resolveNoPromptCapacity(candidate); ok && capVal > targetCapacity {
+			return true
+		}
+	}
+	return false
+}
+
+func skuCapacityBaseline(sku *azdext.AiModelSku) int32 {
+	if minCapacity := sku.GetMinCapacity(); minCapacity > 0 {
+		return minCapacity
+	}
+	if capacityStep := sku.GetCapacityStep(); capacityStep > 0 {
+		return capacityStep
+	}
+	return 1
+}
+
+func capacityValidForSku(sku *azdext.AiModelSku, capacity int32) bool {
+	if capacity <= 0 {
+		return false
+	}
+	if minCapacity := sku.GetMinCapacity(); minCapacity > 0 && capacity < minCapacity {
+		return false
+	}
+	if maxCapacity := sku.GetMaxCapacity(); maxCapacity > 0 && capacity > maxCapacity {
+		return false
+	}
+	if step := sku.GetCapacityStep(); step > 0 {
+		baseline := skuCapacityBaseline(sku)
+		if capacity < baseline || (capacity-baseline)%step != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func clampCapacityDown(sku *azdext.AiModelSku, upperBound int32) (int32, bool) {
+	if upperBound <= 0 {
+		return 0, false
+	}
+	if maxCapacity := sku.GetMaxCapacity(); maxCapacity > 0 && upperBound > maxCapacity {
+		upperBound = maxCapacity
+	}
+	baseline := skuCapacityBaseline(sku)
+	if upperBound < baseline {
+		return 0, false
+	}
+	if step := sku.GetCapacityStep(); step > 0 {
+		upperBound -= (upperBound - baseline) % step
+	}
+	if upperBound < sku.GetMinCapacity() || upperBound <= 0 {
+		return 0, false
+	}
+	return upperBound, true
+}
+
 func resolveNoPromptCapacity(candidate *azdext.AiModelDeployment) (int32, bool) {
+	sku := candidate.GetSku()
 	capacity := candidate.Capacity
 	defaulted := capacity <= 0
 	if defaulted {
-		capacity = defaultDeploymentCapacity
-	}
-
-	if candidate.Sku.CapacityStep > 0 && capacity%candidate.Sku.CapacityStep != 0 {
-		step := candidate.Sku.CapacityStep
-		capacity = ((capacity + step - 1) / step) * step
-	}
-
-	if candidate.Sku.MinCapacity > 0 && capacity < candidate.Sku.MinCapacity {
-		capacity = candidate.Sku.MinCapacity
-	}
-	if candidate.Sku.MaxCapacity > 0 && capacity > candidate.Sku.MaxCapacity {
-		if !defaulted {
+		baseline := skuCapacityBaseline(sku)
+		upperBound := max(baseline, defaultDeploymentCapacity)
+		if maxCapacity := sku.GetMaxCapacity(); maxCapacity > 0 && upperBound > maxCapacity {
+			upperBound = maxCapacity
+		}
+		if candidate.RemainingQuota != nil {
+			quotaBound := int32(*candidate.RemainingQuota)
+			if quotaBound < upperBound {
+				upperBound = quotaBound
+			}
+		}
+		clamped, ok := clampCapacityDown(sku, upperBound)
+		if !ok || !capacityValidForSku(sku, clamped) {
 			return 0, false
 		}
-		// Clamp down to the highest step-aligned capacity within max.
-		capacity = candidate.Sku.MaxCapacity
-		if step := candidate.Sku.CapacityStep; step > 0 && capacity%step != 0 {
-			capacity = (capacity / step) * step
-		}
-		if capacity < candidate.Sku.MinCapacity || capacity <= 0 {
+		if candidate.RemainingQuota != nil && float64(clamped) > *candidate.RemainingQuota {
 			return 0, false
 		}
+		return clamped, true
+	}
+
+	if sku.GetMinCapacity() > 0 && capacity < sku.GetMinCapacity() {
+		capacity = sku.GetMinCapacity()
+	}
+
+	if step := sku.GetCapacityStep(); step > 0 {
+		baseline := skuCapacityBaseline(sku)
+		if capacity < baseline {
+			capacity = baseline
+		}
+		if rem := (capacity - baseline) % step; rem != 0 {
+			capacity += step - rem
+		}
+	}
+
+	if sku.GetMaxCapacity() > 0 && capacity > sku.GetMaxCapacity() {
+		return 0, false
 	}
 
 	if candidate.RemainingQuota != nil && float64(capacity) > *candidate.RemainingQuota {
+		return 0, false
+	}
+
+	if !capacityValidForSku(sku, capacity) {
 		return 0, false
 	}
 

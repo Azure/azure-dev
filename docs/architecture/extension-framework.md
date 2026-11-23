@@ -223,6 +223,8 @@ for registration and provider requirements.
 
 First-party extensions live in `cli/azd/extensions/` and are registered in `cli/azd/extensions/registry.json`.
 
+The alpha [Azure Emulators extension](../../cli/azd/extensions/microsoft.azd.emulators/README.md) uses `azd add` to declare local emulators in an infrastructure layer. Its provisioning provider starts them during `azd up`, using the same Docker Compose lifecycle manager as its standalone commands. It is currently built and installed locally, not published in the registry.
+
 ## Detailed Reference
 
 - [Extension Framework Guide](../../cli/azd/docs/extensions/extension-framework.md) — Getting started

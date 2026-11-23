@@ -80,6 +80,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Deployment Preview (`deploy --preview`) | Beta |
 | Deployment Stacks | Alpha |
 | Extensions | Stable |
+| [Azure Emulators extension](../../cli/azd/extensions/microsoft.azd.emulators/README.md) | Alpha |
 
 ## Extension gRPC Contracts
 

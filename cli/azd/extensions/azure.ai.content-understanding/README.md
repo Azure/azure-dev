@@ -208,6 +208,13 @@ azd ai cu analyze invoice.pdf --output json
 azd ai cu analyze invoice.pdf --output json --output-file invoice.result.json
 ```
 
+When one local file is shown in the terminal, the complete JSON response is also
+saved beside it as `invoice.pdf.result.json`. Later runs with the same analyzer
+reuse it in any `--output` format without another service call, and print
+`Using cached analysis result from <path>` to stderr. Use `--refresh` to
+reanalyze, or `--cache=false` to neither reuse nor save it. See
+[saved results and reuse](docs/usage.md#saved-results-and-reuse).
+
 Content Understanding also provides
 [prebuilt analyzers](https://learn.microsoft.com/azure/ai-services/content-understanding/concepts/prebuilt-analyzers)
 for domain-specific extraction. For example, `prebuilt-invoice` extracts

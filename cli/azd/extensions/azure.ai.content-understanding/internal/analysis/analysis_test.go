@@ -605,9 +605,9 @@ func TestExecutionValidationAndPreview(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	require.Error(t, savePayload(filepath.Join(testutil.TempDir(t), "out"), make(chan int), false))
 	inputs[0].Path += ".missing"
-	_, _, err = analyzeOne(t.Context(), successfulClient(), inputs[0], false, runOptions())
+	_, _, _, err = analyzeOne(t.Context(), successfulClient(), inputs[0], false, runOptions())
 	requireCode(t, err, "input_read_failed")
-	_, _, err = analyzeOne(ctx, successfulClient(), inputs[0], false, runOptions())
+	_, _, _, err = analyzeOne(ctx, successfulClient(), inputs[0], false, runOptions())
 	require.ErrorIs(t, err, context.Canceled)
 }
 

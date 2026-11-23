@@ -63,7 +63,12 @@ func MakeExecutable(path string) (err error) {
 }
 
 // Read reads one existing regular UTF-8/state file through the same anchored directory rules as Write.
-func Read(path string) (body []byte, err error) {
+func Read(path string) ([]byte, error) {
+	return ReadBounded(path, 8*1024*1024)
+}
+
+// ReadBounded is Read with a caller-selected maximum size in bytes.
+func ReadBounded(path string, limit int64) (body []byte, err error) {
 	defer protectError(&err)
 	parent, err := openDirectory(filepath.Dir(path), false)
 	if err != nil {
@@ -89,11 +94,11 @@ func Read(path string) (body []byte, err error) {
 	if err != nil || !os.SameFile(info, actual) {
 		return nil, fmt.Errorf("state changed while opening")
 	}
-	body, err = io.ReadAll(io.LimitReader(file, 8*1024*1024+1))
+	body, err = io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(body) > 8*1024*1024 || !utf8.Valid(body) {
+	if int64(len(body)) > limit || !utf8.Valid(body) {
 		return nil, fmt.Errorf("state must be bounded UTF-8 text")
 	}
 	return body, nil

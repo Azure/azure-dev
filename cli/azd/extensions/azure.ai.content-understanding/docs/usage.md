@@ -251,6 +251,49 @@ azd ai cu analyze invoice.pdf --output json --pretty=false \
 
 This extracts only the first content, not all segments of a multi-content result.
 
+### Saved results and reuse
+
+When one local file is analyzed and the result is shown in the terminal, the
+complete JSON response is saved beside the source as `<file>.result.json`, using
+the same content as `--output json --output-file`. It is saved regardless of the
+terminal format, so a Markdown preview still keeps the complete response:
+
+```bash
+# Analyze, show Markdown, and save invoice.pdf.result.json.
+azd ai cu analyze invoice.pdf
+# Show the saved complete JSON without another analysis request.
+azd ai cu analyze invoice.pdf --output json
+# Reanalyze and replace invoice.pdf.result.json after the analysis succeeds.
+azd ai cu analyze invoice.pdf --refresh
+# Neither reuse nor save a result.
+azd ai cu analyze invoice.pdf --cache=false
+```
+
+When a saved result exists, analyze presents it in the requested format,
+including `--usage` and pretty presentation, without calling the service. It prints
+`Using cached analysis result from <path>; pass --refresh to reanalyze.` to stderr,
+so stdout stays parseable. Endpoint and analyzer settings are still resolved to
+select the analyzer, but no analysis request is sent. After an online analysis,
+`Saved complete analysis result to <path>.` is printed to stderr.
+
+- A saved result is used only when its `result.analyzerId` matches the selected
+  analyzer and the file is not older than the source. Otherwise analyze runs
+  online, prints why to stderr, and keeps the existing file; pass `--refresh` to
+  replace it. Malformed or unsafe saved results return an error instead of
+  reanalyzing; use `--refresh` to replace the file or `--cache=false` to ignore it.
+- `--refresh` replaces the saved result only after a successful analysis. A failed
+  refresh keeps the previous file.
+- If the result cannot be saved, for example because the source directory is
+  read-only, the result is still shown and a warning is printed to stderr.
+- Saved results are written atomically with owner-only permissions. They can
+  contain sensitive document content; use `--cache=false` when the result should
+  not be stored beside the source.
+- Automatic saving and reuse do not apply to URL inputs, batches, or
+  `--output-file`/`--output-dir` destinations, which keep their existing
+  `--on-existing` behavior. `--refresh` is rejected in those modes. Batch
+  `--output json` results beside the source use the same `<file>.result.json`
+  name, so a later single-file run can reuse them.
+
 ### Migration from earlier preview versions
 
 `--llm-input` and analyze's `--output none` are removed immediately, without a

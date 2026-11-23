@@ -156,7 +156,13 @@ func TestAnalyzeResolvedDefaultAnalyzer(t *testing.T) {
 				root.SetOut(&stdout)
 				root.SetErr(&stderr)
 				require.NoError(t, root.ExecuteContext(t.Context()))
-				assert.Empty(t, stderr.String())
+				if dryRun {
+					assert.Empty(t, stderr.String())
+				} else {
+					directory, err := os.Getwd()
+					require.NoError(t, err)
+					assert.Equal(t, savedResultNotice(filepath.Join(directory, "invoice.pdf")), stderr.String())
+				}
 				if dryRun {
 					var plan struct {
 						DryRun   bool   `json:"dryRun"`
@@ -197,7 +203,7 @@ func TestAnalyzePublicFlagsRequestMappingAndOutput(t *testing.T) {
 				"--file", path, "-a", "custom-analyzer", "-i", "-j", "1", "-o", format,
 				"--endpoint", "https://explicit.services.ai.azure.com", "--api-version", cuclient.PreviewAPIVersion)
 			require.NoError(t, err)
-			assert.Empty(t, stderr)
+			assert.Equal(t, savedResultNotice(path), stderr)
 			assert.JSONEq(t, analyzeEnvelope, stdout)
 			assert.Contains(t, stdout, "9007199254740993")
 			assert.Equal(t, 1, f.opens)

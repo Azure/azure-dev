@@ -112,6 +112,11 @@ type configurePipelineOptions struct {
 	providerParameters []provisioning.Parameter
 	// requiredExtensions are installed in CI before any azd project commands run.
 	requiredExtensions []RequiredExtension
+	// pipelineFile is the name of the default pipeline definition file (azure-dev.yml or azure-dev.yaml) found in the
+	// repository. It is empty when the repository does not contain either file.
+	pipelineFile string
+	// clientCredentials is true when the pipeline authenticates with a client secret, which is stored as a CI secret.
+	clientCredentials bool
 }
 
 // RequiredExtension identifies an azd extension version that generated pipelines must install.

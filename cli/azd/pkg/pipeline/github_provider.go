@@ -867,12 +867,12 @@ func (p *GitHubCiProvider) configurePipeline(
 			p.console.StopSpinner(ctx, msg, input.GetStepResultFormat(procErr))
 		}
 		if procErr == nil {
+			hasSecrets := options.clientCredentials || len(options.secrets) > 0
 			p.console.MessageUxItem(ctx, &ux.MultilineMessage{
 				Lines: []string{
 					"",
-					"GitHub Action secrets are now configured. You can view GitHub action secrets that were " +
-						"created at this link:",
-					output.WithLinkFormat("https://github.com/%s/settings/secrets/actions", repoSlug),
+					"GitHub Actions secrets and variables are now configured. You can view them at this link:",
+					output.WithLinkFormat("%s", actionsSettingsUrl(repoSlug, hasSecrets)),
 					""},
 			})
 		}
@@ -1253,18 +1253,37 @@ func (p *GitHubCiProvider) configurePipeline(
 
 	return &workflow{
 		repoDetails: repoDetails,
+		file:        options.pipelineFile,
 	}, nil
+}
+
+// actionsSettingsUrl returns the GitHub Actions settings page for the repository. Secrets are only created for
+// client credentials auth or project secrets, so the variables page is the better landing page when there are none.
+func actionsSettingsUrl(repoSlug string, hasSecrets bool) string {
+	page := "variables"
+	if hasSecrets {
+		page = "secrets"
+	}
+	return fmt.Sprintf("https://github.com/%s/settings/%s/actions", repoSlug, page)
 }
 
 // workflow is the implementation for a CiPipeline for GitHub
 type workflow struct {
 	repoDetails *gitRepositoryDetails
+	// file is the name of the default workflow file (azure-dev.yml or azure-dev.yaml) in the repository, if any.
+	file string
 }
 
 func (w *workflow) name() string {
 	return "actions"
 }
+
+// url links to the workflow page once its file has been pushed, since GitHub returns a 404 for a workflow that is not
+// in the repository yet. Otherwise, it links to the Actions overview.
 func (w *workflow) url() string {
+	if w.file != "" && w.repoDetails.pushStatus {
+		return w.repoDetails.url + "/actions/workflows/" + w.file
+	}
 	return w.repoDetails.url + "/actions"
 }
 
@@ -1381,7 +1400,7 @@ func getRemoteUrlFromNewRepository(
 
 	for {
 		name, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message:      "Enter the name for your new repository OR Hit enter to use this name:",
+			Message:      "Enter the name for your new repository:",
 			DefaultValue: currentDirectoryName,
 		})
 		if err != nil {

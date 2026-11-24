@@ -116,7 +116,7 @@ func GetProjectFromNew(
 
 	for {
 		name, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message:      "Enter the name for your new Azure DevOps Project OR Hit enter to use this name:",
+			Message:      "Enter the name for your new Azure DevOps Project:",
 			DefaultValue: currentFolderName,
 		})
 		if err != nil {

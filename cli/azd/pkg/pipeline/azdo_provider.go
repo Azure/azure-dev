@@ -149,7 +149,7 @@ func (p *AzdoScmProvider) createNewGitRepositoryFromInput(ctx context.Context, c
 	var repo *azdoGit.GitRepository
 	for {
 		name, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message:      "Enter the name for your new Azure DevOps Repository OR Hit enter to use this name:",
+			Message:      "Enter the name for your new Azure DevOps Repository:",
 			DefaultValue: p.repoDetails.projectName,
 		})
 		if err != nil {
@@ -379,7 +379,7 @@ func (p *AzdoScmProvider) promptForAzdoRepository(ctx context.Context, console i
 	var remoteUrl string
 	// There are a few ways to configure the remote so offer a choice to the user.
 	idx, err := console.Select(ctx, input.ConsoleOptions{
-		Message: fmt.Sprintf("How would you like to configure your remote? (Organization: %s)", p.repoDetails.projectName),
+		Message: fmt.Sprintf("How would you like to configure your remote? (Project: %s)", p.repoDetails.projectName),
 		Options: []string{
 			"Select an existing Azure DevOps Repository",
 			"Create a new private Azure DevOps Repository",
@@ -862,6 +862,6 @@ func (p *pipeline) name() string {
 }
 func (p *pipeline) url() string {
 	repoUrl := p.repoDetails.repoWebUrl
-	repoPrefix := strings.Split(repoUrl, "_git")[0]
+	repoPrefix, _, _ := strings.Cut(repoUrl, "_git")
 	return fmt.Sprintf("%s_build?definitionId=%d", repoPrefix, *p.repoDetails.buildDefinition.Id)
 }

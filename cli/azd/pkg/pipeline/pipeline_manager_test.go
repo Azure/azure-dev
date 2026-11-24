@@ -87,6 +87,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		// Check if the azure-dev.yml file was created in the expected path
 		gitHubYmlPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
 		assert.FileExists(t, gitHubYmlPath)
+		assert.Equal(t, filepath.Base(gitHubYmlPath), manager.configOptions.pipelineFile)
 
 		deleteYamlFiles(t, tempDir)
 	})

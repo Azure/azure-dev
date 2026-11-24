@@ -553,6 +553,7 @@ func (pm *PipelineManager) Configure(
 		if err != nil {
 			return result, fmt.Errorf("failed to get credential options: %w", err)
 		}
+		pm.configOptions.clientCredentials = credentialOptions.EnableClientCredentials
 
 		// Enable client credentials if requested
 		if credentialOptions.EnableClientCredentials {
@@ -905,7 +906,7 @@ func (pm *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepositor
 			// remove spinner and display warning
 			pm.console.StopSpinner(ctx, checkGitMessage, input.StepWarning)
 			pm.console.MessageUxItem(ctx, &ux.WarningMessage{
-				Description: "No GitHub repository detected.\n",
+				Description: "No Git repository detected.\n",
 				HidePrefix:  true,
 			})
 			warningCount++
@@ -1323,15 +1324,20 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 	return nil
 }
 
-// hasPipelineFile checks if any pipeline files exist for the given provider in the specified repository root.
-func hasPipelineFile(provider ciProviderType, repoRoot string) bool {
+// defaultPipelineFile returns the name of the default pipeline file that exists for the given provider in the specified
+// repository root, or an empty string when there is none.
+func defaultPipelineFile(provider ciProviderType, repoRoot string) string {
 	for _, path := range pipelineProviderFiles[provider].Files {
-		fullPath := filepath.Join(repoRoot, path)
-		if osutil.FileExists(fullPath) {
-			return true
+		if osutil.FileExists(filepath.Join(repoRoot, path)) {
+			return filepath.Base(path)
 		}
 	}
-	return false
+	return ""
+}
+
+// hasPipelineFile checks if any pipeline files exist for the given provider in the specified repository root.
+func hasPipelineFile(provider ciProviderType, repoRoot string) bool {
+	return defaultPipelineFile(provider, repoRoot) != ""
 }
 
 func (pm *PipelineManager) determineProvider(ctx context.Context, repoRoot string) (ciProviderType, error) {
@@ -1490,6 +1496,7 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context, authTyp
 	pm.configOptions.projectSecrets = slices.Clone(pm.prjConfig.Pipeline.Secrets)
 	pm.configOptions.projectVariables = slices.Clone(pm.prjConfig.Pipeline.Variables)
 	pm.configOptions.provisioningProvider = &pm.infra.Options
+	pm.configOptions.pipelineFile = defaultPipelineFile(pm.ciProviderType, repoRoot)
 	return nil
 }
 

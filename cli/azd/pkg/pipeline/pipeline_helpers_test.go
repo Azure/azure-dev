@@ -290,16 +290,64 @@ func Test_gitHubActionsEnablingChoice_String_panic(t *testing.T) {
 // ------------------------------------------------------------------
 
 func Test_workflow_CiPipeline(t *testing.T) {
-	w := &workflow{
-		repoDetails: &gitRepositoryDetails{
-			url: "https://github.com/Azure/azure-dev",
-		},
+	const repoUrl = "https://github.com/Azure/azure-dev"
+
+	tests := []struct {
+		name       string
+		file       string
+		pushStatus bool
+		want       string
+	}{
+		{"no default workflow file", "", true, repoUrl + "/actions"},
+		{"workflow file not pushed", "azure-dev.yml", false, repoUrl + "/actions"},
+		{"yml workflow file pushed", "azure-dev.yml", true, repoUrl + "/actions/workflows/azure-dev.yml"},
+		{"yaml workflow file pushed", "azure-dev.yaml", true, repoUrl + "/actions/workflows/azure-dev.yaml"},
 	}
 
-	assert.Equal(t, "actions", w.name())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := &workflow{
+				repoDetails: &gitRepositoryDetails{url: repoUrl, pushStatus: tt.pushStatus},
+				file:        tt.file,
+			}
+
+			assert.Equal(t, "actions", w.name())
+			assert.Equal(t, tt.want, w.url())
+		})
+	}
+}
+
+func Test_actionsSettingsUrl(t *testing.T) {
 	assert.Equal(t,
-		"https://github.com/Azure/azure-dev/actions",
-		w.url())
+		"https://github.com/Azure/azure-dev/settings/secrets/actions",
+		actionsSettingsUrl("Azure/azure-dev", true))
+	assert.Equal(t,
+		"https://github.com/Azure/azure-dev/settings/variables/actions",
+		actionsSettingsUrl("Azure/azure-dev", false))
+}
+
+func Test_defaultPipelineFile(t *testing.T) {
+	writeWorkflow := func(t *testing.T, root string, name string) {
+		dir := filepath.Join(root, ".github", "workflows")
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("name: test"), 0o600))
+	}
+
+	t.Run("none", func(t *testing.T) {
+		assert.Empty(t, defaultPipelineFile(ciProviderGitHubActions, t.TempDir()))
+	})
+	t.Run("custom file only", func(t *testing.T) {
+		root := t.TempDir()
+		writeWorkflow(t, root, "custom.yml")
+		assert.Empty(t, defaultPipelineFile(ciProviderGitHubActions, root))
+	})
+	for _, name := range []string{"azure-dev.yml", "azure-dev.yaml"} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			writeWorkflow(t, root, name)
+			assert.Equal(t, name, defaultPipelineFile(ciProviderGitHubActions, root))
+		})
+	}
 }
 
 // ------------------------------------------------------------------

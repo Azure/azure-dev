@@ -38,17 +38,52 @@ const (
 )
 
 type taskTargetKey struct{}
+type taskChallengeKey struct{}
+
+type taskChallenge struct {
+	values []string
+}
+
+// taskChallengePolicy brackets authentication. The transport keeps challenges out
+// of SDK logging; the inner policy restores them only after logging has finished.
+// Strip even an unhandled challenge before response capture can expose it.
+type taskChallengePolicy struct{}
+
+func (taskChallengePolicy) Do(req *policy.Request) (*http.Response, error) {
+	req = req.WithContext(context.WithValue(req.Raw().Context(), taskChallengeKey{}, &taskChallenge{}))
+	resp, err := req.Next()
+	if resp != nil {
+		resp.Header.Del("WWW-Authenticate")
+	}
+	return resp, err
+}
+
+type taskRestoreChallengePolicy struct{}
+
+func (taskRestoreChallengePolicy) Do(req *policy.Request) (*http.Response, error) {
+	resp, err := req.Next()
+	if resp != nil {
+		if challenge, ok := req.Raw().Context().Value(taskChallengeKey{}).(*taskChallenge); ok {
+			resp.Header["Www-Authenticate"] = challenge.values
+		}
+	}
+	return resp, err
+}
 
 type taskResponseTransport struct {
 	next policy.Transporter
 }
 
 // newTaskPipeline retains the shared authentication, correlation, user-agent and
-// read retry policies. Only its transport and the URLs visible to SDK logging differ.
+// read retry policies while keeping task URLs and challenges out of SDK logging.
 func newTaskPipeline(options *policy.ClientOptions, transport policy.Transporter) runtime.Pipeline {
 	optionsCopy := *options
 	optionsCopy.Transport = &taskResponseTransport{next: transport}
 	optionsCopy.Logging.IncludeBody = false
+	// Per-call policies wrap retries and their logger. Keep the shared bearer
+	// policy between these two policies without modifying the shared pipeline.
+	optionsCopy.PerCallPolicies = append([]policy.Policy{taskChallengePolicy{}}, options.PerCallPolicies...)
+	optionsCopy.PerCallPolicies = append(optionsCopy.PerCallPolicies, taskRestoreChallengePolicy{})
 	return runtime.NewPipeline("azure-ai-agents", "v1.0.0", runtime.PipelineOptions{}, &optionsCopy)
 }
 
@@ -84,6 +119,12 @@ func (t *taskResponseTransport) Do(req *http.Request) (*http.Response, error) {
 	}
 	if err != nil || req.Context().Err() != nil {
 		return nil, safeTaskIOError(req.Context(), "reading task response")
+	}
+	if challenge, ok := req.Context().Value(taskChallengeKey{}).(*taskChallenge); ok {
+		challenge.values = nil
+		if resp.StatusCode == http.StatusUnauthorized {
+			challenge.values = resp.Header.Values("WWW-Authenticate")
+		}
 	}
 	headers := http.Header{}
 	// Keep only parsed retry hints: even normally safe response headers may echo

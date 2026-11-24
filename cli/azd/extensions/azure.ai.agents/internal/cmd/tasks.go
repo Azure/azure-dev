@@ -259,6 +259,13 @@ func tasksOperationError(err error, operation string) error {
 		switch response.StatusCode {
 		case http.StatusForbidden:
 			suggestion = "verify hosted-agent Tasks preview availability and your project permissions"
+			if response.ErrorCode == "hosted_agent_required" {
+				message = "Tasks require a hosted agent"
+				suggestion = "verify the task ID and --project-endpoint refer to a hosted-agent Task"
+				if operation == "list" {
+					suggestion = "use --agent-name to select a deployed hosted agent in the target project"
+				}
+			}
 		case http.StatusNotFound:
 			switch response.ErrorCode {
 			case "TaskNotFound", "task_not_found":
@@ -397,8 +404,15 @@ func resolveTasksTarget(
 	if err != nil {
 		// Explicit endpoint + name is intentionally usable outside a checkout,
 		// but an explicitly selected environment must not silently be ignored.
-		if !explicit || opts.environment != "" {
+		if opts.environment != "" {
 			return nil, fmt.Errorf("reading selected azd environment %q: %w", opts.environment, err)
+		}
+		if !explicit {
+			recovery := "select one with 'azd env select <name>', or supply --project-endpoint"
+			if opts.list {
+				recovery += " and --agent-name <deployed-agent-name>"
+			}
+			return nil, fmt.Errorf("reading selected azd environment failed; %s: %w", recovery, err)
 		}
 		if opts.agentName == "" {
 			return nil, tasksAgentNameRequired("no selected environment is available to discover deployed agents")

@@ -6,6 +6,7 @@ package agent_api
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -191,6 +193,138 @@ func captureTaskLogs(t *testing.T) *bytes.Buffer {
 	log.SetEvents()
 	t.Cleanup(func() { log.SetListener(nil); log.SetEvents() })
 	return &logs
+}
+
+type taskTokenCredentialFunc func(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error)
+
+func (f taskTokenCredentialFunc) GetToken(
+	ctx context.Context, options policy.TokenRequestOptions,
+) (azcore.AccessToken, error) {
+	return f(ctx, options)
+}
+
+func TestTasksClaimsChallengeRefreshWithoutLoggingSecrets(t *testing.T) {
+	logs := captureTaskLogs(t)
+	const claims = `{"access_token":{"acrs":{"essential":true,"values":["secret-claims"]}}}`
+	encodedClaims := base64.StdEncoding.EncodeToString([]byte(claims))
+	var tokenRequests []policy.TokenRequestOptions
+	credential := taskTokenCredentialFunc(func(
+		_ context.Context, options policy.TokenRequestOptions,
+	) (azcore.AccessToken, error) {
+		tokenRequests = append(tokenRequests, options)
+		token := "secret-initial-token"
+		if options.Claims == claims {
+			token = "secret-refreshed-token"
+		}
+		return azcore.AccessToken{Token: token, ExpiresOn: time.Now().Add(time.Hour)}, nil
+	})
+	attempts := 0
+	original := recordproxy.Transport
+	recordproxy.Transport = taskRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		attempts++
+		require.Equal(t, "/api/projects/project/tasks/secret-task-id", r.URL.Path)
+		require.Equal(t, tasksPreviewFeature, r.Header.Get("Foundry-Features"))
+		if attempts == 1 {
+			require.Equal(t, "Bearer secret-initial-token", r.Header.Get("Authorization"))
+			response := taskHTTPResponse(r, http.StatusUnauthorized, `{"message":"secret-body"}`)
+			response.Header.Set("WWW-Authenticate", `Bearer error="insufficient_claims", claims="`+encodedClaims+`"`)
+			return response, nil
+		}
+		require.Equal(t, 2, attempts)
+		require.Equal(t, "Bearer secret-refreshed-token", r.Header.Get("Authorization"))
+		return taskHTTPResponse(r, http.StatusOK, `{"id":"secret-task-id"}`), nil
+	})
+	t.Cleanup(func() { recordproxy.Transport = original })
+	client := NewAgentClient("https://account.services.ai.azure.com/api/projects/project/", credential)
+	var captured *http.Response
+	ctx := runtime.WithCaptureResponse(t.Context(), &captured)
+	// Disable ordinary retries: the second wire request must come from bearer challenge handling.
+	ctx = policy.WithRetryOptions(ctx, policy.RetryOptions{MaxRetries: -1})
+	result, err := client.GetTask(ctx, "secret-task-id")
+	require.NoError(t, err)
+	require.JSONEq(t, `{"id":"secret-task-id"}`, string(result))
+	require.Equal(t, 2, attempts)
+	require.Len(t, tokenRequests, 2)
+	require.Empty(t, tokenRequests[0].Claims)
+	require.Equal(t, claims, tokenRequests[1].Claims)
+	for _, options := range tokenRequests {
+		require.Equal(t, []string{"https://ai.azure.com/.default"}, options.Scopes)
+		require.True(t, options.EnableCAE)
+	}
+	require.NotNil(t, captured)
+	require.Empty(t, captured.Header.Get("WWW-Authenticate"))
+	require.NotEmpty(t, logs.String(), "the privacy assertion must run with SDK logging enabled")
+	require.NotContains(t, logs.String(), "secret")
+	require.NotContains(t, logs.String(), encodedClaims)
+	require.NotContains(t, logs.String(), "insufficient_claims")
+}
+
+func TestTasksFailedClaimsChallengesStayPrivate(t *testing.T) {
+	const claims = `{"access_token":{"acrs":{"values":["secret-claims"]}}}`
+	encodedClaims := base64.StdEncoding.EncodeToString([]byte(claims))
+	for _, tc := range []struct {
+		name             string
+		challenge        string
+		credentialFails  bool
+		expectedRequests int
+	}{
+		{"repeated challenge", encodedClaims, false, 2},
+		{"invalid claims", "secret-invalid-base64", false, 1},
+		{"credential rejects claims", encodedClaims, true, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := captureTaskLogs(t)
+			tokenRequests := 0
+			credential := taskTokenCredentialFunc(func(
+				_ context.Context, options policy.TokenRequestOptions,
+			) (azcore.AccessToken, error) {
+				tokenRequests++
+				if options.Claims != "" && tc.credentialFails {
+					return azcore.AccessToken{}, errors.New("secret-credential-error " + options.Claims)
+				}
+				return azcore.AccessToken{Token: "secret-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
+			})
+			attempts := 0
+			original := recordproxy.Transport
+			recordproxy.Transport = taskRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				attempts++
+				response := taskHTTPResponse(r, http.StatusUnauthorized, `{"message":"secret-body"}`)
+				response.Header.Set("WWW-Authenticate", `Bearer error="insufficient_claims", claims="`+tc.challenge+`"`)
+				return response, nil
+			})
+			t.Cleanup(func() { recordproxy.Transport = original })
+			client := NewAgentClient("https://account.services.ai.azure.com/api/projects/project/", credential)
+			var captured *http.Response
+			ctx := runtime.WithCaptureResponse(t.Context(), &captured)
+			ctx = policy.WithRetryOptions(ctx, policy.RetryOptions{MaxRetries: -1})
+			result, err := client.GetTask(ctx, "secret-task-id")
+			require.Nil(t, result)
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), "secret")
+			require.NotContains(t, err.Error(), tc.challenge)
+			require.Equal(t, tc.expectedRequests, attempts)
+			if tc.name == "repeated challenge" {
+				responseError, ok := errors.AsType[*azcore.ResponseError](err)
+				require.True(t, ok)
+				require.Equal(t, http.StatusUnauthorized, responseError.StatusCode)
+				require.Empty(t, responseError.RawResponse.Header)
+			} else {
+				require.EqualError(t, err, "sending task request failed")
+			}
+			if tc.name == "invalid claims" {
+				require.Equal(t, 1, tokenRequests)
+			} else {
+				require.Equal(t, 2, tokenRequests)
+			}
+			if captured != nil {
+				require.Empty(t, captured.Header.Get("WWW-Authenticate"))
+			}
+			require.NotEmpty(t, logs.String())
+			require.NotContains(t, logs.String(), "secret")
+			require.NotContains(t, logs.String(), tc.challenge)
+			require.NotContains(t, logs.String(), "insufficient_claims")
+		})
+	}
 }
 
 func TestTasksSanitizeHTTPErrorsAndLogs(t *testing.T) {

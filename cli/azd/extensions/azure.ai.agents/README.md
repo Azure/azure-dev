@@ -2139,9 +2139,12 @@ azd ai agent tasks show 'task-id-from-list' --output table
 
 When the switch is off, Tasks are hidden from root discovery, but direct
 `tasks --help`, `tasks list --help`, and `tasks show --help` remain available.
-Actual list/show operations fail with `feature_not_enabled` before target
-resolution, authentication, or service calls. Pure argument validation runs
-first, even while the preview is off. Turning the CLI switch on does not enable
+Inside the extension, actual list/show operations fail with `feature_not_enabled`
+before target resolution, Tasks authentication, or Tasks service calls. Pure
+argument validation runs first, even while the preview is off. This is not a
+host-wide no-authentication guarantee: before launching direct extension commands,
+azd loads the selected environment and can resolve its Key Vault references,
+including references unrelated to Tasks. Turning the CLI switch on does not enable
 service-side preview access or grant project permissions.
 
 ### Target selection
@@ -2159,7 +2162,10 @@ project URL ending in `/api/projects/<project>` with no credentials, query, or
 fragment, not an agent endpoint. For list with an explicit project, only local
 services deployed to that same project are candidates; a remote deployed agent
 name can be supplied directly. Show is project-scoped: an explicit project
-endpoint and exact Task ID need no local service or agent name. Outside a
+endpoint and exact Task ID need no local service or agent name. With an explicit
+endpoint, show does not look up or validate a local environment for targeting;
+the global `--environment` can still affect host-injected settings such as the
+preview switch, but does not redirect that project-scoped read. Outside a
 checkout, supply both endpoint and deployed agent name for list, or endpoint and
 Task ID for show:
 
@@ -2214,8 +2220,10 @@ azd ai agent tasks list --agent-name support-agent --limit 10 --order desc \
 
 ### Output, privacy, and live semantics
 
-`--output/-o json` is the default for both commands. JSON preserves the service
-object, including unknown fields, page metadata, and attachment values unless
+`--output/-o json` is the default for both commands. For scripts, specify
+`--output json` explicitly: older azd hosts can append extension-update notices
+to stdout when the output flag is omitted, independently of the extension's JSON
+default. JSON preserves the service object, including unknown fields, page metadata, and attachment values unless
 list explicitly requests their omission. Treat JSON as potentially sensitive:
 it can contain customer content, attachment values, error details, and identifiers.
 `--omit-attachment-values` is list-only and is not general redaction. Avoid copying
@@ -2242,8 +2250,9 @@ invocation lifecycle aliases. Status/order/filter meaning and availability are
 controlled by the hosted-agent Tasks service; CLI opt-in alone does not establish
 support for every agent or protocol. Reads can change between calls, so pages
 are not promised to be a stable snapshot. A 403 can indicate missing preview
-access or permissions; a 404 can indicate a missing Task or an unavailable
-route/API version. Check the project and service availability rather than
+access or permissions; `hosted_agent_required` specifically means the target
+requires a hosted agent rather than a prompt agent. A 404 can indicate a missing
+Task or an unavailable route/API version. Check the project and service availability rather than
 assuming every 404 proves the Task does not exist.
 
 ## State Stores

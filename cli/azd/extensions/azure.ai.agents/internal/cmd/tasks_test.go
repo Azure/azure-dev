@@ -294,6 +294,26 @@ func TestTasksErrorsAreSanitizedAndActionable(t *testing.T) {
 	require.NotContains(t, wire.Message, "secret")
 }
 
+func TestTasksHostedAgentRequiredGuidance(t *testing.T) {
+	for _, operation := range []string{"list", "show"} {
+		t.Run(operation, func(t *testing.T) {
+			err := tasksOperationError(&azcore.ResponseError{
+				StatusCode: http.StatusForbidden, ErrorCode: "hosted_agent_required",
+			}, operation)
+			wire := azdext.WrapError(err)
+			require.Contains(t, wire.Message, "Tasks require a hosted agent")
+			require.NotContains(t, wire.Suggestion, "preview")
+			if operation == "list" {
+				require.Contains(t, wire.Suggestion, "--agent-name")
+			} else {
+				require.Contains(t, wire.Suggestion, "task ID")
+				require.Contains(t, wire.Suggestion, "--project-endpoint")
+				require.NotContains(t, wire.Suggestion, "--agent-name")
+			}
+		})
+	}
+}
+
 func TestTasksOversizedTransportCommandError(t *testing.T) {
 	for _, operation := range []string{"list", "show"} {
 		for _, format := range []string{"json", "table"} {
@@ -713,6 +733,25 @@ func TestTasksMissingDeploymentGuidance(t *testing.T) {
 			require.Contains(t, local.Suggestion, "deploy")
 			require.Contains(t, local.Suggestion, "--agent-name")
 			require.Contains(t, local.Suggestion, "--project-endpoint")
+		})
+	}
+}
+
+func TestTasksMissingEnvironmentRecovery(t *testing.T) {
+	for _, list := range []bool{false, true} {
+		t.Run(map[bool]string{false: "show", true: "list"}[list], func(t *testing.T) {
+			_, err := resolveTasksTarget(t.Context(), nil, tasksTargetOptions{list: list})
+			require.Error(t, err)
+			wire := azdext.WrapError(err)
+			require.Contains(t, wire.Message, "selected azd environment")
+			require.NotContains(t, wire.Message, `environment ""`)
+			require.Contains(t, wire.Message, "azd env select")
+			require.Contains(t, wire.Message, "--project-endpoint")
+			if list {
+				require.Contains(t, wire.Message, "--agent-name")
+			} else {
+				require.NotContains(t, wire.Message, "--agent-name")
+			}
 		})
 	}
 }

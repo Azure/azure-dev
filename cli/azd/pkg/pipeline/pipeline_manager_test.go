@@ -6,6 +6,8 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -31,6 +33,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockgraphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -1261,18 +1264,27 @@ func normalizeEOL(input []byte) string {
 	return strings.ReplaceAll(string(input), "\r\n", "\n")
 }
 
-type testPipelinePrincipal struct{ entraid.EntraIdService }
-
-func (testPipelinePrincipal) CreateOrUpdateServicePrincipal(
-	context.Context, string, string, entraid.CreateOrUpdateServicePrincipalOptions,
-) (*graphsdk.ServicePrincipal, error) {
-	return &graphsdk.ServicePrincipal{AppId: "app-id", AppOwnerOrganizationId: new("tenant-id")}, nil
-}
-
-func (testPipelinePrincipal) ResetPasswordCredentials(
-	_ context.Context, subscriptionId, appId string,
-) (*entraid.AzureCredentials, error) {
-	return &entraid.AzureCredentials{ClientId: appId, SubscriptionId: subscriptionId, ClientSecret: "test"}, nil
+// The app already has a password for another workload but has no service principal in this tenant.
+func mockExistingPipelineApp(mc *mocks.MockContext, newSecret string) string {
+	app := graphsdk.Application{
+		Id: new("object-id"), AppId: new("app-id"), DisplayName: "shared-app",
+		PasswordCredentials: []*graphsdk.ApplicationPasswordCredential{{KeyId: new("other-workload-key")}},
+	}
+	sp := graphsdk.ServicePrincipal{AppId: *app.AppId, AppOwnerOrganizationId: new("tenant-id")}
+	mockgraphsdk.RegisterApplicationListMock(mc, http.StatusOK, []graphsdk.Application{app})
+	mockgraphsdk.RegisterApplicationGetItemByAppIdMock(mc, http.StatusNotFound, app.DisplayName, nil)
+	mockgraphsdk.RegisterApplicationGetItemByAppIdMock(mc, http.StatusOK, *app.AppId, &app)
+	mockgraphsdk.RegisterServicePrincipalListMock(mc, http.StatusOK, []graphsdk.ServicePrincipal{})
+	mc.HttpClient.When(func(r *http.Request) bool {
+		return r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/servicePrincipals")
+	}).RespondFn(func(r *http.Request) (*http.Response, error) {
+		mockgraphsdk.RegisterServicePrincipalListMock(mc, http.StatusOK, []graphsdk.ServicePrincipal{sp})
+		return mocks.CreateHttpResponseWithBody(r, http.StatusCreated, sp)
+	})
+	// Any request to remove an existing password is unexpected and fails the test.
+	mockgraphsdk.RegisterApplicationAddPasswordMock(mc, http.StatusOK, *app.Id,
+		&graphsdk.ApplicationPasswordCredential{KeyId: new("pipeline-key"), SecretText: &newSecret})
+	return app.DisplayName
 }
 
 func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
@@ -1285,6 +1297,8 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 			dir := t.TempDir()
 			resetAzureYaml(t, filepath.Join(dir, "azure.yaml"))
 			mc := resetContext(dir, t.Context())
+			const newSecret = "new-test-value"
+			appName := mockExistingPipelineApp(mc, newSecret)
 			mc.CommandRunner.When(func(_ exec.RunArgs, cmd string) bool {
 				return strings.Contains(cmd, "remote get-url origin")
 			}).Respond(exec.NewRunResult(0, "https://github.com/test-owner/test-repo.git", ""))
@@ -1295,7 +1309,13 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 			mc.CommandRunner.When(func(_ exec.RunArgs, cmd string) bool {
 				return strings.Contains(cmd, "secret set")
 			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				secrets = append(secrets, args.Args[len(args.Args)-1])
+				name := args.Args[len(args.Args)-1]
+				secrets = append(secrets, name)
+				if name == "ARM_CLIENT_SECRET" {
+					value, err := io.ReadAll(args.StdIn)
+					require.NoError(t, err)
+					require.Equal(t, newSecret, string(value))
+				}
 				return exec.NewRunResult(0, "", ""), nil
 			})
 			if tc.flag == "" {
@@ -1319,12 +1339,12 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 				"RS_CONTAINER_NAME":             "state",
 			})
 			pm, err := createPipelineManager(mc, azdcontext.NewAzdContextWithDirectory(dir), env, &PipelineManagerArgs{
-				PipelineProvider:     gitHubCode,
-				PipelineRemoteName:   "origin",
-				PipelineAuthTypeName: tc.flag,
+				PipelineServicePrincipalName: appName,
+				PipelineProvider:             gitHubCode,
+				PipelineRemoteName:           "origin",
+				PipelineAuthTypeName:         tc.flag,
 			})
 			require.NoError(t, err)
-			pm.entraIdService = testPipelinePrincipal{}
 			_, err = pm.Configure(t.Context(), "test", &project.Infra{
 				Options: provisioning.Options{Provider: provisioning.Terraform},
 			})

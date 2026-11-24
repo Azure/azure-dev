@@ -558,10 +558,10 @@ func (pm *PipelineManager) Configure(
 			spinnerMessage := "Configuring client credentials for service principal"
 			pm.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
-			creds, err := pm.entraIdService.ResetPasswordCredentials(ctx, subscriptionId, authConfig.ClientId)
+			creds, err := pm.entraIdService.AddPasswordCredential(ctx, subscriptionId, authConfig.ClientId)
 			pm.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
 			if err != nil {
-				return result, fmt.Errorf("failed to reset password credentials: %w", err)
+				return result, fmt.Errorf("failed to add a client secret for the pipeline: %w", err)
 			}
 
 			authConfig.AzureCredentials = creds

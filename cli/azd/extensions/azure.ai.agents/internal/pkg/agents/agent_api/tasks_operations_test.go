@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -201,6 +203,55 @@ func (f taskTokenCredentialFunc) GetToken(
 	ctx context.Context, options policy.TokenRequestOptions,
 ) (azcore.AccessToken, error) {
 	return f(ctx, options)
+}
+
+func TestTasksCredentialFailuresAreSanitized(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		auth bool
+	}{
+		{"typed", &azidentity.AuthenticationFailedError{RawResponse: &http.Response{StatusCode: 401,
+			Body: io.NopCloser(strings.NewReader("secret credential stderr"))}}, true},
+		{"wrapped typed", fmt.Errorf("secret wrapper: %w", &azidentity.AuthenticationFailedError{
+			RawResponse: &http.Response{StatusCode: 401,
+				Body: io.NopCloser(strings.NewReader("secret credential stderr"))},
+		}), true},
+		{"generic", errors.New("secret authentication failed"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := captureTaskLogs(t)
+			require.ErrorContains(t, tc.err, "secret", "fixture must contain sensitive credential detail")
+			requests := 0
+			original := recordproxy.Transport
+			recordproxy.Transport = taskRoundTripFunc(func(*http.Request) (*http.Response, error) {
+				requests++
+				return nil, errors.New("unexpected HTTP request")
+			})
+			t.Cleanup(func() { recordproxy.Transport = original })
+			credential := taskTokenCredentialFunc(func(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
+				return azcore.AccessToken{}, tc.err
+			})
+			client := NewAgentClient("https://account.services.ai.azure.com/api/projects/project", credential)
+			result, err := client.GetTask(t.Context(), "secret-task-id")
+			require.Nil(t, result)
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), "secret")
+			require.False(t, errors.Is(err, tc.err))
+			_, originalType := errors.AsType[*azidentity.AuthenticationFailedError](err)
+			require.False(t, originalType, "original credential error must not remain in the chain")
+			require.Nil(t, errors.Unwrap(err))
+			_, safeAuth := errors.AsType[*TaskAuthenticationError](err)
+			require.Equal(t, tc.auth, safeAuth)
+			if tc.auth {
+				require.EqualError(t, err, "task authentication failed")
+			} else {
+				require.EqualError(t, err, "sending task request failed")
+			}
+			require.Zero(t, requests)
+			require.NotContains(t, logs.String(), "secret")
+		})
+	}
 }
 
 func TestTasksClaimsChallengeRefreshWithoutLoggingSecrets(t *testing.T) {

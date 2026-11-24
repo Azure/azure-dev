@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 )
 
 // Public API reference: AgentServerTaskStorage.getAgentServerTask and
@@ -180,6 +181,14 @@ func (*TaskResponseTooLargeError) Error() string {
 // NonRetriable prevents retrying a locally rejected oversized successful response.
 func (*TaskResponseTooLargeError) NonRetriable() {}
 
+// TaskAuthenticationError preserves only a safe classification of a typed SDK
+// authentication failure. It never contains or unwraps the credential error.
+type TaskAuthenticationError struct{}
+
+func (*TaskAuthenticationError) Error() string {
+	return "task authentication failed"
+}
+
 func safeTaskIOError(ctx context.Context, operation string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -298,6 +307,9 @@ func (c *AgentClient) taskRequest(ctx context.Context, id string, query url.Valu
 		// Authentication policies can still return arbitrary errors: do not expose them.
 		if _, ok := errors.AsType[*TaskResponseTooLargeError](err); ok {
 			return nil, err
+		}
+		if _, ok := errors.AsType[*azidentity.AuthenticationFailedError](err); ok {
+			return nil, &TaskAuthenticationError{}
 		}
 		return nil, errors.New("sending task request failed")
 	}

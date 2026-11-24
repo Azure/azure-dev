@@ -20,8 +20,11 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 
 	"azureaiagent/internal/exterrors"
@@ -244,6 +247,10 @@ func (a *tasksAction) run(ctx context.Context, operation string, args []string) 
 }
 
 func tasksOperationError(err error, operation string) error {
+	if _, ok := errors.AsType[*agent_api.TaskAuthenticationError](err); ok {
+		return exterrors.Auth(exterrors.CodeAuthFailed, "Tasks authentication failed",
+			"run `azd auth login` to authenticate, then retry")
+	}
 	if _, ok := errors.AsType[*agent_api.TaskResponseTooLargeError](err); ok {
 		if operation == "list" {
 			return errors.New("Tasks list response exceeds the local safety cap of 32 MiB; " +
@@ -360,6 +367,14 @@ func tasksDeploymentEndpoint(values map[string]string, service string) string {
 	return strings.TrimSpace(values["FOUNDRY_PROJECT_ENDPOINT"])
 }
 
+// tasksNoProject recognizes only the host's plain no-project sentinel, not load
+// failures or structured errors that happen to carry the same status message.
+func tasksNoProject(err error) bool {
+	st, ok := status.FromError(err)
+	return ok && st.Code() == codes.Unknown && st.Message() == azdcontext.ErrNoProject.Error() &&
+		len(st.Proto().Details) == 0
+}
+
 func resolveTasksTarget(
 	ctx context.Context, host *azdext.AzdClient, opts tasksTargetOptions,
 ) (*AgentContext, error) {
@@ -384,12 +399,16 @@ func resolveTasksTarget(
 	// configuration, or process environment as an endpoint fallback.
 	values := map[string]string{}
 	var env *azdext.EnvironmentResponse
+	missingContext := false
 	if host != nil {
 		if opts.environment != "" {
 			env, err = host.Environment().Get(ctx, &azdext.GetEnvironmentRequest{Name: opts.environment})
 		} else {
 			env, err = host.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 		}
+		// Only lookup absence permits fallback. A subsequent GetValues failure
+		// means existing context could not be read, even if its message is similar.
+		missingContext = isDefaultEnvironmentMissing(err) || tasksNoProject(err)
 		if err == nil && env != nil && env.Environment != nil && env.Environment.Name != "" {
 			values, err = getAgentEnvironmentValues(ctx, host, env.Environment.Name)
 		} else if err == nil {
@@ -414,6 +433,9 @@ func resolveTasksTarget(
 			}
 			return nil, fmt.Errorf("reading selected azd environment failed; %s: %w", recovery, err)
 		}
+		if !missingContext {
+			return nil, fmt.Errorf("reading selected azd environment: %w", err)
+		}
 		if opts.agentName == "" {
 			return nil, tasksAgentNameRequired("no selected environment is available to discover deployed agents")
 		}
@@ -434,7 +456,14 @@ func resolveTasksTarget(
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if projectErr == nil && response != nil {
+		if projectErr != nil {
+			if !tasksNoProject(projectErr) {
+				return nil, fmt.Errorf("loading project for Tasks service discovery: %w", projectErr)
+			}
+		} else {
+			if response == nil || response.Project == nil {
+				return nil, errors.New("loading project for Tasks service discovery: missing project response")
+			}
 			project = response.Project
 		}
 	}

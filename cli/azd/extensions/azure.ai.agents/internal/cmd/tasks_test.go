@@ -17,13 +17,20 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/recordproxy"
@@ -292,6 +299,56 @@ func TestTasksErrorsAreSanitizedAndActionable(t *testing.T) {
 	wire := azdext.WrapError(tasksOperationError(wrapped, "show"))
 	require.Contains(t, wire.Message, "32 MiB")
 	require.NotContains(t, wire.Message, "secret")
+}
+
+type tasksFailingCredential struct{ err error }
+
+func (c tasksFailingCredential) GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return azcore.AccessToken{}, c.err
+}
+
+func TestTasksAuthenticationGuidanceIsSanitized(t *testing.T) {
+	original := recordproxy.Transport
+	requests := 0
+	recordproxy.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		requests++
+		return nil, errors.New("unexpected HTTP request")
+	})
+	t.Cleanup(func() { recordproxy.Transport = original })
+	for _, typed := range []bool{false, true} {
+		t.Run(fmt.Sprint(typed), func(t *testing.T) {
+			var credentialErr error = errors.New("secret generic credential error")
+			if typed {
+				credentialErr = fmt.Errorf("secret wrapper: %w", &azidentity.AuthenticationFailedError{
+					RawResponse: &http.Response{StatusCode: 401,
+						Body: io.NopCloser(strings.NewReader("secret credential stderr"))},
+				})
+			}
+			client := agent_api.NewAgentClient(tasksTestEndpoint, tasksFailingCredential{credentialErr})
+			apiErr := func() error {
+				_, err := client.GetTask(t.Context(), "secret-task-id")
+				return err
+			}()
+			err := tasksOperationError(apiErr, "show")
+			wire := azdext.WrapError(err)
+			serialized, marshalErr := json.Marshal(wire)
+			require.NoError(t, marshalErr)
+			require.NotContains(t, string(serialized), "secret")
+			require.False(t, errors.Is(err, credentialErr))
+			local, ok := errors.AsType[*azdext.LocalError](err)
+			if typed {
+				require.True(t, ok, "typed authentication failure must retain safe classification")
+				require.Equal(t, azdext.LocalErrorCategoryAuth, local.Category)
+				require.Equal(t, exterrors.CodeAuthFailed, local.Code)
+				require.Equal(t, "Tasks authentication failed", wire.Message)
+				require.Contains(t, wire.Suggestion, "azd auth login")
+			} else {
+				require.False(t, ok, "generic credential errors must not be classified by message")
+				require.NotContains(t, wire.Suggestion, "azd auth login")
+			}
+		})
+	}
+	require.Zero(t, requests)
 }
 
 func TestTasksHostedAgentRequiredGuidance(t *testing.T) {
@@ -758,8 +815,8 @@ func TestTasksMissingEnvironmentRecovery(t *testing.T) {
 
 func TestTasksMissingEnvironmentAndCheckout(t *testing.T) {
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", tasksTestEndpoint)
-	env := &testEnvironmentServiceServer{}
-	host := newHelpersTestAzdClient(t, &helpersProjectServer{err: errors.New("no checkout")},
+	env := &tasksEnvironmentServer{currentErr: status.Error(codes.Unknown, "default environment not found")}
+	host := newHelpersTestAzdClient(t, &helpersProjectServer{err: azdcontext.ErrNoProject},
 		&helpersPromptServer{}, env)
 	_, err := resolveTasksTarget(t.Context(), host, tasksTargetOptions{})
 	require.ErrorContains(t, err, "selected azd environment")
@@ -779,6 +836,129 @@ func TestTasksMissingEnvironmentAndCheckout(t *testing.T) {
 	_, err = resolveTasksTarget(ctx, nil, tasksTargetOptions{projectEndpoint: tasksTestEndpoint})
 	require.ErrorIs(t, err, context.Canceled)
 	require.Empty(t, env.setKeys)
+}
+
+// tasksEnvironmentServer models host absence and failures without broadening the shared fake's contract.
+type tasksEnvironmentServer struct {
+	testEnvironmentServiceServer
+	currentErr   error
+	valuesErr    error
+	emptyCurrent bool
+}
+
+func (s *tasksEnvironmentServer) GetCurrent(
+	ctx context.Context, req *azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	if s.currentErr != nil || s.emptyCurrent {
+		return &azdext.EnvironmentResponse{}, s.currentErr
+	}
+	return s.testEnvironmentServiceServer.GetCurrent(ctx, req)
+}
+
+func (s *tasksEnvironmentServer) GetValues(
+	ctx context.Context, req *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	if s.valuesErr != nil {
+		return nil, s.valuesErr
+	}
+	return s.testEnvironmentServiceServer.GetValues(ctx, req)
+}
+
+func TestTasksEnvironmentFailuresDoNotBecomeRawTargets(t *testing.T) {
+	detailed, err := status.New(codes.Unknown, azdcontext.ErrNoProject.Error()).WithDetails(&errdetails.ErrorInfo{
+		Reason: "load_failed",
+	})
+	require.NoError(t, err)
+	for _, tt := range []struct {
+		name                  string
+		currentErr, valuesErr error
+		empty                 bool
+	}{
+		{name: "corrupt default state", currentErr: errors.New("parsing .azure/config.json")},
+		{name: "corrupt environment values", valuesErr: errors.New("parsing .azure/dev/config.json")},
+		{name: "values missing default is not absence", valuesErr: errors.New("default environment not found")},
+		{name: "values no project is not absence", valuesErr: azdcontext.ErrNoProject},
+		{name: "unrelated not found", currentErr: status.Error(codes.NotFound, "current environment not found")},
+		{name: "unrelated unknown", currentErr: status.Error(codes.Unknown, "project load failed")},
+		{name: "no project with details", currentErr: detailed.Err()},
+		{name: "empty successful environment", empty: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			env := &tasksEnvironmentServer{
+				testEnvironmentServiceServer: testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}},
+				currentErr:                   tt.currentErr, valuesErr: tt.valuesErr, emptyCurrent: tt.empty,
+			}
+			host := newHelpersTestAzdClient(t, &helpersProjectServer{err: errors.New("must not discover project")},
+				&helpersPromptServer{}, env)
+			target, err := resolveTasksTarget(t.Context(), host, tasksTargetOptions{
+				projectEndpoint: tasksTestEndpoint, agentName: "worker", list: true,
+			})
+			require.Nil(t, target, "failed context must stop before API/auth client construction")
+			require.ErrorContains(t, err, "reading selected azd environment")
+			cause := tt.currentErr
+			if cause == nil {
+				cause = tt.valuesErr
+			}
+			if cause != nil {
+				require.ErrorContains(t, err, status.Convert(cause).Message())
+			}
+		})
+	}
+}
+
+func TestTasksExplicitEndpointWithoutCheckout(t *testing.T) {
+	for _, missing := range []error{errors.New("default environment not found"), azdcontext.ErrNoProject} {
+		t.Run(missing.Error(), func(t *testing.T) {
+			env := &tasksEnvironmentServer{currentErr: missing}
+			host := newHelpersTestAzdClient(t, &helpersProjectServer{err: azdcontext.ErrNoProject},
+				&helpersPromptServer{}, env)
+			target, err := resolveTasksTarget(t.Context(), host, tasksTargetOptions{
+				projectEndpoint: tasksTestEndpoint, agentName: "remote", list: true,
+			})
+			require.NoError(t, err)
+			require.Equal(t, &AgentContext{ProjectEndpoint: tasksTestEndpoint, Name: "remote"}, target)
+		})
+	}
+	// No project may also be reported after a readable environment response.
+	env := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}}
+	host := newHelpersTestAzdClient(t, &helpersProjectServer{err: azdcontext.ErrNoProject}, &helpersPromptServer{}, env)
+	target, err := resolveTasksTarget(t.Context(), host, tasksTargetOptions{
+		projectEndpoint: tasksTestEndpoint, agentName: "remote", list: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, &AgentContext{ProjectEndpoint: tasksTestEndpoint, Name: "remote"}, target)
+}
+
+func TestTasksProjectLoadFailuresDoNotBecomeRawTargets(t *testing.T) {
+	detailed, err := status.New(codes.Unknown, azdcontext.ErrNoProject.Error()).WithDetails(&errdetails.ErrorInfo{
+		Reason: "load_failed",
+	})
+	require.NoError(t, err)
+	for _, projectErr := range []error{
+		errors.New("parsing azure.yaml: invalid YAML"), status.Error(codes.NotFound, "project file unreadable"),
+		detailed.Err(), nil,
+	} {
+		for _, endpoint := range []string{"", tasksTestEndpoint} {
+			for _, name := range []string{"", "worker"} {
+				t.Run(fmt.Sprintf("%v/%s/%s", projectErr, endpoint, name), func(t *testing.T) {
+					env := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"},
+						values: map[string]map[string]string{"dev": {
+							"FOUNDRY_PROJECT_ENDPOINT": tasksTestEndpoint, "AGENT_WORKER_NAME": "deployed-worker",
+						}}}
+					host := newHelpersTestAzdClient(t, &helpersProjectServer{err: projectErr}, &helpersPromptServer{}, env)
+					target, err := resolveTasksTarget(t.Context(), host, tasksTargetOptions{
+						projectEndpoint: endpoint, agentName: name, list: true,
+					})
+					require.Nil(t, target)
+					require.ErrorContains(t, err, "loading project")
+					require.NotContains(t, err.Error(), "no deployed agent")
+					if projectErr != nil {
+						require.ErrorContains(t, err, status.Convert(projectErr).Message())
+					}
+				})
+			}
+		}
+	}
 }
 
 // Output tests.

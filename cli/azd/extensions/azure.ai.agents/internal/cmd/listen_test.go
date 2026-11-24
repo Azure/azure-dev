@@ -287,6 +287,49 @@ func TestUpdateLegacyProjectDeploymentsSplitNoOp(t *testing.T) {
 	require.NoError(t, updateLegacyProjectDeployments(t.Context(), nil, services, ""))
 }
 
+func TestPredeployDoesNotSeedLegacyProjectDeployments(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "true")
+	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
+	env := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		values:  map[string]map[string]string{"dev": {}},
+	}
+	client := newTestAzdClient(t, env, &testWorkflowServiceServer{})
+	service := &azdext.ServiceConfig{
+		Name: "agent",
+		Host: AiAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind":         "prompt",
+			"name":         "agent",
+			"model":        "chat",
+			"instructions": "Help the user.",
+			"deployments": []any{
+				map[string]any{
+					"name":  "chat",
+					"model": map[string]any{"name": "gpt-4.1-mini", "version": "2025-04-14"},
+					"sku":   map[string]any{"name": "GlobalStandard", "capacity": 10},
+				},
+			},
+		}),
+	}
+	proj := &azdext.ProjectConfig{
+		Path:     t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{"agent": service},
+	}
+
+	_, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+		Project: proj,
+		Service: service,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, env.values["dev"]["AI_PROJECT_DEPLOYMENTS"],
+		"predeploy must not seed AI_PROJECT_DEPLOYMENTS from legacy service declarations")
+
+	require.NoError(t, preprovisionHandler(t.Context(), client, &azdext.ProjectEventArgs{Project: proj}))
+	assert.Contains(t, env.values["dev"]["AI_PROJECT_DEPLOYMENTS"], `\"name\":\"chat\"`,
+		"preprovision continues to seed AI_PROJECT_DEPLOYMENTS from legacy service declarations")
+}
+
 func TestPrepareContainerSettings_AppliesSettingsInMemory(t *testing.T) {
 	t.Parallel()
 

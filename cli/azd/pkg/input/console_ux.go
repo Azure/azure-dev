@@ -51,10 +51,15 @@ func optionLabel(options ConsoleOptions, index int) string {
 func selectChoices(options ConsoleOptions) ([]*uxlib.SelectChoice, int) {
 	choices := make([]*uxlib.SelectChoice, len(options.Options))
 	for i, option := range options.Options {
-		choices[i] = &uxlib.SelectChoice{
-			Value: option,
-			Label: optionLabel(options, i),
+		choice := &uxlib.SelectChoice{Value: option, Label: option}
+		if options.ShowOptionDetailsBelow {
+			if i < len(options.OptionDetails) {
+				choice.Detail = options.OptionDetails[i]
+			}
+		} else {
+			choice.Label = optionLabel(options, i)
 		}
+		choices[i] = choice
 	}
 
 	selectedIndex := 0

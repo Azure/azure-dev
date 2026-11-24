@@ -88,6 +88,30 @@ func TestSelect_Render_initial(t *testing.T) {
 	assert.Contains(t, output, "Charlie")
 }
 
+func TestSelect_Render_choiceDetails(t *testing.T) {
+	var buf bytes.Buffer
+	s := NewSelect(&SelectOptions{
+		Writer:         &buf,
+		Message:        "Choose",
+		DisplayNumbers: new(true),
+		Choices: []*SelectChoice{
+			{Value: "a", Label: "Alpha", Detail: "First choice"},
+			{Value: "b", Label: "Bravo", Detail: "Second choice"},
+			{Value: "c", Label: "Charlie"},
+		},
+	})
+
+	require.NoError(t, s.Render(NewPrinter(&buf)))
+	rendered := specialTextRegex.ReplaceAllString(buf.String(), "")
+	assert.Contains(t, rendered, "  > 1. Alpha\n       First choice\n    2. Bravo\n       Second choice\n    3. Charlie\n")
+
+	s.complete = true
+	buf.Reset()
+	require.NoError(t, s.Render(NewPrinter(&buf)))
+	assert.NotContains(t, buf.String(), "First choice")
+	assert.NotContains(t, buf.String(), "Second choice")
+}
+
 func TestSelect_Render_initial_withoutFilteringSeparatesPromptAndChoices(t *testing.T) {
 	var buf bytes.Buffer
 	printer := NewPrinter(&buf)

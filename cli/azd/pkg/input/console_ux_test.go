@@ -154,6 +154,21 @@ func TestSelectChoices(t *testing.T) {
 		require.Equal(t, "alpha", choices[0].Value)
 		require.Contains(t, choices[0].Label, "detail")
 	})
+
+	t.Run("details below labels stay separate from the label and value", func(t *testing.T) {
+		options := ConsoleOptions{
+			Options:                []string{"alpha", "beta"},
+			OptionDetails:          []string{"First choice"},
+			ShowOptionDetailsBelow: true,
+			DefaultValue:           "beta",
+		}
+		choices, selectedIndex := selectChoices(options)
+		require.Equal(t, 1, selectedIndex)
+		require.Equal(t, []*uxlib.SelectChoice{
+			{Value: "alpha", Label: "alpha", Detail: "First choice"},
+			{Value: "beta", Label: "beta"},
+		}, choices)
+	})
 }
 
 func TestMultiSelectChoices(t *testing.T) {

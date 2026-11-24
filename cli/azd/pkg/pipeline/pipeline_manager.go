@@ -321,10 +321,10 @@ func (pm *PipelineManager) Configure(
 	skipAuth := false
 	if !usingMsi && !usingAppRegistration {
 		log.Printf("Authentication mode has not been set. Prompt user if they want to set it up now.")
-		const optionMsi = "Federated User Managed Identity (MSI + OIDC)"
+		const optionMsi = "Federated Managed Identity (MSI + OIDC) (Recommended)"
 		const optionOidc = "Federated Service Principal (SP + OIDC)"
 		const optionClientSec = "Client Credentials (SP + Secret)"
-		const optionSkip = "Skip authentication setup (for manually configured pipelines or existing set up)"
+		const optionSkip = "Skip authentication setup"
 		options := []string{
 			optionMsi,
 			optionOidc,
@@ -332,9 +332,16 @@ func (pm *PipelineManager) Configure(
 			optionSkip,
 		}
 		selectedOption, err := pm.console.Select(ctx, input.ConsoleOptions{
-			Message:      "Select how to authenticate the pipeline to Azure",
-			Options:      options,
-			DefaultValue: optionMsi,
+			Message: "Select how to authenticate the pipeline to Azure:",
+			Options: options,
+			OptionDetails: []string{
+				"Use a user-assigned managed identity. No secret to store.",
+				"Use a Microsoft Entra app registration. No secret to store.",
+				"Use an expiring secret with --auth-type client-credentials.",
+				"Use existing Azure access or set it up manually.",
+			},
+			ShowOptionDetailsBelow: true,
+			DefaultValue:           optionMsi,
 		})
 		if err != nil {
 			return result, fmt.Errorf("prompting for authentication type: %w", err)

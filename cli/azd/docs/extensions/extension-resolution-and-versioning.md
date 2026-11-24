@@ -242,6 +242,10 @@ Legacy records are never auto-removed and have no known dependencies. Update bac
 
 Any extension or dependency failure returns a nonzero exit code, including with `--output json`. This includes metadata save failures. Completed updates are kept. The JSON summary counts top-level extensions; dependency outcomes appear in `dependencyUpgrades`. The same failure rule applies when installing over an existing extension.
 
+### Automatic update notifications
+
+When running an extension command, `azd` may display an available-update notification after the command finishes. This notification and its trailing blank line go to stderr, leaving the extension's stdout unchanged, including when the extension defaults to JSON. Explicit `--output json` (or `-o json`) suppresses this notification. Checks run in the background without delaying command completion; a displayed notification starts a 24-hour cooldown for that installed extension.
+
 ## Self-Contained Bundles
 
 A **self-contained bundle** is a single portable `.zip` that contains a well-known `registry.json` plus the extension artifacts it references. It lets you share a one-off build (for example, a PR build or an internal extension) without hosting a registry — the recipient runs a single command to install everything from the file, or from a single link when the `.zip` is hosted somewhere reachable.

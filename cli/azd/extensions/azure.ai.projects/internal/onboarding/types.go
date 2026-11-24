@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore kubelet termenv
+// cspell:ignore kubelet
 
 // Package onboarding checks BYO AKS prerequisites, supplied-identity permissions and supporting resources
 // without mutating Azure or persisting deployment state.
@@ -10,11 +10,8 @@ package onboarding
 import (
 	"context"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
-
-	"github.com/muesli/termenv"
 )
 
 // Status describes evidence, not whether an API request happened to succeed.
@@ -121,17 +118,6 @@ func (e *BlockedError) Unwrap() []error {
 const prerequisitesURL = "https://aka.ms/byo-aks-onboarding-prerequisites"
 
 func prerequisitesLink() string {
-	// The extension's stdout is a host pipe, not the user's terminal. Color intent alone does not establish OSC8 support.
-	term := os.Getenv("TERM")
-	knownTerminal := os.Getenv("WT_SESSION") != ""
-	switch os.Getenv("TERM_PROGRAM") {
-	case "vscode", "iTerm.app", "WezTerm", "ghostty":
-		knownTerminal = true
-	}
-	if os.Getenv("FORCE_COLOR") == "1" && os.Getenv("NO_COLOR") == "" && os.Getenv("CI") == "" &&
-		term != "dumb" && !strings.HasPrefix(term, "screen") && !strings.HasPrefix(term, "tmux") && knownTerminal {
-		return termenv.Hyperlink(prerequisitesURL, "requirements")
-	}
 	return "requirements (" + prerequisitesURL + ")"
 }
 

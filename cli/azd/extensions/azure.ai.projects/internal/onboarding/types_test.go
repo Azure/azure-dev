@@ -85,21 +85,20 @@ func TestReportMissingFailureReasonsStillBlocks(t *testing.T) {
 	}
 }
 
-func TestPrerequisitesLinkUsesHostIntentAndKnownTerminalSupport(t *testing.T) {
+func TestPrerequisitesLinkIsPlainText(t *testing.T) {
 	for _, test := range []struct {
 		name, forceColor, noColor, ci, term, windowsTerminal, program string
-		hyperlink                                                     bool
 	}{
-		{"Windows Terminal", "1", "", "", "xterm-256color", "session", "", true},
-		{"VS Code", "1", "", "", "xterm-256color", "", "vscode", true},
-		{"iTerm", "1", "", "", "xterm-256color", "", "iTerm.app", true},
-		{"piped host", "", "", "", "xterm-256color", "session", "vscode", false},
-		{"color alone", "1", "", "", "xterm-256color", "", "", false},
-		{"no color", "1", "1", "", "xterm-256color", "session", "", false},
-		{"CI log", "1", "", "true", "xterm-256color", "session", "", false},
-		{"dumb", "1", "", "", "dumb", "session", "", false},
-		{"screen", "1", "", "", "screen-256color", "", "iTerm.app", false},
-		{"tmux", "1", "", "", "tmux-256color", "", "WezTerm", false},
+		{"Windows Terminal", "1", "", "", "xterm-256color", "session", ""},
+		{"VS Code", "1", "", "", "xterm-256color", "", "vscode"},
+		{"iTerm", "1", "", "", "xterm-256color", "", "iTerm.app"},
+		{"piped host", "", "", "", "xterm-256color", "session", "vscode"},
+		{"color alone", "1", "", "", "xterm-256color", "", ""},
+		{"no color", "1", "1", "", "xterm-256color", "session", ""},
+		{"CI log", "1", "", "true", "xterm-256color", "session", ""},
+		{"dumb", "1", "", "", "dumb", "session", ""},
+		{"screen", "1", "", "", "screen-256color", "", "iTerm.app"},
+		{"tmux", "1", "", "", "tmux-256color", "", "WezTerm"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			for key, value := range map[string]string{
@@ -109,14 +108,8 @@ func TestPrerequisitesLinkUsesHostIntentAndKnownTerminalSupport(t *testing.T) {
 				t.Setenv(key, value)
 			}
 			link := prerequisitesLink()
-			if test.hyperlink {
-				assert.Contains(t, link, "\x1b]8;;"+prerequisitesURL)
-				assert.Contains(t, link, "requirements\x1b]8;;")
-				assert.NotContains(t, link, "requirements (")
-			} else {
-				assert.Equal(t, "requirements ("+prerequisitesURL+")", link)
-				assert.NotContains(t, link, "\x1b")
-			}
+			assert.Equal(t, "requirements ("+prerequisitesURL+")", link)
+			assert.NotContains(t, link, "\x1b")
 		})
 	}
 }

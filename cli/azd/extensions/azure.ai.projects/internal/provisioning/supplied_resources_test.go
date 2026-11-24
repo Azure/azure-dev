@@ -607,9 +607,6 @@ func TestBYOBlockedErrorPresentationSurvivesTransport(t *testing.T) {
 			_, err := p.Deploy(t.Context(), func(string) {})
 			require.Error(t, err)
 			link := "requirements (" + byoRequirementsURL + ")"
-			if terminal {
-				link = "\x1b]8;;" + byoRequirementsURL + "\x1b\\requirements\x1b]8;;\x1b\\"
-			}
 			expected := "Storage account does not meet requirements. Review the " + link +
 				" and edit your configuration before proceeding.\n" +
 				"- Storage account does not exist\n- Storage configuration could not be read\n\n" +
@@ -624,9 +621,7 @@ func TestBYOBlockedErrorPresentationSurvivesTransport(t *testing.T) {
 			assert.Equal(t, http.StatusNotFound, service.StatusCode)
 			exitOutput := (&ux.ActionResult{Err: transported}).ToString("")
 			assert.Equal(t, "ERROR: "+expected, strings.TrimSpace(exitOutput))
-			if !terminal {
-				assert.NotContains(t, exitOutput, "\x1b")
-			}
+			assert.NotContains(t, exitOutput, "\x1b")
 			assert.Zero(t, fake.base.writes)
 		})
 	}
@@ -830,12 +825,8 @@ func TestBYOPreparationErrorRedactionPreservesBlockedLinks(t *testing.T) {
 			assert.Equal(t, expected, azdext.WrapError(redacted).GetMessage())
 			assert.EqualError(t, roundTripProvisioningError(t, redacted), expected)
 			assert.Contains(t, cause.Error(), endpoint)
-			if terminal {
-				assert.Contains(t, redacted.Error(), "\x1b]8;;"+byoRequirementsURL+"\x1b\\requirements\x1b]8;;\x1b\\")
-			} else {
-				assert.Contains(t, redacted.Error(), "requirements ("+byoRequirementsURL+")")
-				assert.NotContains(t, redacted.Error(), "\x1b")
-			}
+			assert.Contains(t, redacted.Error(), "requirements ("+byoRequirementsURL+")")
+			assert.NotContains(t, redacted.Error(), "\x1b")
 		})
 	}
 }

@@ -408,7 +408,7 @@ Determinate mandatory failures, including nonexistent references, incompatible c
 
 Preflight returns blocking errors with their underlying causes. It does not render check reports or publish them to command output, progress, or logs.
 
-The error's `requirements` text is clickable when the host enables styling (`FORCE_COLOR=1`) and inherited `WT_SESSION` or `TERM_PROGRAM` identifies a supported terminal (Windows Terminal, VS Code, iTerm, WezTerm, or Ghostty). With a nonempty `NO_COLOR` or `CI`, without those terminal hints, or with a dumb, screen, or tmux `TERM`, the error instead includes the visible prerequisites URL without terminal control sequences. No additional user configuration is required.
+The error includes `requirements (https://aka.ms/byo-aks-onboarding-prerequisites)` as plain text in terminal, JSON, and log output.
 
 On interactive terminals, provisioning updates its current progress line while preparing the template, checking AKS and supporting resources, checking required permissions, and resolving deployment identity and role bindings. During resource checks, that same line names the active reads or current validation. Concurrent reads are listed together and removed individually as they finish; finishing a read does not mean its checks passed. These messages identify current work, not successful check results.
 

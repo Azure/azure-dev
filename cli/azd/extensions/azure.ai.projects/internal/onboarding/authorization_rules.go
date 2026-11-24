@@ -9,6 +9,13 @@ type grantRequest struct {
 	checkID, scope, principalID, roleName, roleID string
 }
 
+func (g grantRequest) resourceType() string {
+	if g.checkID == "workload-blob" {
+		return workloadIdentityResourceType
+	}
+	return hostingIdentityResourceType
+}
+
 func grantRequests(p Plan, hosting, workload Identity) []grantRequest {
 	return []grantRequest{
 		{"hosting-aks", p.Cluster.ID, hosting.PrincipalID, "Reader", "acdd72a7-3385-48ef-bd42-f606fba81ae7"},

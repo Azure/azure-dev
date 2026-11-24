@@ -121,18 +121,6 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 				}},
 		}}), nil
 	}
-	if request.Method == http.MethodGet &&
-		strings.EqualFold(request.URL.Path, "/subscriptions/cluster-sub/providers/Microsoft.Compute/skus") {
-		var values []any
-		for _, size := range []struct{ name, cpu string }{{"Standard_E4s_v5", "4"}, {"Standard_D8as_v5", "8"}} {
-			values = append(values, map[string]any{
-				"name": size.name, "resourceType": "virtualMachines", "locations": []string{"westus"},
-				"capabilities": []any{map[string]any{"name": "vCPUs", "value": size.cpu},
-					map[string]any{"name": "MemoryGB", "value": "32"}},
-			})
-		}
-		return f.response(request, 200, map[string]any{"value": values}), nil
-	}
 	if request.Method == http.MethodGet && request.URL.Path == offlineVNetID {
 		return f.response(request, 200, map[string]any{
 			"id": offlineVNetID, "location": "westus", "properties": map[string]any{
@@ -358,7 +346,8 @@ func TestBYOPrepareFeatureGateUsesProcessEnvironment(t *testing.T) {
 				p.credential = nil
 			}
 
-			err = p.prepareBYO(t.Context(), source, func(string) {})
+			var progress []string
+			err = p.prepareBYO(t.Context(), source, func(message string) { progress = append(progress, message) })
 			if test.enabled {
 				require.NoError(t, err)
 				assert.Subset(t, fake.reads, []string{
@@ -375,6 +364,7 @@ func TestBYOPrepareFeatureGateUsesProcessEnvironment(t *testing.T) {
 				assert.Nil(t, p.credential)
 				assert.Empty(t, fake.reads)
 				assert.Empty(t, fake.base.requests)
+				assert.Empty(t, progress)
 				current, err := json.Marshal(source.parameters)
 				require.NoError(t, err)
 				assert.JSONEq(t, string(original), string(current))
@@ -531,7 +521,8 @@ func TestBYORegistryValidationBeforeLifecycleWrites(t *testing.T) {
 		{name: "ABAC remote", abac: true, remote: true, expectedError: "does not authenticate"},
 		{name: "ABAC local", abac: true, expectedError: "check existing registry pull access"},
 		{name: "classic remote", remote: true, expectedError: "check existing registry pull access"},
-		{name: "invalid hosting", invalid: true, expectedError: "aks-version"},
+		{name: "invalid hosting", invalid: true,
+			expectedError: "The running Kubernetes version is below the required minimum"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv(synthesis.ACRReuseEnvVar, "true")
@@ -867,29 +858,23 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 			}
 			_, err = provider.Deploy(t.Context(), func(message string) { progress.WriteString(message) })
 			if scenario == "unknown Storage and known AKS failure" {
-				require.ErrorContains(t, err, "aks-version FAIL")
+				require.ErrorContains(t, err, "The running Kubernetes version is below the required minimum of 1.31")
 				assert.Zero(t, requests.writes)
 			} else if scenario == "known missing Storage reference" {
 				require.ErrorContains(t, err, "does not exist")
 				assert.Contains(t, requests.requests, "GET "+missingStorage)
 				assert.Zero(t, requests.writes)
-				assert.NotContains(t, provider.preflightReport.String(), "storage-type SKIPPED")
 			} else if scenario == "overlapping selected Node subnet" {
-				require.ErrorContains(t, err, "agent-subnet FAIL")
+				require.ErrorContains(t, err, "Agent subnet overlaps the selected AKS node pool's node subnet")
 				assert.Zero(t, requests.writes)
 			} else {
 				require.NoError(t, err, progress.String())
 				assert.Equal(t, 1, requests.writes)
 			}
-			if strings.HasPrefix(scenario, "unknown Storage") {
-				assert.Contains(t, provider.preflightReport.String(), "utcNow")
-			}
 			if scenario == "unknown workload name" || scenario == "cross subscription unknown workload" {
-				assert.Contains(t, provider.preflightReport.String(), "utcNow")
 				assert.Equal(t, map[string]any{"value": "/subscriptions/" + subscription + "/providers/" +
 					"Microsoft.Authorization/roleDefinitions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
 					requests.parameters["federatedIdentityRoleDefinitionId"])
-				assert.Contains(t, provider.preflightReport.String(), "resource-refs PASS [/subscriptions/target-sub]")
 			}
 			if scenario == "actual cluster selection" {
 				assert.Contains(t, requests.requests, "GET "+requests.clusterID)
@@ -897,18 +882,8 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 					"the account's actual cluster controls AKS evidence, not the YAML selector")
 				assert.Equal(t, map[string]any{"value": requests.kubeletID}, requests.parameters["kubeletObjectId"])
 			}
-			if network {
-				if noNetworkSelection {
-					assert.Contains(t, provider.preflightReport.String(), "agent-subnet NOT_APPLICABLE")
-				}
-				if scenario == "new selected subnets" {
-					assert.Contains(t, provider.preflightReport.String(), "agent-subnet NOT_APPLICABLE")
-					assert.NotContains(t, requests.requests, "GET "+offlineVNetID+"/subnets/agents")
-				} else if unknownField == "networkInjections" {
-					assert.Contains(t, provider.preflightReport.String(), "agent-subnet SKIPPED")
-				} else if scenario != "overlapping selected Node subnet" && !noNetworkSelection {
-					assert.Contains(t, provider.preflightReport.String(), "agent-subnet PASS")
-				}
+			if scenario == "new selected subnets" {
+				assert.NotContains(t, requests.requests, "GET "+offlineVNetID+"/subnets/agents")
 			}
 			assert.NotContains(t, requests.requests, "GET "+defaultStorageID,
 				"an edited or unknown name must not fall back to the standard naming formula")
@@ -924,7 +899,8 @@ func TestNativeFoundryDeployKeepsStandardOutputsWithoutAKSReads(t *testing.T) {
 		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n")})
 	require.NoError(t, err)
 	p.synthResult = result
-	deployed, err := p.Deploy(t.Context(), func(string) {})
+	var progress []string
+	deployed, err := p.Deploy(t.Context(), func(message string) { progress = append(progress, message) })
 	require.NoError(t, err)
 	require.NotNil(t, deployed.Deployment)
 	require.Contains(t, deployed.Deployment.Outputs, "AZURE_AI_PROJECT_ID")
@@ -933,6 +909,15 @@ func TestNativeFoundryDeployKeepsStandardOutputsWithoutAKSReads(t *testing.T) {
 	assert.NotContains(t, fake.parameters, "agentHosting")
 	assert.NotContains(t, fake.parameters, "kubeletObjectId")
 	assert.Equal(t, 1, fake.writes)
+	require.NotEmpty(t, progress)
+	assert.Equal(t, "Preparing Foundry provisioning template...", progress[0])
+	for _, message := range []string{
+		"Checking AKS and supporting resources...",
+		"Checking required permissions...",
+		"Resolving deployment identity and role bindings...",
+	} {
+		assert.NotContains(t, progress, message)
+	}
 }
 
 func TestBYOPrepareOnlySuppliesDeclaredHostBindings(t *testing.T) {

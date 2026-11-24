@@ -1551,7 +1551,7 @@ func (pm *PipelineManager) resolvePipelineAuth(
 		options = append(options, optionClientSec)
 		optionDetails = append(
 			optionDetails,
-			"Stores an expiring client secret so the pipeline can sign in without OIDC.",
+			"A fallback for pipelines that can't use OIDC. Stores an expiring client secret.",
 		)
 	}
 	options = append(options, optionSkip)

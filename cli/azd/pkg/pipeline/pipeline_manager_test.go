@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -74,7 +76,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 			},
 			IsCompose: false}
 		manager.configOptions = &configurePipelineOptions{}
-		err = manager.ensurePipelineDefinition(ctx)
+		err = manager.ensurePipelineDefinition(ctx, AuthTypeFederated)
 		assert.NoError(t, err)
 
 		// Check if the azure-dev.yml file was created in the expected path
@@ -100,7 +102,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 			},
 			IsCompose: false}
 		m.configOptions = &configurePipelineOptions{}
-		err = m.ensurePipelineDefinition(ctx)
+		err = m.ensurePipelineDefinition(ctx, AuthTypeFederated)
 		assert.NoError(t, err)
 		assert.Contains(t,
 			mockContext.Console.Output(),
@@ -126,7 +128,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 			},
 			IsCompose: false}
 		m.configOptions = &configurePipelineOptions{}
-		err = m.ensurePipelineDefinition(ctx)
+		err = m.ensurePipelineDefinition(ctx, AuthTypeFederated)
 		assert.EqualError(t, err, fmt.Sprintf(
 			"%s provider selected, but no pipeline files were found in any expected directories:\n%s\n"+
 				"Please add pipeline files and try again.",
@@ -155,7 +157,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 			},
 			IsCompose: false}
 		manager.configOptions = &configurePipelineOptions{}
-		err = manager.ensurePipelineDefinition(ctx)
+		err = manager.ensurePipelineDefinition(ctx, AuthTypeFederated)
 		assert.NoError(t, err)
 		verifyProvider(t, manager, ciProviderAzureDevOps, err)
 
@@ -183,7 +185,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 			},
 			IsCompose: false}
 		manager.configOptions = &configurePipelineOptions{}
-		err = manager.ensurePipelineDefinition(ctx)
+		err = manager.ensurePipelineDefinition(ctx, AuthTypeFederated)
 		assert.EqualError(t, err, fmt.Sprintf(
 			"%s provider selected, but no pipeline files were found in any expected directories:\n%s\n"+
 				"Please add pipeline files and try again.",
@@ -226,7 +228,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 			},
 			IsCompose: false}
 		m.configOptions = &configurePipelineOptions{}
-		err = m.ensurePipelineDefinition(ctx)
+		err = m.ensurePipelineDefinition(ctx, AuthTypeFederated)
 		assert.NoError(t, err)
 		assert.Contains(t,
 			mockContext.Console.Output(),
@@ -1257,6 +1259,84 @@ func verifyProvider(t *testing.T, manager *PipelineManager, providerLabel ciProv
 
 func normalizeEOL(input []byte) string {
 	return strings.ReplaceAll(string(input), "\r\n", "\n")
+}
+
+type testPipelinePrincipal struct{ entraid.EntraIdService }
+
+func (testPipelinePrincipal) CreateOrUpdateServicePrincipal(
+	context.Context, string, string, entraid.CreateOrUpdateServicePrincipalOptions,
+) (*graphsdk.ServicePrincipal, error) {
+	return &graphsdk.ServicePrincipal{AppId: "app-id", AppOwnerOrganizationId: new("tenant-id")}, nil
+}
+
+func (testPipelinePrincipal) ResetPasswordCredentials(
+	_ context.Context, subscriptionId, appId string,
+) (*entraid.AzureCredentials, error) {
+	return &entraid.AzureCredentials{ClientId: appId, SubscriptionId: subscriptionId, ClientSecret: "test"}, nil
+}
+
+func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
+	t.Setenv("AZD_GH_TOOL_PATH", "gh")
+	for _, tc := range []struct{ name, flag string }{
+		{"interactive", ""},
+		{"explicit flag", string(AuthTypeClientCredentials)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			resetAzureYaml(t, filepath.Join(dir, "azure.yaml"))
+			mc := resetContext(dir, t.Context())
+			mc.CommandRunner.When(func(_ exec.RunArgs, cmd string) bool {
+				return strings.Contains(cmd, "remote get-url origin")
+			}).Respond(exec.NewRunResult(0, "https://github.com/test-owner/test-repo.git", ""))
+			mc.CommandRunner.When(func(_ exec.RunArgs, cmd string) bool {
+				return strings.Contains(cmd, "variable set")
+			}).Respond(exec.NewRunResult(0, "", ""))
+			var secrets []string
+			mc.CommandRunner.When(func(_ exec.RunArgs, cmd string) bool {
+				return strings.Contains(cmd, "secret set")
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				secrets = append(secrets, args.Args[len(args.Args)-1])
+				return exec.NewRunResult(0, "", ""), nil
+			})
+			if tc.flag == "" {
+				mc.Console.WhenSelect(func(o input.ConsoleOptions) bool {
+					return slices.Contains(o.Options, "Client Credentials (SP + Secret)")
+				}).RespondFn(func(o input.ConsoleOptions) (any, error) {
+					return slices.Index(o.Options, "Client Credentials (SP + Secret)"), nil
+				})
+			}
+			mc.Console.WhenConfirm(func(o input.ConsoleOptions) bool {
+				return o.Message == "Would you like to add it now?"
+			}).Respond(true)
+			mc.Console.WhenConfirm(func(o input.ConsoleOptions) bool {
+				return strings.Contains(o.Message, "commit and push")
+			}).Respond(false)
+			env := environment.NewWithValues("test", map[string]string{
+				AzurePipelineClientIdEnvVarName: "",
+				AzurePipelineMsiResourceId:      "",
+				"RS_RESOURCE_GROUP":             "rg",
+				"RS_STORAGE_ACCOUNT":            "storage",
+				"RS_CONTAINER_NAME":             "state",
+			})
+			pm, err := createPipelineManager(mc, azdcontext.NewAzdContextWithDirectory(dir), env, &PipelineManagerArgs{
+				PipelineProvider:     gitHubCode,
+				PipelineRemoteName:   "origin",
+				PipelineAuthTypeName: tc.flag,
+			})
+			require.NoError(t, err)
+			pm.entraIdService = testPipelinePrincipal{}
+			_, err = pm.Configure(t.Context(), "test", &project.Infra{
+				Options: provisioning.Options{Provider: provisioning.Terraform},
+			})
+			require.NoError(t, err)
+			require.ElementsMatch(t, []string{"AZURE_CREDENTIALS", "ARM_CLIENT_SECRET"}, secrets)
+			yaml, err := os.ReadFile(filepath.Join(dir, ".github", "workflows", "azure-dev.yml"))
+			require.NoError(t, err)
+			assert.Contains(t, string(yaml), "AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}")
+			assert.Contains(t, string(yaml), "ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}")
+			assert.NotContains(t, string(yaml), "--federated-credential-provider")
+		})
+	}
 }
 
 func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {

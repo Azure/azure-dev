@@ -9,6 +9,8 @@ The Azure Developer CLI provides the command `azd pipeline config` to automatica
 1. Configuring the git repo to use the created `Service Principal` to authenticate to Azure.
 1. Creating a pipeline definition.
 
+When `azd pipeline config` generates a GitHub Actions workflow, its Azure login step uses the authentication method you selected in the prompt or with `--auth-type`. If you change methods, update the login step in your existing workflow; `azd` does not rewrite it. For Terraform with client credentials, pass the `ARM_CLIENT_SECRET` repository secret to the provision step as `ARM_CLIENT_SECRET`.
+
 When the project requires azd extensions, the generated pipeline installs each required extension by ID and exact
 version. The generated definition does not reproduce the extension source used on the development machine. If CI must
 use a non-default registry or an unpublished azd build, update the generated pipeline to configure that source or

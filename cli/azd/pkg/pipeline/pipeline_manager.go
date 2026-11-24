@@ -256,12 +256,6 @@ func (pm *PipelineManager) Configure(
 		return result, err
 	}
 
-	// pipeline definition files
-	err = pm.ensurePipelineDefinition(ctx)
-	if err != nil {
-		return result, fmt.Errorf("ensuring pipeline definition: %w", err)
-	}
-
 	// ServiceManagementReference can be set as user config (~/.azd/config.json)
 	userConfig, err := pm.userConfigManager.Load()
 	if err != nil {
@@ -282,12 +276,6 @@ func (pm *PipelineManager) Configure(
 	}
 	if updatedConfig {
 		pm.console.Message(ctx, "")
-	}
-
-	// Get git repo details
-	gitRepoInfo, err := pm.getGitRepoDetails(ctx)
-	if err != nil {
-		return result, fmt.Errorf("ensuring git remote: %w", err)
 	}
 
 	if pm.args.PipelineServicePrincipalName != "" && pm.args.PipelineServicePrincipalId != "" {
@@ -325,7 +313,15 @@ func (pm *PipelineManager) Configure(
 	usingMsi = authSelection.usingMsi
 	usingAppRegistration = authSelection.usingAppRegistration
 	skipAuth := authSelection.skipAuth
-	authType := authSelection.authType
+	authType := cmp.Or(authSelection.authType, AuthTypeFederated)
+
+	if err := pm.ensurePipelineDefinition(ctx, authType); err != nil {
+		return result, fmt.Errorf("ensuring pipeline definition: %w", err)
+	}
+	gitRepoInfo, err := pm.getGitRepoDetails(ctx)
+	if err != nil {
+		return result, fmt.Errorf("ensuring git remote: %w", err)
+	}
 
 	// Service Principal or MSI are both handled by authConfiguration as a top layer abstraction.
 	var authConfig *authConfiguration
@@ -1309,7 +1305,7 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		tmplContext.Variables = appendUnique(tmplContext.Variables, "AZURE_ENV_NAME")
 
 		if props.AuthType == AuthTypeClientCredentials {
-			tmplContext.Secrets = appendUnique(tmplContext.Secrets, "AZURE_CLIENT_SECRET")
+			tmplContext.Secrets = appendUnique(tmplContext.Secrets, "ARM_CLIENT_SECRET")
 		}
 	}
 
@@ -1448,7 +1444,7 @@ func (pm *PipelineManager) SetRequiredExtensions(extensions []RequiredExtension)
 	return nil
 }
 
-func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
+func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context, authType PipelineAuthType) error {
 	// pipeline definition files
 	hasAppHost := pm.importManager.HasAppHost(ctx, pm.prjConfig)
 
@@ -1470,13 +1466,6 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 	// It is fine if we can't get the branch name, we will default to "main"
 	if err == nil {
 		branchName = customBranchName
-	}
-
-	// default auth type for all providers
-	authType := AuthTypeFederated
-	if pm.args != nil &&
-		PipelineAuthType(strings.TrimSpace(pm.args.PipelineAuthTypeName)) == AuthTypeClientCredentials {
-		authType = AuthTypeClientCredentials
 	}
 
 	// Check and prompt for missing CI/CD files

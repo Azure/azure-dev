@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -296,19 +297,133 @@ func TestServiceFromAzureClassifiesNonResponseFailures(t *testing.T) {
 	}
 }
 
+type fakeTokenCredential struct{}
+
+func (fakeTokenCredential) GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return azcore.AccessToken{Token: "fake-token"}, nil
+}
+
 func TestServiceFromAzureReportsMalformedRequestURL(t *testing.T) {
-	_, err := runtime.NewRequest(t.Context(), http.MethodGet, "https://example.test/%ZZ?sig=fake-signature")
-	require.Error(t, err)
+	t.Run("malformed escape", func(t *testing.T) {
+		_, err := runtime.NewRequest(t.Context(), http.MethodGet, "https://example.test/%ZZ?sig=fake-signature")
+		require.Error(t, err)
 
-	got := ServiceFromAzure(fmt.Errorf("failed to create request: %w", err), OpGetAgent)
+		got := ServiceFromAzure(fmt.Errorf("failed to create request: %w", err), OpGetAgent)
+		assertInvalidRequestURL(t, got, "fake-signature")
+	})
 
+	t.Run("missing scheme", func(t *testing.T) {
+		_, err := runtime.NewRequest(t.Context(), http.MethodGet, "example.test/agents/my-agent")
+		require.Error(t, err)
+
+		got := ServiceFromAzure(fmt.Errorf("failed to create request: %w", err), OpGetAgent)
+		assertInvalidRequestURL(t, got, "")
+	})
+
+	t.Run("unsupported scheme", func(t *testing.T) {
+		_, err := runtime.NewRequest(t.Context(), http.MethodGet, "ftp://example.test/agents/my-agent")
+		require.Error(t, err)
+
+		got := ServiceFromAzure(fmt.Errorf("failed to create request: %w", err), OpGetAgent)
+		assertInvalidRequestURL(t, got, "")
+	})
+
+	t.Run("non-TLS HTTP endpoint rejected by bearer policy", func(t *testing.T) {
+		req, err := runtime.NewRequest(t.Context(), http.MethodGet, "http://example.test/agents/my-agent?sig=fake-signature")
+		require.NoError(t, err)
+
+		pipeline := runtime.NewPipeline(
+			"test",
+			"v1",
+			runtime.PipelineOptions{
+				PerCall: []policy.Policy{
+					runtime.NewBearerTokenPolicy(fakeTokenCredential{}, []string{"https://ai.azure.com/.default"}, nil),
+				},
+			},
+			&policy.ClientOptions{},
+		)
+		_, err = pipeline.Do(req)
+		require.Error(t, err)
+
+		got := ServiceFromAzure(fmt.Errorf("HTTP request failed: %w", err), OpGetAgent)
+		assertInvalidRequestURL(t, got, "fake-signature")
+	})
+}
+
+func assertInvalidRequestURL(t *testing.T, err error, forbiddenSubstr string) {
+	t.Helper()
 	var localErr *azdext.LocalError
-	require.ErrorAs(t, got, &localErr)
+	require.ErrorAs(t, err, &localErr)
 	assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
 	assert.Equal(t, CodeInvalidParameter, localErr.Code)
 	assert.Contains(t, localErr.Message, "invalid request URL")
 	assert.Contains(t, localErr.Suggestion, "endpoint")
-	assert.NotContains(t, localErr.Message, "fake-signature")
+	if forbiddenSubstr != "" {
+		assert.NotContains(t, localErr.Message, forbiddenSubstr)
+	}
+}
+
+func TestServiceFromAzureRedactsMultipleURLsWithOverlappingParts(t *testing.T) {
+	t.Run("earlier URL username overlaps later URL host with encoded SAS", func(t *testing.T) {
+		//nolint:gosec // Synthetic credentials test multi-URL redaction.
+		err := errors.New(
+			"primary https://acct:fake-password@host1.test/a failed; " +
+				"fallback https://acct.blob.core.windows.net/c/b?sig=fake%2B-sig%3D%3D&sv=2024-01 failed",
+		)
+
+		got := ServiceFromAzure(err, OpCreateAgent)
+		msg := azdext.ErrorMessage(got)
+
+		for _, secret := range []string{"fake-password", "sig=", "fake%2B-sig%3D%3D", "fake+-sig==", "sv=2024-01"} {
+			assert.NotContains(t, msg, secret, "leaked %q in %q", secret, msg)
+		}
+		assert.Contains(t, msg, "https://host1.test/a")
+		assert.Contains(t, msg, ".blob.core.windows.net/c/b")
+	})
+
+	t.Run("earlier URL username equals scheme before later URL", func(t *testing.T) {
+		//nolint:gosec // Synthetic credentials test multi-URL redaction.
+		err := &url.Error{
+			Op:  "Get",
+			URL: "https://https:fake-password@host1.test/a",
+			Err: errors.New("redirect https://host2.test/b?sig=fake%2B-sig%3D%3D#frag-secret"),
+		}
+
+		got := ServiceFromAzure(err, OpGetAgent)
+		msg := azdext.ErrorMessage(got)
+
+		for _, secret := range []string{"fake-password", "sig=", "fake%2B-sig%3D%3D", "frag-secret"} {
+			assert.NotContains(t, msg, secret, "leaked %q in %q", secret, msg)
+		}
+	})
+
+	t.Run("malformed nested URL prefix does not break later URL redaction", func(t *testing.T) {
+		//nolint:gosec // Synthetic credentials test multi-URL redaction.
+		err := &url.Error{
+			Op:  "Get",
+			URL: "https://svc-user:fake-cred@host1.test/%ZZ",
+			Err: errors.New("see https://svc-user:fake-cred@host1.test/%ZZ?sig=fake%2B-sig%3D%3D"),
+		}
+
+		got := ServiceFromAzure(err, OpGetAgent)
+		msg := azdext.ErrorMessage(got)
+
+		for _, secret := range []string{"svc-user", "fake-cred", "sig=", "fake%2B-sig%3D%3D"} {
+			assert.NotContains(t, msg, secret, "leaked %q in %q", secret, msg)
+		}
+	})
+
+	t.Run("RedactText redacts multiple URLs in place", func(t *testing.T) {
+		//nolint:gosec // Synthetic credentials test RedactText.
+		input := `{"error":"see \"https://acct:fake-pw@host1.test/a\" and hTtPs://acct.blob.core.windows.net/c/b?sig=fake%2B-sig%3D%3D."}`
+		got := RedactText(input)
+
+		assert.Equal(
+			t,
+			`{"error":"see \"https://host1.test/a\" and https://acct.blob.core.windows.net/c/b."}`,
+			got,
+		)
+	})
 }
 
 func TestServiceFromAzureRedactsMixedCaseURLInResponse(t *testing.T) {

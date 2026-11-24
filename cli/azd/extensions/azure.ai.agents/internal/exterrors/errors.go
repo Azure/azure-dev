@@ -194,7 +194,7 @@ func ServiceFromAzure(err error, operation string) error {
 	if _, ok := errors.AsType[*ResponseParseError](err); ok {
 		return Internal(operation+SuffixResponseParse, fmt.Sprintf("%s: %s", operation, safeMsg))
 	}
-	if urlErr, ok := errors.AsType[*url.Error](err); ok && urlErr.Op == "parse" {
+	if isInvalidRequestURLError(err) {
 		return Validation(CodeInvalidParameter, operation+": invalid request URL", "check the configured endpoint URL")
 	}
 	if suggestion, ok := transportErrorSuggestion(err); ok {
@@ -314,6 +314,34 @@ func isChainedCredentialHeader(trimmed string) bool {
 		return false
 	}
 	return strings.HasSuffix(trimmed[:idx], "Credential")
+}
+
+func isInvalidRequestURLError(err error) bool {
+	return matchInvalidRequestURLError(err, 0)
+}
+
+func matchInvalidRequestURLError(err error, depth int) bool {
+	if err == nil || depth > 64 {
+		return false
+	}
+	if urlErr, ok := errors.AsType[*url.Error](err); ok && urlErr.Op == "parse" {
+		return true
+	}
+	if multi, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, nested := range multi.Unwrap() {
+			if matchInvalidRequestURLError(nested, depth+1) {
+				return true
+			}
+		}
+		return false
+	}
+	if unwrapped := errors.Unwrap(err); unwrapped != nil {
+		return matchInvalidRequestURLError(unwrapped, depth+1)
+	}
+	msg := err.Error()
+	return msg == "no Host in request URL" ||
+		strings.HasPrefix(msg, "unsupported protocol scheme ") ||
+		msg == "authorized requests are not permitted for non-TLS protected (https) endpoints"
 }
 
 func transportErrorSuggestion(err error) (string, bool) {

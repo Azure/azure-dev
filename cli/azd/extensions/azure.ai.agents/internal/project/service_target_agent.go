@@ -2048,13 +2048,16 @@ func (p *AgentServiceTargetProvider) provisionMemoryStores(
 		return err
 	}
 
-	if projectEndpoint == "" {
+	if strings.TrimSpace(projectEndpoint) == "" {
 		return exterrors.Dependency(
 			exterrors.CodeMissingAiProjectEndpoint,
 			"cannot provision memory stores: the Foundry project endpoint is not set",
 			"run 'azd provision' or connect to an existing project via "+
 				"'azd ai agent init --project-id <resource-id>'",
 		)
+	}
+	if err := validateDeployProjectEndpoint(projectEndpoint); err != nil {
+		return err
 	}
 
 	client := azure.NewFoundryMemoryStoreClient(projectEndpoint, p.credential)
@@ -2316,6 +2319,22 @@ func writeExistingAgentVersionWarningIfPresent(
 	return false
 }
 
+// validateDeployProjectEndpoint ensures FOUNDRY_PROJECT_ENDPOINT is
+// an absolute https:// URL with a non-empty host.
+func validateDeployProjectEndpoint(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Opaque != "" ||
+		!strings.EqualFold(parsed.Scheme, "https") ||
+		parsed.Hostname() == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"FOUNDRY_PROJECT_ENDPOINT must be a valid https:// URL",
+			"check the configured FOUNDRY_PROJECT_ENDPOINT value and ensure it starts with https://",
+		)
+	}
+	return nil
+}
+
 // prepareDeploy handles the common pre-deploy logic shared by container and code
 // deploy: endpoint validation, environment variable resolution, service config
 // parsing, and API request building. The caller provides extra build options
@@ -2326,18 +2345,22 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	azdEnv map[string]string,
 	extraOptions []agent_yaml.AgentBuildOption,
 ) (*deployPrepResult, error) {
-	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
+	projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
+	if strings.TrimSpace(projectEndpoint) == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeMissingAiProjectEndpoint,
 			"FOUNDRY_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
 			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
 		)
 	}
+	if err := validateDeployProjectEndpoint(projectEndpoint); err != nil {
+		return nil, err
+	}
 
 	if p.agentDefinitionPath != "" {
 		_, _ = fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
 	}
-	_, _ = fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
+	_, _ = fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", exterrors.RedactURL(projectEndpoint))
 	_, _ = fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
 	// Seed core-expanded values before resolving legacy variables.
@@ -2737,13 +2760,16 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	}
 
 	projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
-	if projectEndpoint == "" {
+	if strings.TrimSpace(projectEndpoint) == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeMissingAiProjectEndpoint,
 			"cannot deploy voice agent: the Foundry project endpoint is not set",
 			"run 'azd provision' or connect to an existing project via "+
 				"'azd ai agent init --project-id <resource-id>'",
 		)
+	}
+	if err := validateDeployProjectEndpoint(projectEndpoint); err != nil {
+		return nil, err
 	}
 
 	agentClient := agent_api.NewAgentClient(projectEndpoint, p.credential)

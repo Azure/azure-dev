@@ -636,3 +636,109 @@ func TestCreateAgentResponseReadAndParseClassification(t *testing.T) {
 		require.Equal(t, exterrors.OpCreateAgent+exterrors.SuffixResponseParse, localErr.Code)
 	})
 }
+
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stderr = w
+	defer func() {
+		os.Stderr = origStderr
+		_ = w.Close()
+		_ = r.Close()
+	}()
+
+	fn()
+	require.NoError(t, w.Close())
+	out, err := io.ReadAll(r)
+	require.NoError(t, err)
+	return string(out)
+}
+
+func TestPrepareDeployValidatesAndRedactsProjectEndpoint(t *testing.T) {
+	provider := &AgentServiceTargetProvider{}
+	serviceConfig := &azdext.ServiceConfig{Name: "my-agent"}
+	agentDef := agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Name: "my-agent",
+			Kind: agent_yaml.AgentKindHosted,
+		},
+	}
+
+	invalidCases := []struct {
+		name     string
+		endpoint string
+	}{
+		{name: "missing scheme", endpoint: "example.services.ai.azure.com/api/projects/demo"},
+		{name: "plain http", endpoint: "http://example.services.ai.azure.com/api/projects/demo"},
+		{name: "missing host", endpoint: "https:///api/projects/demo"},
+		{name: "opaque url", endpoint: "https:example.services.ai.azure.com/api/projects/demo"},
+		{name: "malformed escape", endpoint: "https://example.test/%ZZ?sig=fake-signature"},
+	}
+
+	for _, tt := range invalidCases {
+		t.Run(tt.name, func(t *testing.T) {
+			var prepErr error
+			stderr := captureStderr(t, func() {
+				_, prepErr = provider.prepareDeploy(
+					serviceConfig,
+					agentDef,
+					map[string]string{"FOUNDRY_PROJECT_ENDPOINT": tt.endpoint},
+					nil,
+				)
+			})
+
+			var localErr *azdext.LocalError
+			require.ErrorAs(t, prepErr, &localErr)
+			require.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+			require.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+			require.Contains(t, localErr.Message, "FOUNDRY_PROJECT_ENDPOINT")
+			require.Contains(t, localErr.Suggestion, "https://")
+			require.NotContains(t, stderr, "Using endpoint:")
+			require.NotContains(t, stderr, tt.endpoint)
+		})
+	}
+
+	t.Run("redacts endpoint credentials and query before printing", func(t *testing.T) {
+		//nolint:gosec // Synthetic credentials test stderr redaction.
+		rawEndpoint := "https://svc-user:fake-cred@example.test/api/projects/demo?sig=fake%2B-sig%3D%3D#frag-token"
+		var prepErr error
+		stderr := captureStderr(t, func() {
+			_, prepErr = provider.prepareDeploy(
+				serviceConfig,
+				agentDef,
+				map[string]string{"FOUNDRY_PROJECT_ENDPOINT": rawEndpoint},
+				[]agent_yaml.AgentBuildOption{
+					agent_yaml.WithImageURL("registry.example.test/my-agent:latest"),
+				},
+			)
+		})
+
+		require.NoError(t, prepErr)
+		require.Contains(t, stderr, "Using endpoint: https://example.test/api/projects/demo")
+		for _, secret := range []string{"svc-user", "fake-cred", "sig=", "fake%2B-sig%3D%3D", "frag-token"} {
+			require.NotContains(t, stderr, secret)
+		}
+	})
+
+	t.Run("provisionMemoryStores rejects invalid endpoint before HTTP", func(t *testing.T) {
+		err := provider.provisionMemoryStores(
+			t.Context(),
+			&ServiceTargetAgentConfig{
+				MemoryStores: []MemoryStore{{
+					Name:           "store-1",
+					ChatModel:      "gpt-4.1",
+					EmbeddingModel: "text-embedding-3-large",
+				}},
+			},
+			"example.services.ai.azure.com/api/projects/demo",
+			nil,
+		)
+
+		var localErr *azdext.LocalError
+		require.ErrorAs(t, err, &localErr)
+		require.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+		require.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+	})
+}

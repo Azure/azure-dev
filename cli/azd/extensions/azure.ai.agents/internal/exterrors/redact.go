@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -47,19 +48,29 @@ func RedactURL(rawURL string) string {
 	return parsed.String()
 }
 
-func redactURLFromText(text, rawURL string) string {
-	if rawURL == "" {
-		return text
-	}
-	redacted := RedactURL(rawURL)
-	if redacted == rawURL {
-		return text
-	}
-	quotedRaw := strconv.Quote(rawURL)
-	if quotedRaw != `"`+rawURL+`"` {
-		text = strings.ReplaceAll(text, quotedRaw, strconv.Quote(redacted))
-	}
-	text = strings.ReplaceAll(text, rawURL, redacted)
+// RedactText redacts embedded HTTP(S) URLs in place without mutating
+// surrounding text or later URLs before they are redacted.
+func RedactText(text string) string {
+	redacted, _ := redactHTTPURLSpans(text)
+	return redacted
+}
+
+func redactHTTPURLSpans(text string) (string, []string) {
+	var redactedURLs []string
+	out := httpURLPattern.ReplaceAllStringFunc(text, func(match string) string {
+		trimmed := strings.TrimRight(match, `.,;:)]}\`)
+		suffix := match[len(trimmed):]
+		redacted := RedactURL(trimmed)
+		if redacted != trimmed {
+			redactedURLs = append(redactedURLs, trimmed)
+			return redacted + suffix
+		}
+		return match
+	})
+	return out, redactedURLs
+}
+
+func scrubURLSecrets(text, rawURL string) string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return text
@@ -85,31 +96,68 @@ func redactURLFromText(text, rawURL string) string {
 	return text
 }
 
-func redactNestedErrorURLs(text string, err error, depth int) string {
+func collectNestedErrorURLs(err error, depth int, out *[]string) {
 	if err == nil || depth > 64 {
-		return text
+		return
 	}
-	if urlErr, ok := errors.AsType[*url.Error](err); ok {
-		text = redactURLFromText(text, urlErr.URL)
+	if urlErr, ok := errors.AsType[*url.Error](err); ok && urlErr.URL != "" {
+		*out = append(*out, urlErr.URL)
 	}
 	if multi, ok := err.(interface{ Unwrap() []error }); ok {
 		for _, nested := range multi.Unwrap() {
-			text = redactNestedErrorURLs(text, nested, depth+1)
+			collectNestedErrorURLs(nested, depth+1, out)
 		}
-		return text
+		return
 	}
-	return redactNestedErrorURLs(text, errors.Unwrap(err), depth+1)
+	collectNestedErrorURLs(errors.Unwrap(err), depth+1, out)
 }
 
 func safeErrorMessage(err error) string {
 	if err == nil {
 		return ""
 	}
-	text := redactNestedErrorURLs(err.Error(), err, 0)
-	matches := httpURLPattern.FindAllString(text, -1)
-	for _, match := range matches {
-		trimmed := strings.TrimRight(match, ".,;:)]}")
-		text = redactURLFromText(text, trimmed)
+	text := err.Error()
+
+	var nestedURLs []string
+	collectNestedErrorURLs(err, 0, &nestedURLs)
+	// Sort longest first so a shorter URL never alters a longer one.
+	slices.SortFunc(nestedURLs, func(a, b string) int {
+		if len(a) != len(b) {
+			return len(b) - len(a)
+		}
+		return strings.Compare(a, b)
+	})
+	nestedURLs = slices.Compact(nestedURLs)
+
+	var redactedURLs []string
+	// Phase 1a: replace Go-quoted nested *url.Error URLs in place.
+	for _, rawURL := range nestedURLs {
+		redacted := RedactURL(rawURL)
+		if redacted == rawURL {
+			continue
+		}
+		text = strings.ReplaceAll(
+			text, strconv.Quote(rawURL), strconv.Quote(redacted),
+		)
+		redactedURLs = append(redactedURLs, rawURL)
+	}
+
+	// Phase 1b: redact remaining HTTP(S) URLs strictly by span.
+	text, httpURLs := redactHTTPURLSpans(text)
+	redactedURLs = append(redactedURLs, httpURLs...)
+
+	// Phase 1c: catch unquoted nested URLs (e.g. relative paths).
+	for _, rawURL := range nestedURLs {
+		redacted := RedactURL(rawURL)
+		if redacted == rawURL {
+			continue
+		}
+		text = strings.ReplaceAll(text, rawURL, redacted)
+	}
+
+	// Phase 2: scrub residual secrets echoed outside URLs.
+	for _, rawURL := range redactedURLs {
+		text = scrubURLSecrets(text, rawURL)
 	}
 	return text
 }

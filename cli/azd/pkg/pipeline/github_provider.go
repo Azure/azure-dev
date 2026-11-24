@@ -88,7 +88,7 @@ func (p *GitHubScmProvider) configureGitRemote(
 
 	// There are a few ways to configure the remote so offer a choice to the user.
 	idx, err := p.console.Select(ctx, input.ConsoleOptions{
-		Message: "How would you like to configure your git remote to GitHub?",
+		Message: "Select how to configure the GitHub remote:",
 		Options: []string{
 			"Select an existing GitHub project",
 			"Create a new private GitHub repository",
@@ -279,7 +279,7 @@ func (p *GitHubScmProvider) notifyWhenGitHubActionsAreDisabled(
 		p.console.Message(ctx, message)
 
 		rawSelection, err := p.console.Select(ctx, input.ConsoleOptions{
-			Message: "What would you like to do now?",
+			Message: "How do you want to proceed?",
 			Options: []string{
 				manualChoice.String(),
 				cancelChoice.String(),
@@ -611,8 +611,8 @@ func (p *GitHubCiProvider) promptForSubjects(
 
 	options := []string{oidcOptionUseDetected, oidcOptionCustom}
 	selection, err := p.console.Select(ctx, input.ConsoleOptions{
-		Message: "How would you like to configure federated" +
-			" identity credential subjects?",
+		Message: "Select how to configure federated" +
+			" identity credential subjects:",
 		Options: options,
 	})
 	if err != nil {

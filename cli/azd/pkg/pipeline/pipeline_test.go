@@ -933,7 +933,7 @@ func Test_PipelineManager_checkAndPromptForProviderFiles(t *testing.T) {
 		console := mockinput.NewMockConsole()
 		// Confirm creation
 		console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Would you like to add it now")
+			return strings.Contains(options.Message, "Add the default azure-dev.yml file")
 		}).Respond(true)
 
 		pm := &PipelineManager{
@@ -1381,7 +1381,7 @@ func Test_GitHubScmProvider_configureGitRemote(t *testing.T) {
 
 		console := mockinput.NewMockConsole()
 		console.WhenSelect(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "configure your git remote")
+			return strings.Contains(options.Message, "Select how to configure the GitHub remote")
 		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 			return 0, errors.New("user cancelled")
 		})
@@ -4027,7 +4027,7 @@ func Test_GitHubScmProvider_configureGitRemote_selectExisting_cov3(t *testing.T)
 
 	// User selects "Select an existing GitHub project" (index 0)
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "How would you like to configure")
+		return strings.Contains(options.Message, "Select how to configure the GitHub remote")
 	}).Respond(0)
 
 	// Mock ListRepositories
@@ -4071,7 +4071,7 @@ func Test_GitHubScmProvider_configureGitRemote_createNew_cov3(t *testing.T) {
 
 	// User selects "Create a new private GitHub repository" (index 1)
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "How would you like to configure")
+		return strings.Contains(options.Message, "Select how to configure the GitHub remote")
 	}).Respond(1)
 
 	// Prompt for repo name
@@ -4120,7 +4120,7 @@ func Test_GitHubScmProvider_configureGitRemote_enterUrl_cov3(t *testing.T) {
 
 	// User selects "Enter a remote URL directly" (index 2)
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "How would you like to configure")
+		return strings.Contains(options.Message, "Select how to configure the GitHub remote")
 	}).Respond(2)
 
 	// Prompt for URL

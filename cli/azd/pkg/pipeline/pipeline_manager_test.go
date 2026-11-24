@@ -1244,7 +1244,7 @@ func simulateUserInteraction(mockContext *mocks.MockContext, providerLabel ciPro
 
 	// Simulate the user responding to the creation confirmation
 	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "Would you like")
+		return strings.Contains(options.Message, "Add the default azure-dev.yml file")
 	}).Respond(createConfirmation)
 }
 
@@ -1329,10 +1329,10 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 				})
 			}
 			mc.Console.WhenConfirm(func(o input.ConsoleOptions) bool {
-				return o.Message == "Would you like to add it now?"
+				return o.Message == "Add the default azure-dev.yml file?"
 			}).Respond(true)
 			mc.Console.WhenConfirm(func(o input.ConsoleOptions) bool {
-				return strings.Contains(o.Message, "commit and push")
+				return strings.Contains(o.Message, "Commit and push")
 			}).Respond(false)
 			env := environment.NewWithValues("test", map[string]string{
 				AzurePipelineClientIdEnvVarName: "",

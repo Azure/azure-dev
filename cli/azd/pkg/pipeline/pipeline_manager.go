@@ -429,7 +429,7 @@ func (pm *PipelineManager) Configure(
 				optionUseExisting,
 			}
 			selectedOption, err := pm.console.Select(ctx, input.ConsoleOptions{
-				Message:      "Do you want to create a new User Managed Identity (MSI) or use an existing one?",
+				Message:      "Create a new User Managed Identity (MSI) or use an existing one?",
 				Options:      options,
 				DefaultValue: optionCreate,
 			})
@@ -747,7 +747,7 @@ func (pm *PipelineManager) Configure(
 	// The CI pipeline should be set-up and ready at this point.
 	// azd offers to push changes to the scm to start a new pipeline run
 	doPush, err := pm.console.Confirm(ctx, input.ConsoleOptions{
-		Message:      "Would you like to commit and push your local changes to start the configured CI pipeline?",
+		Message:      "Commit and push your local changes to start the pipeline?",
 		DefaultValue: true,
 	})
 	if err != nil {
@@ -913,7 +913,7 @@ func (pm *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepositor
 
 			// Offer the user a chance to init a new repository if one does not exist.
 			initRepo, err := pm.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "Do you want to initialize a new Git repository in this directory?",
+				Message:      "Initialize a new Git repository in this directory?",
 				DefaultValue: true,
 			})
 			if err != nil {
@@ -1200,7 +1200,7 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 
 	// Prompt the user for confirmation
 	confirm, err := pm.console.Confirm(ctx, input.ConsoleOptions{
-		Message:      "Would you like to add it now?",
+		Message:      "Add the default azure-dev.yml file?",
 		DefaultValue: true,
 	})
 	if err != nil {

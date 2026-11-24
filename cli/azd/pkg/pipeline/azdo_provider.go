@@ -252,7 +252,7 @@ func (p *AzdoScmProvider) ensureProjectExists(ctx context.Context, console input
 		return p.repoDetails.projectName, p.repoDetails.projectId, false, nil
 	}
 	idx, err := console.Select(ctx, input.ConsoleOptions{
-		Message: "How would you like to configure your git remote to Azure DevOps?",
+		Message: "Use an existing Azure DevOps project or create a new one?",
 		Options: []string{
 			"Select an existing Azure DevOps project",
 			"Create a new Azure DevOps Project",
@@ -379,7 +379,10 @@ func (p *AzdoScmProvider) promptForAzdoRepository(ctx context.Context, console i
 	var remoteUrl string
 	// There are a few ways to configure the remote so offer a choice to the user.
 	idx, err := console.Select(ctx, input.ConsoleOptions{
-		Message: fmt.Sprintf("How would you like to configure your remote? (Project: %s)", p.repoDetails.projectName),
+		Message: fmt.Sprintf(
+			"Use an existing Azure DevOps repository or create a new one? (Project: %s)",
+			p.repoDetails.projectName,
+		),
 		Options: []string{
 			"Select an existing Azure DevOps Repository",
 			"Create a new private Azure DevOps Repository",

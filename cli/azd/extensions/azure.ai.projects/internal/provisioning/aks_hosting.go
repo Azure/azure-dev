@@ -282,7 +282,7 @@ func redactBYOPreparationError(err error) error {
 	}
 	message := redactBYOErrorMessage(err.Error())
 	wire := azdext.WrapError(err)
-	if message == err.Error() && redactBYOErrorMessage(wire.GetMessage()) == wire.GetMessage() {
+	if message == err.Error() && wire.GetMessage() == message {
 		return err
 	}
 	// The SDK prefers structured messages over outer Error() text; redact a classified copy, not the shared cause.

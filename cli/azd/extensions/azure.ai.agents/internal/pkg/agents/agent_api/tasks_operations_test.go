@@ -624,8 +624,19 @@ func (b *taskCancelBody) Close() error { b.closed = true; return nil }
 func TestTasksCancellationDuringResponseAndRetryDelay(t *testing.T) {
 	for _, duringRead := range []bool{false, true} {
 		t.Run(map[bool]string{false: "retry delay", true: "body read"}[duringRead], func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
+			var ctx context.Context
+			var cancel context.CancelFunc
+			if duringRead {
+				ctx, cancel = context.WithCancel(t.Context())
+			} else {
+				ctx, cancel = context.WithTimeout(t.Context(), 25*time.Millisecond)
+			}
 			defer cancel()
+			if duringRead {
+				_, hasDeadline := ctx.Deadline()
+				_, parentHasDeadline := t.Context().Deadline()
+				require.Equal(t, parentHasDeadline, hasDeadline, "body cancellation must not race a test-local deadline")
+			}
 			attempts := 0
 			body := &taskCancelBody{cancel: cancel}
 			client, _ := newTaskHTTPClient(t, taskRoundTripFunc(func(r *http.Request) (*http.Response, error) {

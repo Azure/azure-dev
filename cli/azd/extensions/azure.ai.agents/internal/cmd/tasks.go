@@ -264,6 +264,8 @@ func tasksOperationError(err error, operation string) error {
 		message := fmt.Sprintf("Tasks %s failed: HTTP %d (%s)",
 			operation, response.StatusCode, http.StatusText(response.StatusCode))
 		switch response.StatusCode {
+		case http.StatusUnauthorized:
+			suggestion = "run `azd auth login` to authenticate, then verify your access to the project endpoint"
 		case http.StatusForbidden:
 			suggestion = "verify hosted-agent Tasks preview availability and your project permissions"
 			if response.ErrorCode == "hosted_agent_required" {
@@ -282,7 +284,10 @@ func tasksOperationError(err error, operation string) error {
 				suggestion = "verify the project endpoint, exact task ID (for show), and Tasks preview route availability"
 			}
 		case http.StatusBadRequest:
-			suggestion = "check the filters and opaque cursor; keep the same filters and order when paging"
+			suggestion = "verify the exact task ID and project endpoint"
+			if operation == "list" {
+				suggestion = "check the filters and opaque cursor; keep the same filters and order when paging"
+			}
 		case http.StatusTooManyRequests:
 			suggestion = "wait before retrying and reduce the request rate"
 		default:
@@ -515,7 +520,8 @@ func resolveTasksTarget(
 	if name == "" {
 		candidates := []string{}
 		for service := range services {
-			if strings.TrimSpace(values["AGENT_"+toServiceKey(service)+"_NAME"]) == "" {
+			prefix := "AGENT_" + toServiceKey(service)
+			if strings.TrimSpace(values[prefix+"_NAME"]) == "" || strings.TrimSpace(values[prefix+"_VERSION"]) == "" {
 				continue
 			}
 			deploymentEndpoint, endpointErr := tasksProjectEndpoint(tasksDeploymentEndpoint(values, service))
@@ -580,6 +586,11 @@ func resolveTasksTarget(
 		}
 	}
 	if selected != "" {
+		// Deployment clears VERSION before publishing NAME and endpoints, then
+		// restores it after the project marker. Do not combine interrupted outputs.
+		if strings.TrimSpace(values["AGENT_"+toServiceKey(selected)+"_VERSION"]) == "" {
+			return nil, tasksAgentNameRequired("the selected service has no completed agent deployment")
+		}
 		if err := requireSelectedServiceFeatures(ctx, services[selected], project.Path); err != nil {
 			return nil, err
 		}

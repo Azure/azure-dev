@@ -277,18 +277,39 @@ func TestTasksErrorsAreSanitizedAndActionable(t *testing.T) {
 		{400, "ApiVersionNotSupported", "route or API version", "preview"},
 		{400, "invalid_api_version", "route or API version", "preview"},
 		{404, "NotFound", "HTTP 404", "route availability"},
-		{400, "BadRequest", "HTTP 400", "filters"},
+		{400, "BadRequest", "HTTP 400", ""},
+		{401, "Unauthorized", "HTTP 401", "azd auth login"},
 		{429, "TooManyRequests", "HTTP 429", "wait"},
 		{500, "InternalError", "HTTP 500", "retry later"},
 	} {
-		t.Run(tt.code, func(t *testing.T) {
-			err := tasksOperationError(&azcore.ResponseError{StatusCode: tt.status, ErrorCode: tt.code}, "show")
-			service, ok := errors.AsType[*azdext.ServiceError](err)
-			require.True(t, ok)
-			require.Contains(t, service.Message, tt.message)
-			require.Contains(t, service.Suggestion, tt.hint)
-			require.Equal(t, tt.status, service.StatusCode)
-		})
+		for _, operation := range []string{"list", "show"} {
+			t.Run(tt.code+"/"+operation, func(t *testing.T) {
+				err := tasksOperationError(&azcore.ResponseError{
+					StatusCode: tt.status, ErrorCode: tt.code,
+					RawResponse: &http.Response{Body: io.NopCloser(strings.NewReader("secret-body"))},
+				}, operation)
+				service, ok := errors.AsType[*azdext.ServiceError](err)
+				require.True(t, ok)
+				require.Contains(t, service.Message, tt.message)
+				require.Contains(t, service.Suggestion, tt.hint)
+				require.Equal(t, tt.status, service.StatusCode)
+				if tt.code == "BadRequest" {
+					if operation == "list" {
+						require.Contains(t, service.Suggestion, "filters")
+						require.Contains(t, service.Suggestion, "opaque cursor")
+					} else {
+						require.Contains(t, service.Suggestion, "exact task ID")
+						require.Contains(t, service.Suggestion, "project endpoint")
+						for _, unsupported := range []string{"filters", "cursor", "paging", "--agent-name"} {
+							require.NotContains(t, service.Suggestion, unsupported)
+						}
+					}
+				}
+				serialized, marshalErr := json.Marshal(azdext.WrapError(err))
+				require.NoError(t, marshalErr)
+				require.NotContains(t, string(serialized), "secret")
+			})
+		}
 	}
 	err := tasksOperationError(&azcore.ResponseError{StatusCode: 404, ErrorCode: "secret\x1b[31m"}, "show")
 	require.NotContains(t, err.Error(), "secret")
@@ -483,7 +504,7 @@ func TestTasksInvalidSelectedEndpointSerialization(t *testing.T) {
 					environments: map[string]*azdext.Environment{"selected": {Name: "selected"}},
 					values: map[string]map[string]string{
 						"default":  {"FOUNDRY_PROJECT_ENDPOINT": tasksTestEndpoint},
-						"selected": {tt.key: raw, "AGENT_WORKER_NAME": "deployed"},
+						"selected": {tt.key: raw, "AGENT_WORKER_NAME": "deployed", "AGENT_WORKER_VERSION": "1"},
 					},
 				}
 				host := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
@@ -600,7 +621,9 @@ func TestTasksDeployedNameProjectAmbiguity(t *testing.T) {
 			env := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"},
 				values: map[string]map[string]string{"dev": {
 					"AGENT_FIRST_NAME": "deployed", "AGENT_FIRST_PROJECT_ENDPOINT": tasksTestEndpoint,
-					"AGENT_SECOND_NAME": "deployed", "AGENT_SECOND_PROJECT_ENDPOINT": secondEndpoint,
+					"AGENT_FIRST_VERSION": "1",
+					"AGENT_SECOND_NAME":   "deployed", "AGENT_SECOND_PROJECT_ENDPOINT": secondEndpoint,
+					"AGENT_SECOND_VERSION": "2",
 				}}}
 			prompt := &helpersPromptServer{}
 			host := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
@@ -621,6 +644,106 @@ func TestTasksDeployedNameProjectAmbiguity(t *testing.T) {
 			target, err := resolveTasksTarget(t.Context(), host, tasksTargetOptions{list: true, agentName: "first"})
 			require.NoError(t, err)
 			require.Equal(t, tasksTestEndpoint, target.ProjectEndpoint)
+			require.Zero(t, prompt.selectCalls.Load())
+			require.Empty(t, env.setKeys)
+		})
+	}
+}
+
+func TestTasksInterruptedDeployment(t *testing.T) {
+	for _, tt := range []struct {
+		name, agent, endpoint string
+		list, completed       bool
+		want                  string
+	}{
+		{name: "local alias", agent: "worker", list: true},
+		{name: "automatic", list: true},
+		{name: "matching raw name", agent: "new-agent", list: true},
+		{name: "explicit local alias", agent: "worker", endpoint: tasksTestEndpoint, list: true},
+		{name: "explicit remote name", agent: "new-agent", endpoint: tasksTestEndpoint + "-new", list: true,
+			want: "new-agent"},
+		{name: "automatic excludes incomplete", list: true, completed: true, want: "complete-agent"},
+		{name: "show remains project scoped", want: ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			requests := 0
+			original := recordproxy.Transport
+			recordproxy.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				requests++
+				wantEndpoint := tt.endpoint
+				if tt.completed {
+					wantEndpoint = tasksTestEndpoint + "-complete"
+				}
+				if !tt.list {
+					wantEndpoint = tasksTestEndpoint
+					require.Equal(t, wantEndpoint+"/tasks/task", "https://"+req.URL.Host+req.URL.Path)
+				} else if tt.want != "" {
+					require.Equal(t, wantEndpoint+"/tasks", "https://"+req.URL.Host+req.URL.Path)
+					require.Equal(t, tt.want, req.URL.Query().Get("agent_name"))
+					require.Empty(t, req.URL.Query().Get("agent_version"))
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Request: req,
+					Body: io.NopCloser(strings.NewReader(`{"data":[],"id":"task"}`))}, nil
+			})
+			t.Cleanup(func() { recordproxy.Transport = original })
+			// Publication was interrupted after NAME, before ENDPOINT and VERSION.
+			values := map[string]string{
+				"AGENT_WORKER_NAME": "new-agent", "AGENT_WORKER_VERSION": "",
+				"AGENT_WORKER_PROJECT_ENDPOINT": tasksTestEndpoint,
+				"AGENT_WORKER_ENDPOINT":         tasksTestEndpoint + "/agents/old-agent/versions/1",
+			}
+			services := map[string]*azdext.ServiceConfig{"worker": {Name: "worker", Host: AiAgentHost}}
+			if tt.completed {
+				services["complete"] = &azdext.ServiceConfig{Name: "complete", Host: AiAgentHost}
+				values["AGENT_COMPLETE_NAME"] = "complete-agent"
+				values["AGENT_COMPLETE_VERSION"] = "2"
+				values["AGENT_COMPLETE_PROJECT_ENDPOINT"] = tasksTestEndpoint + "-complete"
+			}
+			env := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"},
+				values: map[string]map[string]string{"dev": values}}
+			prompt := &helpersPromptServer{}
+			host := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(), Services: services,
+			}}, prompt, env)
+			var writer bytes.Buffer
+			operation := "show"
+			if tt.list {
+				operation = "list"
+			}
+			cmd := newTasksOperationCommand(&azdext.ExtensionContext{NoPrompt: true}, operation,
+				func(ctx context.Context, flags *tasksFlags, list bool) (*tasksAction, func(), error) {
+					target, err := resolveTasksTarget(ctx, host, tasksTargetOptions{
+						projectEndpoint: flags.projectEndpoint, agentName: flags.agentName, list: list, noPrompt: true,
+					})
+					if err != nil {
+						return nil, nil, err
+					}
+					client := agent_api.NewAgentClient(target.ProjectEndpoint, responseTestCredential{})
+					return &tasksAction{api: client, target: target}, func() {}, nil
+				})
+			cmd.SetOut(&writer)
+			cmd.SetContext(t.Context())
+			args := []string{}
+			if tt.agent != "" {
+				args = append(args, "--agent-name", tt.agent)
+			}
+			if tt.endpoint != "" {
+				args = append(args, "--project-endpoint", tt.endpoint)
+			}
+			if !tt.list {
+				args = append(args, "task")
+			}
+			require.NoError(t, cmd.ParseFlags(args))
+			err := cmd.RunE(cmd, cmd.Flags().Args())
+			if tt.list && tt.want == "" {
+				require.Error(t, err)
+				require.Contains(t, azdext.WrapError(err).Suggestion, "deploy")
+				require.Zero(t, requests, "incomplete local outputs must not reach Tasks HTTP")
+				require.Empty(t, writer.String())
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, 1, requests)
+			}
 			require.Zero(t, prompt.selectCalls.Load())
 			require.Empty(t, env.setKeys)
 		})
@@ -649,6 +772,7 @@ func TestTasksListSelection(t *testing.T) {
 				if i < tt.count {
 					services[service] = &azdext.ServiceConfig{Name: service, Host: AiAgentHost}
 					values["AGENT_"+toServiceKey(service)+"_NAME"] = "deployed-" + service
+					values["AGENT_"+toServiceKey(service)+"_VERSION"] = "1"
 				}
 			}
 			env := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"},
@@ -690,6 +814,7 @@ func TestTasksExplicitEndpointAliasScope(t *testing.T) {
 			env := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"},
 				values: map[string]map[string]string{"dev": {
 					"AGENT_WORKER_NAME": "deployed", "AGENT_WORKER_PROJECT_ENDPOINT": tasksTestEndpoint,
+					"AGENT_WORKER_VERSION": "1",
 				}}}
 			host := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
 				Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{"worker": {Name: "worker", Host: AiAgentHost}},
@@ -716,7 +841,7 @@ func TestTasksSelectedEnvironment(t *testing.T) {
 				environments: map[string]*azdext.Environment{"alternate": {Name: "alternate"}},
 				values: map[string]map[string]string{
 					"default": {"AGENT_WORKER_NAME": "wrong", "FOUNDRY_PROJECT_ENDPOINT": tasksTestEndpoint + "-wrong"},
-					"alternate": {"AGENT_WORKER_NAME": "alternate-agent",
+					"alternate": {"AGENT_WORKER_NAME": "alternate-agent", "AGENT_WORKER_VERSION": "1",
 						"AGENT_WORKER_ENDPOINT": tasksTestEndpoint + "/agents/alternate-agent/versions/1"},
 				},
 			}
@@ -755,6 +880,7 @@ func TestTasksPickerFailures(t *testing.T) {
 				values: map[string]map[string]string{"dev": {
 					"FOUNDRY_PROJECT_ENDPOINT": tasksTestEndpoint,
 					"AGENT_FIRST_NAME":         "first", "AGENT_SECOND_NAME": "second",
+					"AGENT_FIRST_VERSION": "1", "AGENT_SECOND_VERSION": "1",
 				}}}
 			prompt := &helpersPromptServer{selectIndex: tt.index, selectErr: tt.err}
 			host := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
@@ -944,6 +1070,7 @@ func TestTasksProjectLoadFailuresDoNotBecomeRawTargets(t *testing.T) {
 					env := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"},
 						values: map[string]map[string]string{"dev": {
 							"FOUNDRY_PROJECT_ENDPOINT": tasksTestEndpoint, "AGENT_WORKER_NAME": "deployed-worker",
+							"AGENT_WORKER_VERSION": "1",
 						}}}
 					host := newHelpersTestAzdClient(t, &helpersProjectServer{err: projectErr}, &helpersPromptServer{}, env)
 					target, err := resolveTasksTarget(t.Context(), host, tasksTargetOptions{

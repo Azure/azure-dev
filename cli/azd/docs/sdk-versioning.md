@@ -58,6 +58,12 @@ The environment-state validation update is an intentional source-incompatible ex
 See [Environment-state API migration](environment-state-api-migration.md) for affected APIs
 and migration guidance.
 
+### Migrating `entraid.EntraIdService` implementations
+
+The addition of `AddPasswordCredential` to `pkg/entraid.EntraIdService` is a source-incompatible change for implementations and mocks. Callers using `entraid.NewEntraIdService` do not need to change.
+
+When upgrading, regenerate mocks against the updated interface. For a custom implementation, add `AddPasswordCredential(ctx context.Context, subscriptionId, appId string) (*entraid.AzureCredentials, error)`. It must add a new application password and return the new credentials **without revoking existing passwords**. Do not implement it by calling `ResetPasswordCredentials`, which replaces all existing passwords.
+
 ## Version Synchronization
 
 The SDK version in `pkg/azdext/version.go` mirrors the CLI version in `cli/version.txt`. Both are updated automatically by `eng/scripts/Update-CliVersion.ps1` during the release process.

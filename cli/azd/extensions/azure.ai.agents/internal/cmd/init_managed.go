@@ -182,13 +182,13 @@ func runInitManaged(
 		return err
 	}
 
-	// Connections and skills live on sibling services, while project
+	// Connections, skills, and toolboxes live on sibling services, while project
 	// authoring is delegated to the projects extension.
 	var deployments []project.Deployment
 	if deployment != nil && provisionDeployment {
 		deployments = []project.Deployment{*deployment}
 	}
-	resources, err := promptResourceServices(ctx, azdClient, &promptAgent, serviceSourceDir, serviceRelPath)
+	resources, err := promptResourceServices(ctx, azdClient, &promptAgent)
 	if err != nil {
 		return err
 	}

@@ -52,7 +52,7 @@ type promptNode struct {
 // direct/root-$ref definition, validated as a whole, then resolved in
 // registration (dependency) order. None of this machinery is exposed in YAML.
 type promptGraph struct {
-	// agentDir anchors the definition's conventional skills/ folder.
+	// agentDir anchors the resolved agent definition directory.
 	agentDir    string
 	projectRoot string
 
@@ -151,17 +151,10 @@ func newPromptGraph(
 		g.nodes = append(g.nodes, *node)
 	}
 
-	// Convention: a non-empty skills/ folder contributes the agent's skills.
-	// The bundles themselves are created and versioned by the sibling
-	// `host: azure.ai.skill` services that `azd ai agent init` emits; these
-	// nodes only attach the versions those services published. How they are
-	// reached splits on the harness — a managed agent provisions them into its
-	// sandbox by pinning them on the harness block, while a plain prompt agent
-	// references them by name and runs them with a shell tool.
-	skills, err := scanSkillsDir(agentDir)
-	if err != nil {
-		return nil, err
-	}
+	// Only versionless skills explicitly declared in managed.Skills are
+	// resolved from sibling `host: azure.ai.skill` services (owned and deployed
+	// by the azure.ai.skills extension).
+	skills := declaredVersionlessPromptSkills(managed)
 	if managed.HarnessType() != "" {
 		// Explicit toolboxes: references are a separate feature from skills: they
 		// attach existing shared toolboxes as mcp tools. Skills are never
@@ -302,6 +295,7 @@ func (g *promptGraph) resolve(ctx context.Context, progress azdext.ProgressRepor
 			strings.Join(unrecognized, ", "),
 		)
 	}
+	warnUnreferencedSkillUses(ctx, g)
 
 	for _, n := range g.nodes {
 		if n.Resolve == nil {
@@ -351,10 +345,6 @@ func (p *AgentServiceTargetProvider) resolvePromptAgentGraph(
 ) (map[string]any, error) {
 	defer phasetelemetry.Start(ctx, phasetelemetry.DependencyValidation)()
 
-	// The skills/ convention folder sits next to the file
-	// that supplies the definition. With the definition inline on the service
-	// entry there is no such file, so they are anchored at the service
-	// directory instead — the same place `azd ai agent init` scaffolds them.
 	agentDir := p.promptAgentConventionDir()
 	g, err := newPromptGraph(agentDir, managed, settings, env, p.credential)
 	if err != nil {

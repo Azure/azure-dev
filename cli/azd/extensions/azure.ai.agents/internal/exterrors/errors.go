@@ -151,7 +151,7 @@ func ValidationFromError(err error, code, contextMessage, suggestion string) err
 
 // ServiceFromAzure wraps an [azcore.ResponseError] into an [azdext.ServiceError] with operation context.
 // It also classifies cancellations, timeouts, authentication/credential errors, post-2xx response
-// read/parse failures, and client-side HTTP transport errors into actionable structured errors.
+// read/parse failures, malformed request URLs, and client-side HTTP transport errors.
 func ServiceFromAzure(err error, operation string) error {
 	if err == nil {
 		return nil
@@ -188,11 +188,14 @@ func ServiceFromAzure(err error, operation string) error {
 	if authErr := classifyCredentialFailure(err, safeMsg); authErr != nil {
 		return authErr
 	}
-	if isResponseReadError(err) {
+	if _, ok := errors.AsType[*ResponseReadError](err); ok {
 		return Internal(operation+SuffixResponseRead, fmt.Sprintf("%s: %s", operation, safeMsg))
 	}
 	if _, ok := errors.AsType[*ResponseParseError](err); ok {
 		return Internal(operation+SuffixResponseParse, fmt.Sprintf("%s: %s", operation, safeMsg))
+	}
+	if urlErr, ok := errors.AsType[*url.Error](err); ok && urlErr.Op == "parse" {
+		return Validation(CodeInvalidParameter, operation+": invalid request URL", "check the configured endpoint URL")
 	}
 	if suggestion, ok := transportErrorSuggestion(err); ok {
 		return Dependency(
@@ -313,20 +316,6 @@ func isChainedCredentialHeader(trimmed string) bool {
 	return strings.HasSuffix(trimmed[:idx], "Credential")
 }
 
-// isResponseReadError reports whether err failed while reading
-// an HTTP response body after a 2xx status arrived.
-func isResponseReadError(err error) bool {
-	if _, ok := errors.AsType[*ResponseReadError](err); ok {
-		return true
-	}
-	for current := err; current != nil; current = errors.Unwrap(current) {
-		if strings.HasPrefix(current.Error(), "body download policy: ") {
-			return true
-		}
-	}
-	return false
-}
-
 func transportErrorSuggestion(err error) (string, bool) {
 	if _, ok := errors.AsType[*net.DNSError](err); ok {
 		return "check your network connection, VPN, or Private Endpoint DNS settings", true
@@ -338,9 +327,6 @@ func transportErrorSuggestion(err error) (string, bool) {
 		return "check your network connection, proxy, or firewall settings", true
 	}
 	if netErr, ok := errors.AsType[net.Error](err); ok && !netErr.Timeout() {
-		return "check your network connection, proxy, or firewall settings", true
-	}
-	if _, ok := errors.AsType[*url.Error](err); ok {
 		return "check your network connection, proxy, or firewall settings", true
 	}
 	return "", false

@@ -13,7 +13,7 @@ import (
 
 const redactedURLPlaceholder = "[redacted-url]"
 
-var httpURLPattern = regexp.MustCompile(`https?://[^\s"'<>]+`)
+var httpURLPattern = regexp.MustCompile(`(?i)https?://[^\s"'<>]+`)
 
 // RedactURL strips userinfo, query parameters, and fragments so
 // credentials, SAS signatures, and tokens are never surfaced.

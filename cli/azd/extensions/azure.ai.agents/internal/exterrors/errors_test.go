@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
@@ -292,6 +293,41 @@ func TestServiceFromAzureClassifiesNonResponseFailures(t *testing.T) {
 				assert.NotContains(t, localErr.Suggestion, tt.wantNoSuggestionSubstr)
 			}
 		})
+	}
+}
+
+func TestServiceFromAzureReportsMalformedRequestURL(t *testing.T) {
+	_, err := runtime.NewRequest(t.Context(), http.MethodGet, "https://example.test/%ZZ?sig=fake-signature")
+	require.Error(t, err)
+
+	got := ServiceFromAzure(fmt.Errorf("failed to create request: %w", err), OpGetAgent)
+
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, got, &localErr)
+	assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+	assert.Equal(t, CodeInvalidParameter, localErr.Code)
+	assert.Contains(t, localErr.Message, "invalid request URL")
+	assert.Contains(t, localErr.Suggestion, "endpoint")
+	assert.NotContains(t, localErr.Message, "fake-signature")
+}
+
+func TestServiceFromAzureRedactsMixedCaseURLInResponse(t *testing.T) {
+	const reportedURL = "hTtPs://test-user:test-password@example.test/source?sig=fake-signature#fake-fragment"
+	err := runtime.NewResponseError(&http.Response{
+		StatusCode: http.StatusBadRequest,
+		Status:     "400 Bad Request",
+		Body: io.NopCloser(strings.NewReader(
+			`{"error":{"code":"InvalidRequest","message":"Could not access ` + reportedURL + `"}}`,
+		)),
+	})
+
+	got := ServiceFromAzure(err, OpCreateAgent)
+
+	var serviceErr *azdext.ServiceError
+	require.ErrorAs(t, got, &serviceErr)
+	assert.Contains(t, serviceErr.Message, "example.test/source")
+	for _, value := range []string{"test-user", "test-password", "fake-signature", "fake-fragment"} {
+		assert.NotContains(t, serviceErr.Message, value)
 	}
 }
 

@@ -526,7 +526,7 @@ func (e *nonRetriableReadError) Error() string { return e.err.Error() }
 func (e *nonRetriableReadError) Unwrap() error { return e.err }
 func (e *nonRetriableReadError) NonRetriable() {}
 
-func TestCreateAgentPost2xxReadAndParseClassification(t *testing.T) {
+func TestCreateAgentResponseReadAndParseClassification(t *testing.T) {
 	t.Run("preflight GetAgent truncated 200 body classifies as get_agent_response_read", func(t *testing.T) {
 		originalTransport := recordproxy.Transport
 		t.Cleanup(func() { recordproxy.Transport = originalTransport })
@@ -558,42 +558,50 @@ func TestCreateAgentPost2xxReadAndParseClassification(t *testing.T) {
 		require.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
 		require.Equal(t, exterrors.OpGetAgent+exterrors.SuffixResponseRead, localErr.Code)
 	})
-	t.Run("truncated 200 body classifies as create_agent_response_read", func(t *testing.T) {
-		originalTransport := recordproxy.Transport
-		t.Cleanup(func() { recordproxy.Transport = originalTransport })
+	for _, tt := range []struct {
+		name       string
+		statusCode int
+		wantCode   string
+	}{
+		{"truncated 201 body classifies as create_agent_response_read", http.StatusCreated, "create_agent_response_read"},
+		{"truncated 503 body does not classify as post-success read error", http.StatusServiceUnavailable, "create_agent"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			originalTransport := recordproxy.Transport
+			t.Cleanup(func() { recordproxy.Transport = originalTransport })
 
-		recordproxy.Transport = hostedResourceErrorTransport(func(request *http.Request) (*http.Response, error) {
-			if request.Method == http.MethodGet {
+			recordproxy.Transport = hostedResourceErrorTransport(func(request *http.Request) (*http.Response, error) {
+				if request.Method == http.MethodGet {
+					return &http.Response{
+						StatusCode: http.StatusNotFound,
+						Header:     http.Header{"Content-Type": {"application/json"}},
+						Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"not_found"}}`)),
+						Request:    request,
+					}, nil
+				}
 				return &http.Response{
-					StatusCode: http.StatusNotFound,
+					StatusCode: tt.statusCode,
 					Header:     http.Header{"Content-Type": {"application/json"}},
-					Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"not_found"}}`)),
+					Body:       failingReadCloser{err: io.ErrUnexpectedEOF},
 					Request:    request,
 				}, nil
+			})
+
+			env := map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example.test", "AZURE_LOCATION": "eastus"}
+			provider := &AgentServiceTargetProvider{
+				credential:    hostedResourceErrorCredential{},
+				dependencyEnv: env,
 			}
-			return &http.Response{
-				StatusCode: http.StatusCreated,
-				Header:     http.Header{"Content-Type": {"application/json"}},
-				Body:       failingReadCloser{err: io.ErrUnexpectedEOF},
-				Request:    request,
-			}, nil
+
+			_, err := provider.createAgent(t.Context(), "my-service", hostedResourceRequest("1", "2Gi"), env)
+			var localErr *azdext.LocalError
+			require.ErrorAs(t, err, &localErr)
+			require.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
+			require.Equal(t, tt.wantCode, localErr.Code)
 		})
+	}
 
-		env := map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example.test", "AZURE_LOCATION": "eastus"}
-		provider := &AgentServiceTargetProvider{
-			credential:    hostedResourceErrorCredential{},
-			dependencyEnv: env,
-		}
-
-		_, err := provider.createAgent(t.Context(), "my-service", hostedResourceRequest("1", "2Gi"), env)
-		require.Error(t, err)
-		localErr, ok := errors.AsType[*azdext.LocalError](err)
-		require.True(t, ok, "expected *azdext.LocalError, got %T: %v", err, err)
-		require.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
-		require.Equal(t, exterrors.OpCreateAgent+exterrors.SuffixResponseRead, localErr.Code)
-	})
-
-	t.Run("invalid JSON 200 body classifies as create_agent_response_parse", func(t *testing.T) {
+	t.Run("invalid JSON 201 body classifies as create_agent_response_parse", func(t *testing.T) {
 		originalTransport := recordproxy.Transport
 		t.Cleanup(func() { recordproxy.Transport = originalTransport })
 

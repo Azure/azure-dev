@@ -58,16 +58,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	if _, err := onboarding.ParseID(clusterID, "Microsoft.ContainerService/managedClusters"); err != nil {
 		return err
 	}
-	hostBindings := map[string]any{
-		"federatedIdentityRoleDefinitionId": nil,
-		"hostingPrincipalId":                nil,
-		"workloadPrincipalId":               nil,
-		"byoAksExistingRoleAssignmentKeys":  nil,
-	}
-	if includeAcr, _ := byoParameterValue(source, "includeAcr").(bool); includeAcr {
-		hostBindings["kubeletObjectId"] = nil
-	}
-	hostBindings = automaticBYOBindings(source, hostBindings)
+	hostBindings := automaticBYOBindings(source)
 	_, resolveFederationRole := hostBindings["federatedIdentityRoleDefinitionId"]
 	identities := []struct {
 		field, binding, id string
@@ -374,7 +365,16 @@ func byoParameterValue(source *templateSource, key string) any {
 	return parameterValue(source, key)
 }
 
-func automaticBYOBindings(source *templateSource, candidates map[string]any) map[string]any {
+func automaticBYOBindings(source *templateSource) map[string]any {
+	candidates := map[string]any{
+		"federatedIdentityRoleDefinitionId": nil,
+		"hostingPrincipalId":                nil,
+		"workloadPrincipalId":               nil,
+		"byoAksExistingRoleAssignmentKeys":  nil,
+	}
+	if includeAcr, _ := byoParameterValue(source, "includeAcr").(bool); includeAcr {
+		candidates["kubeletObjectId"] = nil
+	}
 	bindings := parametersDeclaredByTemplate(candidates, source.armTemplate)
 	for name := range bindings {
 		for supplied := range source.parameters {

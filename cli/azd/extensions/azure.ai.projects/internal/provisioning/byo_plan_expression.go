@@ -241,12 +241,20 @@ func (e *planEnvironment) value(raw any) any {
 		return e.evaluate(expression, 0)
 	case map[string]any:
 		result := make(map[string]any, len(value))
+		var keyMissing string
 		for _, key := range slices.Sorted(maps.Keys(value)) {
 			name, missing := planString(e.value(key))
 			if missing != "" {
-				return planUnknown{"object key cannot be resolved: " + missing}
+				if keyMissing == "" {
+					keyMissing = missing
+				}
+				e.value(value[key])
+				continue
 			}
 			result[name] = e.value(value[key])
+		}
+		if keyMissing != "" {
+			return planUnknown{"object key cannot be resolved: " + keyMissing}
 		}
 		return result
 	case []any:

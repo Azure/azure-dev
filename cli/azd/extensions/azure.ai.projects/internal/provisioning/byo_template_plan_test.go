@@ -89,8 +89,13 @@ func TestBYOPlanConsumedParameters(t *testing.T) {
 			wantWorkloadReq: false,
 		},
 		{
-			name: "active child and root outputs record consumption",
+			name: "active child and root outputs record consumption including inactive child fallback",
 			childOutputs: map[string]any{
+				"optionalHosting": map[string]any{
+					"condition": "[false()]",
+					"type":      "string",
+					"value":     "unused",
+				},
 				"workloadPrincipal": map[string]any{
 					"type":  "string",
 					"value": "[parameters('forwardedWorkloadPrincipal')]",
@@ -98,12 +103,49 @@ func TestBYOPlanConsumedParameters(t *testing.T) {
 			},
 			outputs: map[string]any{
 				"hostingPrincipal": map[string]any{
-					"type":  "string",
-					"value": "[parameters('hostingPrincipalId')]",
+					"type": "string",
+					"value": "[coalesce(tryGet(reference('customDeployment').outputs, 'optionalHosting', 'value'), " +
+						"parameters('hostingPrincipalId'))]",
 				},
 			},
 			wantHostingReq:  true,
 			wantWorkloadReq: true,
+		},
+		{
+			name: "automatic kubelet guard and unresolved dynamic tag key still record consumption",
+			parameters: map[string]any{
+				"includeAcr": map[string]any{"value": true},
+			},
+			resources: map[string]any{
+				"kubeletGuardedGrant": map[string]any{
+					"condition": "[not(empty(parameters('forwardedKubeletObjectId')))]",
+					"type":      "Microsoft.Authorization/roleAssignments",
+					"name":      "kubelet-guarded-grant",
+					"tags": map[string]any{
+						"[uniqueString('tag-only')]": "[parameters('forwardedWorkloadPrincipal')]",
+					},
+					"properties": map[string]any{
+						"principalId": "[parameters('forwardedHostingPrincipal')]",
+					},
+				},
+			},
+			wantHostingReq:  true,
+			wantWorkloadReq: true,
+		},
+		{
+			name: "kubelet guard stays inactive when includeAcr is false",
+			resources: map[string]any{
+				"kubeletGuardedGrant": map[string]any{
+					"condition": "[not(empty(parameters('forwardedKubeletObjectId')))]",
+					"type":      "Microsoft.Authorization/roleAssignments",
+					"name":      "kubelet-guarded-grant",
+					"properties": map[string]any{
+						"principalId": "[parameters('forwardedHostingPrincipal')]",
+					},
+				},
+			},
+			wantHostingReq:  false,
+			wantWorkloadReq: false,
 		},
 		{
 			name: "explicitly supplied parameter disables automatic principal requirement",
@@ -134,8 +176,14 @@ func TestBYOPlanConsumedParameters(t *testing.T) {
 			require.True(t, ok)
 			props, ok := deployment["properties"].(map[string]any)
 			require.True(t, ok)
+			propsParams, ok := props["parameters"].(map[string]any)
+			require.True(t, ok)
+			propsParams["forwardedKubeletObjectId"] = map[string]any{"value": "[parameters('kubeletObjectId')]"}
 			inner, ok := props["template"].(map[string]any)
 			require.True(t, ok)
+			innerParams, ok := inner["parameters"].(map[string]any)
+			require.True(t, ok)
+			innerParams["forwardedKubeletObjectId"] = map[string]any{"type": "string", "defaultValue": ""}
 			innerResources, ok := inner["resources"].(map[string]any)
 			require.True(t, ok)
 			rootOutputs, ok := template["outputs"].(map[string]any)

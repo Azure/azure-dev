@@ -573,7 +573,6 @@ func (r *templatePlanResolver) outputs(env *planEnvironment) map[string]any {
 				r.clearVariables()
 			}
 			if condMissing == "" && !active {
-				result[name] = planUnknown{"output " + name + " is inactive"}
 				continue
 			}
 		}
@@ -657,11 +656,8 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 			return planUnknown{"parameter " + key + " requires a runtime parameter reference"}
 		}
 	}
-	automaticPrincipals := automaticBYOBindings(source, map[string]any{
-		"hostingPrincipalId":  nil,
-		"workloadPrincipalId": nil,
-	})
-	for name := range automaticPrincipals {
+	automaticBindings := automaticBYOBindings(source)
+	for name := range automaticBindings {
 		binding := strings.ToLower(name)
 		parameters[binding] = func() any {
 			if resolver.trackingParameters {
@@ -703,7 +699,7 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	}
 	needsScan := false
 	for _, item := range principalBindings {
-		if _, automatic := automaticPrincipals[item.binding]; automatic {
+		if _, automatic := automaticBindings[item.binding]; automatic {
 			if item.resource.Supplied {
 				item.resource.PrincipalRequired = true
 			} else {
@@ -714,7 +710,7 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	if needsScan {
 		resolver.scanConsumedParameters()
 		for _, item := range principalBindings {
-			if _, automatic := automaticPrincipals[item.binding]; automatic && !item.resource.PrincipalRequired {
+			if _, automatic := automaticBindings[item.binding]; automatic && !item.resource.PrincipalRequired {
 				item.resource.PrincipalRequired = resolver.consumedParameters[strings.ToLower(item.binding)]
 			}
 		}

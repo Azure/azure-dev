@@ -89,27 +89,54 @@ func TestSelect_Render_initial(t *testing.T) {
 }
 
 func TestSelect_Render_choiceDetails(t *testing.T) {
-	var buf bytes.Buffer
-	s := NewSelect(&SelectOptions{
-		Writer:         &buf,
-		Message:        "Choose",
-		DisplayNumbers: new(true),
-		Choices: []*SelectChoice{
-			{Value: "a", Label: "Alpha", Detail: "First choice"},
-			{Value: "b", Label: "Bravo", Detail: "Second choice"},
-			{Value: "c", Label: "Charlie"},
-		},
+	t.Run("unnumbered", func(t *testing.T) {
+		var buf bytes.Buffer
+		s := NewSelect(&SelectOptions{
+			Writer:  &buf,
+			Message: "Choose",
+			Choices: []*SelectChoice{
+				{Value: "a", Label: "Alpha", Detail: "First choice"},
+				{Value: "b", Label: "Bravo", Detail: "Second choice"},
+				{Value: "c", Label: "Charlie"},
+			},
+		})
+
+		require.NoError(t, s.Render(NewPrinter(&buf)))
+		rendered := specialTextRegex.ReplaceAllString(buf.String(), "")
+		assert.Contains(
+			t,
+			rendered,
+			"  > Alpha\n      First choice\n    Bravo\n      Second choice\n    Charlie\n",
+		)
+
+		s.complete = true
+		buf.Reset()
+		require.NoError(t, s.Render(NewPrinter(&buf)))
+		assert.NotContains(t, buf.String(), "First choice")
+		assert.NotContains(t, buf.String(), "Second choice")
 	})
 
-	require.NoError(t, s.Render(NewPrinter(&buf)))
-	rendered := specialTextRegex.ReplaceAllString(buf.String(), "")
-	assert.Contains(t, rendered, "  > 1. Alpha\n       First choice\n    2. Bravo\n       Second choice\n    3. Charlie\n")
+	t.Run("numbered", func(t *testing.T) {
+		var buf bytes.Buffer
+		s := NewSelect(&SelectOptions{
+			Writer:         &buf,
+			Message:        "Choose",
+			DisplayNumbers: new(true),
+			Choices: []*SelectChoice{
+				{Value: "a", Label: "Alpha", Detail: "First choice"},
+				{Value: "b", Label: "Bravo", Detail: "Second choice"},
+				{Value: "c", Label: "Charlie"},
+			},
+		})
 
-	s.complete = true
-	buf.Reset()
-	require.NoError(t, s.Render(NewPrinter(&buf)))
-	assert.NotContains(t, buf.String(), "First choice")
-	assert.NotContains(t, buf.String(), "Second choice")
+		require.NoError(t, s.Render(NewPrinter(&buf)))
+		rendered := specialTextRegex.ReplaceAllString(buf.String(), "")
+		assert.Contains(
+			t,
+			rendered,
+			"  > 1. Alpha\n         First choice\n    2. Bravo\n         Second choice\n    3. Charlie\n",
+		)
+	})
 }
 
 func TestSelect_Render_initial_withoutFilteringSeparatesPromptAndChoices(t *testing.T) {
@@ -193,6 +220,23 @@ func TestSelect_applyFilter_matches(t *testing.T) {
 
 	s.applyFilter()
 	assert.Len(t, s.filteredChoices, 2)
+}
+
+func TestSelect_applyFilter_matchesDetail(t *testing.T) {
+	s := NewSelect(&SelectOptions{
+		Writer:  io.Discard,
+		Message: "Choose",
+		Choices: []*SelectChoice{
+			{Value: "msi", Label: "Federated Managed Identity", Detail: "Use a user-assigned managed identity."},
+			{Value: "sp", Label: "Federated Service Principal", Detail: "Use a Microsoft Entra app registration."},
+		},
+	})
+	s.currentIndex = new(0)
+	s.filter = "entra"
+
+	s.applyFilter()
+	require.Len(t, s.filteredChoices, 1)
+	assert.Equal(t, "sp", s.filteredChoices[0].Value)
 }
 
 func TestSelect_applyFilter_no_match(t *testing.T) {

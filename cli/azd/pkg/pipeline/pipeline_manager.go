@@ -318,43 +318,14 @@ func (pm *PipelineManager) Configure(
 		usingAppRegistration = false // MSI takes precedence over SP
 	}
 
-	skipAuth := false
-	if !usingMsi && !usingAppRegistration {
-		log.Printf("Authentication mode has not been set. Prompt user if they want to set it up now.")
-		const optionMsi = "Federated Managed Identity (MSI + OIDC) (Recommended)"
-		const optionOidc = "Federated Service Principal (SP + OIDC)"
-		const optionClientSec = "Client Credentials (SP + Secret)"
-		const optionSkip = "Skip authentication setup"
-		options := []string{
-			optionMsi,
-			optionOidc,
-			optionClientSec,
-			optionSkip,
-		}
-		selectedOption, err := pm.console.Select(ctx, input.ConsoleOptions{
-			Message: "Select how to authenticate the pipeline to Azure:",
-			Options: options,
-			OptionDetails: []string{
-				"Use a user-assigned managed identity. No secret to store.",
-				"Use a Microsoft Entra app registration. No secret to store.",
-				"Use an expiring secret with --auth-type client-credentials.",
-				"Use existing Azure access or set it up manually.",
-			},
-			ShowOptionDetailsBelow: true,
-			DefaultValue:           optionMsi,
-		})
-		if err != nil {
-			return result, fmt.Errorf("prompting for authentication type: %w", err)
-		}
-		switch options[selectedOption] {
-		case optionMsi:
-			usingMsi = true
-		case optionOidc, optionClientSec:
-			usingAppRegistration = true
-		case optionSkip:
-			skipAuth = true
-		}
+	authSelection, err := pm.resolvePipelineAuth(ctx, usingMsi, usingAppRegistration)
+	if err != nil {
+		return result, err
 	}
+	usingMsi = authSelection.usingMsi
+	usingAppRegistration = authSelection.usingAppRegistration
+	skipAuth := authSelection.skipAuth
+	authType := authSelection.authType
 
 	// Service Principal or MSI are both handled by authConfiguration as a top layer abstraction.
 	var authConfig *authConfiguration
@@ -579,7 +550,7 @@ func (pm *PipelineManager) Configure(
 			ctx,
 			gitRepoInfo,
 			infra.Options,
-			PipelineAuthType(pm.args.PipelineAuthTypeName),
+			authType,
 			authConfig.AzureCredentials,
 		)
 		if err != nil {
@@ -1503,6 +1474,10 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 
 	// default auth type for all providers
 	authType := AuthTypeFederated
+	if pm.args != nil &&
+		PipelineAuthType(strings.TrimSpace(pm.args.PipelineAuthTypeName)) == AuthTypeClientCredentials {
+		authType = AuthTypeClientCredentials
+	}
 
 	// Check and prompt for missing CI/CD files
 	err = pm.checkAndPromptForProviderFiles(
@@ -1526,6 +1501,108 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 	pm.configOptions.projectVariables = slices.Clone(pm.prjConfig.Pipeline.Variables)
 	pm.configOptions.provisioningProvider = &pm.infra.Options
 	return nil
+}
+
+type pipelineAuthSelection struct {
+	usingMsi             bool
+	usingAppRegistration bool
+	skipAuth             bool
+	authType             PipelineAuthType
+}
+
+func (pm *PipelineManager) resolvePipelineAuth(
+	ctx context.Context,
+	usingMsi bool,
+	usingAppRegistration bool,
+) (pipelineAuthSelection, error) {
+	var authType PipelineAuthType
+	if pm.args != nil {
+		authType = PipelineAuthType(strings.TrimSpace(pm.args.PipelineAuthTypeName))
+	}
+
+	if usingMsi && authType == AuthTypeClientCredentials {
+		return pipelineAuthSelection{}, fmt.Errorf(
+			"--auth-type %s is not supported with managed identity authentication",
+			AuthTypeClientCredentials,
+		)
+	}
+
+	if usingMsi || usingAppRegistration {
+		return pipelineAuthSelection{
+			usingMsi:             usingMsi,
+			usingAppRegistration: usingAppRegistration,
+			authType:             authType,
+		}, nil
+	}
+
+	if authType == AuthTypeClientCredentials {
+		return pipelineAuthSelection{
+			usingAppRegistration: true,
+			authType:             AuthTypeClientCredentials,
+		}, nil
+	}
+
+	log.Printf("Authentication mode has not been set. Prompt user if they want to set it up now.")
+	const (
+		optionMsi       = "Federated Managed Identity (MSI + OIDC) (Recommended)"
+		optionOidc      = "Federated Service Principal (SP + OIDC)"
+		optionClientSec = "Client Credentials (SP + Secret)"
+		optionSkip      = "Skip authentication setup"
+	)
+
+	options := []string{
+		optionMsi,
+		optionOidc,
+	}
+	optionDetails := []string{
+		"Use a user-assigned managed identity. No secret to store.",
+		"Use a Microsoft Entra app registration. No secret to store.",
+	}
+	if authType != AuthTypeFederated {
+		options = append(options, optionClientSec)
+		optionDetails = append(
+			optionDetails,
+			"Use an expiring client secret. Use only when OIDC isn't supported.",
+		)
+	}
+	options = append(options, optionSkip)
+	optionDetails = append(optionDetails, "Use existing Azure access or set it up manually.")
+
+	selectedOption, err := pm.console.Select(ctx, input.ConsoleOptions{
+		Message:                "Select how to authenticate the pipeline to Azure:",
+		Options:                options,
+		OptionDetails:          optionDetails,
+		ShowOptionDetailsBelow: true,
+		DefaultValue:           optionMsi,
+	})
+	if err != nil {
+		return pipelineAuthSelection{}, fmt.Errorf("prompting for authentication type: %w", err)
+	}
+
+	switch options[selectedOption] {
+	case optionMsi:
+		return pipelineAuthSelection{
+			usingMsi: true,
+			authType: AuthTypeFederated,
+		}, nil
+	case optionOidc:
+		return pipelineAuthSelection{
+			usingAppRegistration: true,
+			authType:             AuthTypeFederated,
+		}, nil
+	case optionClientSec:
+		return pipelineAuthSelection{
+			usingAppRegistration: true,
+			authType:             AuthTypeClientCredentials,
+		}, nil
+	case optionSkip:
+		return pipelineAuthSelection{
+			skipAuth: true,
+			authType: authType,
+		}, nil
+	default:
+		return pipelineAuthSelection{}, fmt.Errorf("unexpected authentication option: %s", options[selectedOption])
+	}
 }
 
 type promptForServiceTreeIdOptions struct {

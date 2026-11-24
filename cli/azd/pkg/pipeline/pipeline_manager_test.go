@@ -1258,3 +1258,126 @@ func verifyProvider(t *testing.T, manager *PipelineManager, providerLabel ciProv
 func normalizeEOL(input []byte) string {
 	return strings.ReplaceAll(string(input), "\r\n", "\n")
 }
+
+func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {
+	tests := []struct {
+		name                 string
+		authTypeArg          string
+		usingMsi             bool
+		usingAppRegistration bool
+		selectOption         string
+		wantPrompted         bool
+		wantOptionCount      int
+		want                 pipelineAuthSelection
+		wantErr              string
+	}{
+		{
+			name:            "prompts and selects MSI by default",
+			selectOption:    "Federated Managed Identity (MSI + OIDC) (Recommended)",
+			wantPrompted:    true,
+			wantOptionCount: 4,
+			want: pipelineAuthSelection{
+				usingMsi: true,
+				authType: AuthTypeFederated,
+			},
+		},
+		{
+			name:            "prompts and selects federated service principal",
+			selectOption:    "Federated Service Principal (SP + OIDC)",
+			wantPrompted:    true,
+			wantOptionCount: 4,
+			want: pipelineAuthSelection{
+				usingAppRegistration: true,
+				authType:             AuthTypeFederated,
+			},
+		},
+		{
+			name:            "prompts and selects client credentials",
+			selectOption:    "Client Credentials (SP + Secret)",
+			wantPrompted:    true,
+			wantOptionCount: 4,
+			want: pipelineAuthSelection{
+				usingAppRegistration: true,
+				authType:             AuthTypeClientCredentials,
+			},
+		},
+		{
+			name:            "prompts and selects skip",
+			selectOption:    "Skip authentication setup",
+			wantPrompted:    true,
+			wantOptionCount: 4,
+			want: pipelineAuthSelection{
+				skipAuth: true,
+			},
+		},
+		{
+			name:        "explicit client-credentials skips prompt and uses service principal",
+			authTypeArg: string(AuthTypeClientCredentials),
+			want: pipelineAuthSelection{
+				usingAppRegistration: true,
+				authType:             AuthTypeClientCredentials,
+			},
+		},
+		{
+			name:        "explicit client-credentials with existing MSI returns error",
+			authTypeArg: string(AuthTypeClientCredentials),
+			usingMsi:    true,
+			wantErr:     "--auth-type client-credentials is not supported with managed identity authentication",
+		},
+		{
+			name:            "explicit federated omits client credentials option",
+			authTypeArg:     string(AuthTypeFederated),
+			selectOption:    "Federated Service Principal (SP + OIDC)",
+			wantPrompted:    true,
+			wantOptionCount: 3,
+			want: pipelineAuthSelection{
+				usingAppRegistration: true,
+				authType:             AuthTypeFederated,
+			},
+		},
+		{
+			name:                 "existing service principal skips prompt",
+			usingAppRegistration: true,
+			want: pipelineAuthSelection{
+				usingAppRegistration: true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			prompted := false
+			mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+				return options.Message == "Select how to authenticate the pipeline to Azure:"
+			}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+				prompted = true
+				require.True(t, options.ShowOptionDetailsBelow)
+				require.Len(t, options.Options, tt.wantOptionCount)
+				require.Len(t, options.OptionDetails, tt.wantOptionCount)
+				for i, opt := range options.Options {
+					if opt == tt.selectOption {
+						return i, nil
+					}
+				}
+				return 0, fmt.Errorf("option %q not found in %v", tt.selectOption, options.Options)
+			})
+
+			pm := &PipelineManager{
+				args:    &PipelineManagerArgs{PipelineAuthTypeName: tt.authTypeArg},
+				console: mockContext.Console,
+			}
+
+			got, err := pm.resolvePipelineAuth(t.Context(), tt.usingMsi, tt.usingAppRegistration)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				require.False(t, prompted)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.wantPrompted, prompted)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}

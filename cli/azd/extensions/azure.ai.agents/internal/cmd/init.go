@@ -154,11 +154,6 @@ type modelSelector struct {
 
 	modelCatalog         map[string]*azdext.AiModel
 	locationWarningShown bool
-
-	// allDeployments holds existing deployments in the selected Foundry project.
-	// Populated by getModelDeploymentDetails so getModelDetails can offer
-	// "Use an existing deployment" alongside "Choose a different model".
-	allDeployments []FoundryDeploymentInfo
 }
 
 // GitHubUrlInfo holds parsed information from a GitHub URL

@@ -140,196 +140,6 @@ func TestSanitizeAgentName(t *testing.T) {
 	}
 }
 
-func TestNormalizeForFuzzyMatch(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "lowercase passthrough",
-			input:    "gpt4o",
-			expected: "gpt4o",
-		},
-		{
-			name:     "uppercase converted to lowercase",
-			input:    "GPT4O",
-			expected: "gpt4o",
-		},
-		{
-			name:     "hyphens removed",
-			input:    "gpt-4o",
-			expected: "gpt4o",
-		},
-		{
-			name:     "dots removed",
-			input:    "gpt.4o",
-			expected: "gpt4o",
-		},
-		{
-			name:     "underscores removed",
-			input:    "gpt_4o",
-			expected: "gpt4o",
-		},
-		{
-			name:     "spaces removed",
-			input:    "gpt 4o",
-			expected: "gpt4o",
-		},
-		{
-			name:     "multiple separators removed",
-			input:    "gpt-4.o_mini",
-			expected: "gpt4omini",
-		},
-		{
-			name:     "empty string",
-			input:    "",
-			expected: "",
-		},
-		{
-			name:     "only separators",
-			input:    "---...__",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := normalizeForFuzzyMatch(tt.input)
-			if result != tt.expected {
-				t.Errorf("normalizeForFuzzyMatch(%q) = %q, want %q", tt.input, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestFuzzyFilterModels(t *testing.T) {
-	t.Parallel()
-
-	models := []string{
-		"gpt-4o",
-		"gpt-4o-mini",
-		"gpt-4",
-		"gpt-3.5-turbo",
-		"claude-3-opus",
-		"llama-3-70b",
-		"text-embedding-ada-002",
-	}
-
-	tests := []struct {
-		name       string
-		searchTerm string
-		expected   []string
-	}{
-		{
-			name:       "empty search returns all",
-			searchTerm: "",
-			expected:   models,
-		},
-		{
-			name:       "exact match",
-			searchTerm: "gpt-4o",
-			expected:   []string{"gpt-4o", "gpt-4o-mini"},
-		},
-		{
-			name:       "case insensitive search",
-			searchTerm: "GPT-4O",
-			expected:   []string{"gpt-4o", "gpt-4o-mini"},
-		},
-		{
-			name:       "fuzzy without separators",
-			searchTerm: "gpt4o",
-			expected:   []string{"gpt-4o", "gpt-4o-mini"},
-		},
-		{
-			name:       "partial match",
-			searchTerm: "llama",
-			expected:   []string{"llama-3-70b"},
-		},
-		{
-			name:       "no match",
-			searchTerm: "nonexistent",
-			expected:   nil,
-		},
-		{
-			name:       "match across separator boundaries",
-			searchTerm: "embedding",
-			expected:   []string{"text-embedding-ada-002"},
-		},
-		{
-			name:       "match with dot separator in search",
-			searchTerm: "3.5",
-			expected:   []string{"gpt-3.5-turbo"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := fuzzyFilterModels(models, tt.searchTerm)
-			if !stringSlicesEqual(result, tt.expected) {
-				t.Errorf("fuzzyFilterModels(%v, %q) = %v, want %v", models, tt.searchTerm, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestFindDefaultModelIndex(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name       string
-		modelNames []string
-		expected   int32
-	}{
-		{
-			name:       "gpt-4o present",
-			modelNames: []string{"claude-3", "gpt-4o", "llama-3"},
-			expected:   1,
-		},
-		{
-			name:       "gpt-4o first",
-			modelNames: []string{"gpt-4o", "gpt-4o-mini", "gpt-4"},
-			expected:   0,
-		},
-		{
-			name:       "no gpt-4o but gpt-4 prefix present",
-			modelNames: []string{"claude-3", "gpt-4", "llama-3"},
-			expected:   1,
-		},
-		{
-			name:       "no gpt-4o but gpt-4-turbo present",
-			modelNames: []string{"claude-3", "gpt-4-turbo", "llama-3"},
-			expected:   1,
-		},
-		{
-			name:       "no gpt models returns 0",
-			modelNames: []string{"claude-3", "llama-3", "phi-3"},
-			expected:   0,
-		},
-		{
-			name:       "empty list returns 0",
-			modelNames: []string{},
-			expected:   0,
-		},
-		{
-			name:       "gpt-4o preferred over gpt-4",
-			modelNames: []string{"gpt-4", "gpt-4o", "gpt-4-turbo"},
-			expected:   1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := findDefaultModelIndex(tt.modelNames)
-			if result != tt.expected {
-				t.Errorf("findDefaultModelIndex(%v) = %d, want %d", tt.modelNames, result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestExtractSubscriptionId(t *testing.T) {
 	t.Parallel()
 
@@ -543,6 +353,92 @@ func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *tes
 			}
 		}
 	}
+}
+
+func TestInitFromCode_NoPromptModelDeploymentWithoutProjectFailsCleanly(t *testing.T) {
+	t.Run("createDefinitionFromLocalAgent rejects before deferred Azure context writes", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Chdir(dir)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "main.py"), []byte("print('hello')\n"), 0o600))
+
+		const envName = "agent-dev"
+		envServer := &testEnvironmentServiceServer{
+			values: map[string]map[string]string{envName: {}},
+		}
+		azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+		action := &InitFromCodeAction{
+			azdClient:    azdClient,
+			environment:  &azdext.Environment{Name: envName},
+			azureContext: nil,
+			flags: &initFlags{
+				noPrompt:        true,
+				env:             envName,
+				modelDeployment: "existing-deployment",
+			},
+		}
+
+		protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, nil, io.Discard)
+		require.NoError(t, err)
+		definition, err := action.createDefinitionFromLocalAgent(t.Context(), protocols)
+		require.Nil(t, definition)
+
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok)
+		require.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+		require.Contains(t, localErr.Message, "cannot reuse an existing model deployment")
+		require.Empty(t, envServer.setKeys)
+		require.Empty(t, envServer.values[envName]["USE_EXISTING_AI_PROJECT"])
+		require.Empty(t, envServer.values[envName][pendingProvisionEnvVar])
+	})
+
+	t.Run("Run rejects before project scaffolding or environment creation", func(t *testing.T) {
+		root := t.TempDir()
+		t.Chdir(root)
+		require.NoError(t, os.WriteFile(filepath.Join(root, "main.py"), []byte("print('hello')\n"), 0o600))
+
+		projects := &recordingProjectServer{
+			projectPath:   root,
+			getProjectErr: status.Error(codes.NotFound, initScopeNoProject),
+		}
+		environments := &testEnvironmentServiceServer{
+			environments: map[string]*azdext.Environment{},
+			values:       map[string]map[string]string{},
+		}
+		workflow := &recordingProjectWorkflowServer{}
+		server := grpc.NewServer()
+		azdext.RegisterProjectServiceServer(server, projects)
+		azdext.RegisterEnvironmentServiceServer(server, environments)
+		azdext.RegisterWorkflowServiceServer(server, workflow)
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		go func() { _ = server.Serve(listener) }()
+		t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+
+		client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+		require.NoError(t, err)
+		t.Cleanup(func() { client.Close() })
+
+		action := &InitFromCodeAction{
+			azdClient: client,
+			flags: &initFlags{
+				noPrompt:        true,
+				src:             ".",
+				agentName:       "test-agent",
+				protocols:       []string{"responses"},
+				modelDeployment: "existing-deployment",
+			},
+		}
+
+		err = action.Run(t.Context())
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok)
+		require.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+		require.Contains(t, localErr.Message, "cannot reuse an existing model deployment")
+		require.Empty(t, workflow.requests)
+		require.Empty(t, environments.setKeys)
+		require.Empty(t, projects.added)
+		require.NoFileExists(t, filepath.Join(root, ".agentignore"))
+	})
 }
 
 type sourceInitACRPromptServer struct {
@@ -1269,22 +1165,6 @@ func TestFoundryProjectInfo(t *testing.T) {
 	if info.Location != "eastus" {
 		t.Errorf("Location = %q, want %q", info.Location, "eastus")
 	}
-}
-
-// stringSlicesEqual compares two string slices for equality.
-func stringSlicesEqual(a, b []string) bool {
-	if len(a) == 0 && len(b) == 0 {
-		return true
-	}
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func TestNativeA2AInitProtocols(t *testing.T) {

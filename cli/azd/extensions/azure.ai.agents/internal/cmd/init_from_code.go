@@ -93,6 +93,9 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	); err != nil {
 		return err
 	}
+	if err := a.validateNoPromptModelDeploymentBeforeSetup(ctx); err != nil {
+		return err
+	}
 	if a.flags.acrResourceIDSet {
 		if err := synthesis.RequireACRReuse(); err != nil {
 			return err
@@ -153,6 +156,12 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	// Create a definition based on user prompts
 	localDefinition, err := a.createDefinitionFromLocalAgent(ctx, protocols)
 	if err != nil {
+		if _, ok := errors.AsType[*azdext.LocalError](err); ok {
+			return err
+		}
+		if _, ok := errors.AsType[*azdext.ServiceError](err); ok {
+			return err
+		}
 		return fmt.Errorf("failed to create definition from local agent: %w", err)
 	}
 
@@ -301,6 +310,33 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 	}
 
 	return projectResponse.Project, nil
+}
+
+func (a *InitFromCodeAction) validateNoPromptModelDeploymentBeforeSetup(ctx context.Context) error {
+	if !a.flags.noPrompt ||
+		strings.TrimSpace(a.flags.modelDeployment) == "" ||
+		strings.TrimSpace(a.flags.projectResourceId) != "" {
+		return nil
+	}
+	if initACRResourceID(a.flags) != "" {
+		return validateModelDeploymentTarget(a.flags, nil)
+	}
+	projectResponse, projectErr := a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if projectErr != nil || projectResponse.GetProject() == nil {
+		return validateModelDeploymentTarget(a.flags, nil)
+	}
+	env := getExistingEnvironment(ctx, a.flags.env, a.azdClient)
+	if env == nil {
+		return validateModelDeploymentTarget(a.flags, nil)
+	}
+	persistedProjectID, err := getEnvValue(ctx, a.azdClient, env.Name, "AZURE_AI_PROJECT_ID")
+	if err != nil {
+		return fmt.Errorf("failed to read AZURE_AI_PROJECT_ID: %w", err)
+	}
+	if strings.TrimSpace(persistedProjectID) == "" {
+		return validateModelDeploymentTarget(a.flags, nil)
+	}
+	return nil
 }
 
 func (a *InitFromCodeAction) resolveACREnvironment(ctx context.Context) error {
@@ -488,6 +524,9 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 			return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 		}
 	} else if shouldDeferInitAzureContext(a.flags.noPrompt, a.azureContext) {
+		if err := validateModelDeploymentTarget(a.flags, nil); err != nil {
+			return nil, err
+		}
 		// In headless init, missing Azure values should not block local scaffold generation.
 		// Defer project/model setup and print the values required before provisioning.
 		if err := configureDeferredInitAzureContext(
@@ -498,6 +537,9 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 		}
 		deferredAzureContext = true
 	} else if a.flags.noPrompt || initACRResourceID(a.flags) != "" {
+		if err := validateModelDeploymentTarget(a.flags, nil); err != nil {
+			return nil, err
+		}
 		newCred, err := configureNewProjectForNoPrompt(
 			ctx, a.azdClient, a.environment.Name, a.azureContext,
 			initACRResourceID(a.flags),
@@ -559,6 +601,9 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 				if err := validateAcrConnectionInput(a.flags.acrConnection, false, true); err != nil {
 					return nil, err
 				}
+				if err := validateModelDeploymentTarget(a.flags, nil); err != nil {
+					return nil, err
+				}
 				if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
 					return nil, err
 				}
@@ -579,6 +624,9 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 			}
 		default:
 			if err := validateAcrConnectionInput(a.flags.acrConnection, false, true); err != nil {
+				return nil, err
+			}
+			if err := validateModelDeploymentTarget(a.flags, nil); err != nil {
 				return nil, err
 			}
 			newCred, err := ensureSubscriptionAndLocation(
@@ -604,89 +652,18 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 
 	// Step 2: Model configuration
 	a.selectedFoundryProject = selectedProject
-	var modelConfigChoices []*azdext.SelectChoice
-	if selectedProject != nil {
-		modelConfigChoices = []*azdext.SelectChoice{
-			{Label: "Use an existing model deployment", Value: "existing"},
-			{Label: "Deploy a new model from the catalog", Value: "new"},
-			{Label: "Skip model configuration", Value: "skip"},
-		}
-	} else {
-		modelConfigChoices = []*azdext.SelectChoice{
-			{Label: "Deploy a new model from the catalog", Value: "new"},
-			{Label: "Skip model configuration", Value: "skip"},
-		}
-	}
-
-	modelConfigChoice := "skip"
-	if a.flags.noPrompt {
-		if selectedProject != nil && a.flags.modelDeployment != "" {
-			modelConfigChoice = "existing"
-		} else if a.flags.model != "" && !deferredAzureContext {
-			modelConfigChoice = "new"
-		}
-		if deferredAzureContext && (a.flags.model != "" || a.flags.modelDeployment != "") {
-			fmt.Printf("%s", output.WithWarningFormat(
-				"Model configuration was deferred because Azure environment values are missing.\n",
-			))
-			fmt.Println(output.WithGrayFormat(
-				"Set the missing values, then re-run init with your model options or configure deployments in azure.yaml.",
-			))
-		}
-	} else {
-		defaultIndex := int32(0)
-		modelConfigResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-			Options: &azdext.SelectOptions{
-				Message:       "How would you like to configure model(s) for your agent?",
-				Choices:       modelConfigChoices,
-				SelectedIndex: &defaultIndex,
-			},
-		})
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("model configuration choice was cancelled")
-			}
-			return nil, fmt.Errorf("failed to prompt for model configuration choice: %w", err)
-		}
-		modelConfigChoice = modelConfigChoices[*modelConfigResp.Value].Value
-	}
-
-	var selectedModel *azdext.AiModel
-	var existingDeployment *FoundryDeploymentInfo
-
-	switch modelConfigChoice {
-	case "new":
-		if a.azureContext.Scope.Location == "" {
-			if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
-				return nil, err
-			}
-		}
-		selectedModel, err = selectNewModel(ctx, a.azdClient, a.azureContext, a.flags.model)
-		if err != nil {
-			return nil, fmt.Errorf("failed to select new model: %w", err)
-		}
-
-	case "existing":
-		if selectedProject == nil {
-			return nil, fmt.Errorf("cannot select existing deployment without a Foundry project")
-		}
-		deployment, err := selectModelDeployment(ctx, a.azdClient, a.credential, *selectedProject, a.flags.modelDeployment, "")
-		if err != nil {
-			return nil, err
-		}
-
-		if deployment != nil {
-			existingDeployment = deployment
-		} else {
-			// User wants to create a new deployment — region locked to the project's location
-			selectedModel, err = selectNewModel(ctx, a.azdClient, a.azureContext, a.flags.model)
-			if err != nil {
-				return nil, fmt.Errorf("failed to select new model: %w", err)
-			}
-		}
-
-	case "skip":
-		// Skip model configuration entirely
+	selectedDeployment, provisionDeployment, err := configureAgentModelDeployment(ctx, agentModelConfigOptions{
+		AzdClient:            a.azdClient,
+		Credential:           a.credential,
+		AzureContext:         a.azureContext,
+		Env:                  a.environment,
+		Flags:                a.flags,
+		SelectedProject:      selectedProject,
+		DeferredAzureContext: deferredAzureContext,
+		AllowSkip:            true,
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	// Create a minimal Agent Definition
@@ -725,66 +702,34 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 	// Enable public endpoints without replacing existing auth or routing settings.
 	composeLocalAgentEndpoint(definition)
 
-	// Add model resource if a model was selected
-	if existingDeployment != nil {
-		// Existing deployment: reference it by name only. Per REFERENCE.md an
-		// existing deployment is NOT declared under azure.ai.project.deployments:
-		// (azd does not create/upsert it) — it is referenced via the agent env
-		// var and verified at deploy time. So do not append to a.deploymentDetails.
-		definition.EnvironmentVariables = appendEnvVar(definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
-			Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-			Value: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
-		})
-
-		if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "AZURE_AI_MODEL_DEPLOYMENT_NAME", existingDeployment.Name); err != nil {
-			return nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
+	// Add model resource if a model deployment was selected or resolved.
+	if selectedDeployment != nil {
+		// Existing deployments are NOT declared under azure.ai.project.deployments:
+		// (azd does not create/upsert them) — only newly selected catalog deployments
+		// are appended to a.deploymentDetails for provisioning.
+		if provisionDeployment {
+			a.deploymentDetails = append(a.deploymentDetails, *selectedDeployment)
+			a.needsProvision = true
 		}
 
-		// Existing deployment chosen — clear any prior
-		// model_deployment tag so re-init that swaps from
-		// new-deployment back to existing doesn't leave the
-		// trailer stuck on `azd provision`.
-		if err := updatePendingModelDeploymentSignal(
-			ctx, a.azdClient, a.environment.Name, true, false,
+		definition.EnvironmentVariables = appendEnvVar(
+			definition.EnvironmentVariables,
+			agent_yaml.EnvironmentVariable{
+				Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+				Value: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
+			},
+		)
+
+		if err := setEnvValue(
+			ctx, a.azdClient, a.environment.Name, "AZURE_AI_MODEL_DEPLOYMENT_NAME", selectedDeployment.Name,
 		); err != nil {
-			log.Printf("warning: failed to update model_deployment provision signal: %v", err)
-		}
-	} else if selectedModel != nil {
-		modelDetails, err := a.resolveSelectedModelDeployment(ctx, selectedModel)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get model deployment details: %w", err)
-		}
-
-		a.deploymentDetails = append(a.deploymentDetails, project.Deployment{
-			Name: modelDetails.ModelName,
-			Model: project.DeploymentModel{
-				Name:    modelDetails.ModelName,
-				Format:  modelDetails.Format,
-				Version: modelDetails.Version,
-			},
-			Sku: project.DeploymentSku{
-				Name:     modelDetails.Sku.Name,
-				Capacity: int(modelDetails.Capacity),
-			},
-		})
-		a.needsProvision = true
-
-		definition.EnvironmentVariables = appendEnvVar(definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
-			Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-			Value: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
-		})
-
-		if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "AZURE_AI_MODEL_DEPLOYMENT_NAME", modelDetails.ModelName); err != nil {
 			return nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
 		}
 
-		// New model deployment configured — record that the
-		// post-init trailer should suggest `azd provision`. See
-		// pending_provision.go for the lifecycle contract: this
-		// tag is cleared by postprovisionHandler after a
-		// successful provision.
+		// Record whether `azd provision` is needed for a new deployment or clear
+		// any prior model_deployment tag when reusing an existing deployment.
 		if err := updatePendingModelDeploymentSignal(
-			ctx, a.azdClient, a.environment.Name, true, true,
+			ctx, a.azdClient, a.environment.Name, true, provisionDeployment,
 		); err != nil {
 			log.Printf("warning: failed to update model_deployment provision signal: %v", err)
 		}
@@ -804,33 +749,6 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 	definition.Name = agentName
 
 	return definition, nil
-}
-
-func (a *InitFromCodeAction) resolveSelectedModelDeployment(
-	ctx context.Context,
-	model *azdext.AiModel,
-) (*azdext.AiModelDeployment, error) {
-	deployments, err := resolveModelDeployments(ctx, a.azdClient, a.azureContext, model, a.azureContext.Scope.Location)
-	if err == nil {
-		if candidate := selectBestModelDeploymentCandidate(model, deployments); candidate != nil {
-			return candidate, nil
-		}
-	}
-
-	if err != nil && !isRecoverableDeploymentSelectionError(err) {
-		return nil, exterrors.FromAiService(err, exterrors.CodeModelResolutionFailed)
-	}
-
-	selector := &modelSelector{
-		azdClient:    a.azdClient,
-		azureContext: a.azureContext,
-		environment:  a.environment,
-		flags:        a.flags,
-	}
-
-	// allowSkip=false: in this recovery path the user already explicitly chose
-	// the model via selectNewModel earlier, so offering "Skip" would be confusing.
-	return selector.getModelDetails(ctx, model.Name, false)
 }
 
 // appendEnvVar appends an environment variable to a possibly-nil slice pointer,
@@ -868,65 +786,6 @@ func sanitizeAgentName(name string) string {
 		name = "my-agent"
 	}
 	return name
-}
-
-// normalizeForFuzzyMatch strips common separator characters (hyphens, dots, spaces, underscores)
-// and lowercases the string for fuzzy comparison.
-func normalizeForFuzzyMatch(s string) string {
-	s = strings.ToLower(s)
-	re := regexp.MustCompile(`[-.\s_]+`)
-	return re.ReplaceAllString(s, "")
-}
-
-// fuzzyFilterModels filters model names by a search term using normalized comparison.
-// The search term and model names both have separators stripped before matching.
-func fuzzyFilterModels(modelNames []string, searchTerm string) []string {
-	if searchTerm == "" {
-		return modelNames
-	}
-	normalizedSearch := normalizeForFuzzyMatch(searchTerm)
-	if normalizedSearch == "" {
-		return modelNames
-	}
-
-	// Build a regex pattern from the normalized search term
-	pattern, err := regexp.Compile("(?i)" + regexp.QuoteMeta(normalizedSearch))
-	if err != nil {
-		// Fallback to simple contains if regex fails
-		var matches []string
-		for _, name := range modelNames {
-			if strings.Contains(normalizeForFuzzyMatch(name), normalizedSearch) {
-				matches = append(matches, name)
-			}
-		}
-		return matches
-	}
-
-	var matches []string
-	for _, name := range modelNames {
-		if pattern.MatchString(normalizeForFuzzyMatch(name)) {
-			matches = append(matches, name)
-		}
-	}
-	return matches
-}
-
-// findDefaultModelIndex finds the index of gpt-4o in a sorted model list,
-// falling back to the first gpt-4 match, or 0.
-func findDefaultModelIndex(modelNames []string) int32 {
-	// Look for exact gpt-4o first
-	for i, name := range modelNames {
-		if name == "gpt-4o" {
-			return boundedInt32Index(i)
-		}
-	}
-	// Fall back to first gpt-4 match
-	for i, name := range modelNames {
-		if strings.HasPrefix(name, "gpt-4") {
-			return boundedInt32Index(i)
-		}
-	}
-	return 0
 }
 
 // writeAgentIgnoreToSrcDir generates a default .agentignore in srcDir if one

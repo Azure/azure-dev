@@ -4,8 +4,14 @@
 package cmd
 
 import (
+	"errors"
 	"strings"
 	"testing"
+
+	"azureaiagent/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPromptManagedAgentInstructionsFlagWins(t *testing.T) {
@@ -52,5 +58,47 @@ func TestPromptManagedAgentDescriptionReferencesAzureYaml(t *testing.T) {
 	}
 	if strings.Contains(help, "agent.yaml") {
 		t.Errorf("help references legacy agent.yaml: %q", help)
+	}
+}
+
+func TestResolveDeferredManagedAgentModel(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		flags   initFlags
+		want    string
+		wantErr string
+	}{
+		{
+			name:  "model-deployment takes precedence over model",
+			flags: initFlags{modelDeployment: " my-deployment ", model: "gpt-5.4-mini"},
+			want:  "my-deployment",
+		},
+		{
+			name:  "model flag used when model-deployment empty",
+			flags: initFlags{model: " gpt-5.4-mini "},
+			want:  "gpt-5.4-mini",
+		},
+		{
+			name:    "missing both flags fails with invalid_parameter",
+			flags:   initFlags{noPrompt: true},
+			wantErr: exterrors.CodeInvalidParameter,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := resolveDeferredManagedAgentModel(&tt.flags)
+			if tt.wantErr != "" {
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Equal(t, tt.wantErr, localErr.Code)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
 	}
 }

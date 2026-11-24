@@ -148,7 +148,7 @@ func runInitManaged(
 		model = deployment.Name
 	}
 	if strings.TrimSpace(model) == "" {
-		model, err = promptManagedAgentModel(ctx, azdClient, flags)
+		model, err = resolveDeferredManagedAgentModel(flags)
 		if err != nil {
 			return err
 		}
@@ -465,97 +465,20 @@ func promptManagedAgentDescription(
 	return strings.TrimSpace(resp.Value), nil
 }
 
-// promptManagedAgentModelChoices is the curated list of common Foundry chat
-// models offered in the guided model prompt. The first entry is the default
-// selection. A final "custom" option lets the user enter any deployment name.
-var promptManagedAgentModelChoices = []string{
-	"gpt-4.1-mini",
-	"gpt-4.1",
-	"gpt-4.1-nano",
-	"gpt-4o",
-	"gpt-4o-mini",
-	"o4-mini",
-}
-
-// promptManagedAgentModel asks which model deployment the agent should call.
-// Unlike a bare text field, it offers a curated list of common models plus a
-// "custom" escape hatch — a guided experience closer to the hosted model
-// selection. --model-deployment, --model, a manifest model, or --no-prompt all
-// bypass the prompt.
-//
-// This is only reached when the guided Foundry resolution did not produce a
-// deployment (for example when the target project could not be resolved), so it
-// records the model name without provisioning anything.
-func promptManagedAgentModel(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	flags *initFlags,
-) (string, error) {
-	if strings.TrimSpace(flags.modelDeployment) != "" {
-		return strings.TrimSpace(flags.modelDeployment), nil
+// resolveDeferredManagedAgentModel resolves the model name from CLI flags when
+// guided Foundry resolution deferred Azure setup under --no-prompt.
+func resolveDeferredManagedAgentModel(flags *initFlags) (string, error) {
+	if deploymentName := strings.TrimSpace(flags.modelDeployment); deploymentName != "" {
+		return deploymentName, nil
 	}
-	if strings.TrimSpace(flags.model) != "" {
-		return strings.TrimSpace(flags.model), nil
+	if modelName := strings.TrimSpace(flags.model); modelName != "" {
+		return modelName, nil
 	}
-	if flags.noPrompt {
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"--model or --model-deployment is required in non-interactive mode for prompt agents",
-			"pass --model <model-name> or --model-deployment <deployment-name> on the command line",
-		)
-	}
-
-	const customLabel = "Enter a custom model deployment name"
-	choices := make([]*azdext.SelectChoice, 0, len(promptManagedAgentModelChoices)+1)
-	for _, m := range promptManagedAgentModelChoices {
-		choices = append(choices, &azdext.SelectChoice{Label: m, Value: m})
-	}
-	choices = append(choices, &azdext.SelectChoice{Label: customLabel, Value: customLabel})
-
-	defaultIndex := int32(0)
-	selectResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message:       "Select the model deployment your agent will call",
-			Choices:       choices,
-			SelectedIndex: &defaultIndex,
-			HelpMessage: "The name of a model deployment in your Foundry project. " +
-				"Provision it with `azd up`, or pick an existing deployment name.",
-		},
-	})
-	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return "", exterrors.Cancelled("model selection was cancelled")
-		}
-		return "", fmt.Errorf("prompting for model: %w", err)
-	}
-
-	selected := choices[*selectResp.Value].Value
-	if selected != customLabel {
-		return selected, nil
-	}
-
-	// Custom path: free-text deployment name.
-	resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter the model deployment name",
-			DefaultValue: "gpt-4.1-mini",
-		},
-	})
-	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return "", exterrors.Cancelled("model selection was cancelled")
-		}
-		return "", fmt.Errorf("prompting for model: %w", err)
-	}
-	model := strings.TrimSpace(resp.Value)
-	if model == "" {
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"model must not be empty",
-			"provide a non-empty model deployment name",
-		)
-	}
-	return model, nil
+	return "", exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		"--model or --model-deployment is required in non-interactive mode for prompt agents",
+		"pass --model <model-name> or --model-deployment <deployment-name> on the command line",
+	)
 }
 
 // promptManagedAgentInstructions asks for the agent's system instructions.

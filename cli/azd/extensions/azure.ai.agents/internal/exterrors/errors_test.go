@@ -312,6 +312,7 @@ func TestServiceFromAzureReportsMalformedRequestURL(t *testing.T) {
 }
 
 func TestServiceFromAzureRedactsMixedCaseURLInResponse(t *testing.T) {
+	//nolint:gosec // Synthetic credentials intentionally exercise URL redaction.
 	const reportedURL = "hTtPs://test-user:test-password@example.test/source?sig=fake-signature#fake-fragment"
 	err := runtime.NewResponseError(&http.Response{
 		StatusCode: http.StatusBadRequest,

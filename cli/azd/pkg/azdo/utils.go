@@ -61,7 +61,7 @@ func EnsureOrgNameExists(
 	value, err := ensureConfigExists(env, AzDoEnvironmentOrgName, "azure devops organization name")
 	if err != nil {
 		orgName, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message:      "Enter an Azure DevOps Organization Name:",
+			Message:      "Enter your Azure DevOps organization name:",
 			DefaultValue: "",
 		})
 		if err != nil {

@@ -149,7 +149,7 @@ func (p *AzdoScmProvider) createNewGitRepositoryFromInput(ctx context.Context, c
 	var repo *azdoGit.GitRepository
 	for {
 		name, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message:      "Enter the name for your new Azure DevOps Repository:",
+			Message:      "Enter a new Azure DevOps repository name:",
 			DefaultValue: p.repoDetails.projectName,
 		})
 		if err != nil {

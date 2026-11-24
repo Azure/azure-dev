@@ -116,7 +116,7 @@ func GetProjectFromNew(
 
 	for {
 		name, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message:      "Enter the name for your new Azure DevOps Project:",
+			Message:      "Enter a new Azure DevOps project name:",
 			DefaultValue: currentFolderName,
 		})
 		if err != nil {
@@ -206,7 +206,7 @@ func GetProjectFromExisting(
 	}
 
 	projectIdx, err := console.Select(ctx, input.ConsoleOptions{
-		Message: "Choose an existing Azure DevOps Project",
+		Message: "Select an existing Azure DevOps project:",
 		Options: options,
 	})
 

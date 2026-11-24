@@ -1400,7 +1400,7 @@ func getRemoteUrlFromNewRepository(
 
 	for {
 		name, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message:      "Enter the name for your new repository:",
+			Message:      "Enter a new GitHub repository name:",
 			DefaultValue: currentDirectoryName,
 		})
 		if err != nil {

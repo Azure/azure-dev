@@ -202,7 +202,7 @@ All modes are also available as `mage` targets (from `cli/azd/`):
 | `mage coverage:hybrid` | Hybrid (local unit + CI integration) + report | Go 1.26, `az login` |
 | `mage coverage:ci` | CI baseline report | `az login` |
 | `mage coverage:html` | HTML report (unit only by default) | Go 1.26 |
-| `mage coverage:check` | Enforce 50% threshold (unit only; CI gate is 55% combined) | Go 1.26 |
+| `mage coverage:check` | Enforce the local 50% unit-only threshold; see the separate [CI gate](#ci-gate) for combined coverage | Go 1.26 |
 | `mage coverage:diff` | Compare current branch coverage vs main baseline (advisory; honors `COVERAGE_MAX_PACKAGE_DECREASE` / `COVERAGE_MIN_OVERALL` / `COVERAGE_FAIL_ON_DECREASE`) | Go 1.26 |
 | `mage coverage:pr` | Preview the CI PR coverage gate locally (fail-loud on either: per-package regression > 0.5 pp, or overall < 69%) | Go 1.26 |
 | `mage coverage:report` | Merge raw covdata input directories into a single `cover.out` (used by CI; honors `COVERAGE_REPORT_*` env vars) | Go 1.26 |
@@ -214,7 +214,7 @@ Environment variables for optional overrides:
 | `COVERAGE_PULL_REQUEST_ID` | `hybrid`, `ci` | Target a specific PR's CI run |
 | `COVERAGE_BUILD_ID` | `hybrid`, `ci` | Target a specific ADO build ID |
 | `COVERAGE_MODE` | `html` | Set to `full` or `hybrid` (default: `unit`) |
-| `COVERAGE_MIN` | `check` | Override threshold (default: `55`) |
+| `COVERAGE_MIN` | `check` | Override the local unit-only threshold (default: `50`) |
 | `COVERAGE_MAX_PACKAGE_DECREASE` | `diff`, `pr` | Maximum tolerated per-package coverage drop in percentage points (defaults come from `Get-CoverageDiff.ps1`, currently `0.5`; PR-touched packages only when changed-files can be resolved). Set to `-1` to disable the per-package gate (the floor gate stays active unless `COVERAGE_MIN_OVERALL` is also set to `-1`). |
 | `COVERAGE_MIN_OVERALL` | `diff`, `pr` | Absolute floor for overall coverage in percent (defaults come from `Get-CoverageDiff.ps1`, currently `69`). Set to `-1` to disable the floor gate. |
 | `COVERAGE_FAIL_ON_DECREASE` | `diff` | Set to `1` / `true` to exit `2` when EITHER gate is breached (`pr` always fails loud). Any other non-zero exit indicates a script/infra error, not a gate breach. **Note:** setting `COVERAGE_MAX_PACKAGE_DECREASE` alone does NOT enable fail-loud mode for `mage coverage:diff` — you must also set `COVERAGE_FAIL_ON_DECREASE=1` (or use `mage coverage:pr`, which always fails loud). |

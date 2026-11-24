@@ -64,7 +64,7 @@ func newTasksCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 func newTasksCommandWithFactory(extCtx *azdext.ExtensionContext, factory tasksActionFactory) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	cmd := &cobra.Command{
-		Use: "tasks", Short: "Inspect hosted-agent Tasks (Preview).",
+		Use: "tasks", Short: "Inspect hosted-agent Tasks.",
 		Long:    "Inspect existing hosted-agent Tasks without creating, changing, or selecting a Task.",
 		Example: "  azd ai agent tasks list\n  azd ai agent tasks show <task-id>",
 	}

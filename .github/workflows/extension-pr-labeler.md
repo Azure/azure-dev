@@ -22,7 +22,7 @@ max-ai-credits: 50
 max-daily-ai-credits: 5000
 engine:
   id: copilot
-  model: copilot/gpt-6.2-sol
+  model: copilot/gpt-6.1-sol
   args: ["--effort", "medium"]
 checkout: false
 strict: true

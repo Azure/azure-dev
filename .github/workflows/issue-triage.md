@@ -13,7 +13,7 @@ permissions:
   pull-requests: read
 engine:
   id: copilot
-  model: copilot/gpt-6.2-sol
+  model: copilot/gpt-6.1-sol
   args: ["--effort", "medium"]
 strict: true
 network:

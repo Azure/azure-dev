@@ -32,6 +32,10 @@ type templatePlanResolver struct {
 	functions           map[string]any
 	references          map[*planResource]bool
 	owningSubscriptions map[string]bool
+	consumedParameters  map[string]bool
+	trackingParameters  bool
+	skipFunctions       bool
+	root                *planEnvironment
 	nodes               []*planResource
 	account             *planResource
 	unresolved          []string
@@ -121,12 +125,17 @@ func (r *templatePlanResolver) scope(subscription, group string) planScope {
 func (r *templatePlanResolver) function(name string, args []string) any {
 	raw, err := json.Marshal(args)
 	if err != nil {
-		r.err = errors.Join(r.err, err)
+		if !r.skipFunctions {
+			r.err = errors.Join(r.err, err)
+		}
 		return planUnknown{"local Bicep arguments could not be encoded"}
 	}
 	key := name + string(raw)
 	if value, present := r.functions[key]; present {
 		return value
+	}
+	if r.skipFunctions {
+		return planUnknown{"local Bicep function evaluation skipped"}
 	}
 	value, err := evaluateBYOPlanFunction(r.ctx, r.provider.bicepCli(), name, args)
 	if err != nil {
@@ -389,12 +398,7 @@ func (n *planResource) reference(full bool) any {
 			// Output evaluation can precede the main walk (e.g. one module uses another's output).
 			n.resolver.walk(child, n.missing, 1)
 		}
-		outputs, _ := child.template["outputs"].(map[string]any)
-		result := map[string]any{}
-		for key, output := range outputs {
-			result[key] = child.value(output)
-		}
-		properties := map[string]any{"outputs": result}
+		properties := map[string]any{"outputs": n.resolver.outputs(child)}
 		if full {
 			return map[string]any{"properties": properties}
 		}
@@ -519,6 +523,110 @@ func (r *templatePlanResolver) recordOwningSubscription(kind, subscription strin
 	}
 }
 
+func (r *templatePlanResolver) clearVariables() {
+	if r.root != nil {
+		clear(r.root.variables)
+	}
+	for _, node := range r.nodes {
+		clear(node.env.variables)
+		if node.child != nil {
+			clear(node.child.variables)
+		}
+	}
+}
+
+func (r *templatePlanResolver) clearCaches() {
+	r.clearVariables()
+	if r.root != nil {
+		r.root.outputs, r.root.outputsTracked = nil, false
+	}
+	for _, node := range r.nodes {
+		node.env.outputs, node.env.outputsTracked = nil, false
+		if node.child != nil {
+			node.child.outputs, node.child.outputsTracked = nil, false
+		}
+	}
+}
+
+func (r *templatePlanResolver) outputs(env *planEnvironment) map[string]any {
+	if env.outputs != nil && (!r.trackingParameters || env.outputsTracked) {
+		return env.outputs
+	}
+	definitions, _ := env.template["outputs"].(map[string]any)
+	result := make(map[string]any, len(definitions))
+	for _, key := range slices.Sorted(maps.Keys(definitions)) {
+		name, missing := planString(env.value(key))
+		if missing != "" {
+			name = key
+		}
+		output, ok := definitions[key].(map[string]any)
+		if !ok {
+			result[name] = env.value(definitions[key])
+			continue
+		}
+		if condition, present := output["condition"]; present {
+			previous := r.trackingParameters
+			r.trackingParameters = false
+			active, condMissing := planBool(env.value(condition))
+			r.trackingParameters = previous
+			if previous {
+				r.clearVariables()
+			}
+			if condMissing == "" && !active {
+				result[name] = planUnknown{"output " + name + " is inactive"}
+				continue
+			}
+		}
+		result[name] = env.value(output)
+	}
+	env.outputs, env.outputsTracked = result, r.trackingParameters
+	return result
+}
+
+func (r *templatePlanResolver) scanConsumedParameters() {
+	r.skipFunctions = true
+	r.trackingParameters = true
+	defer func() {
+		r.skipFunctions = false
+		r.trackingParameters = false
+	}()
+	r.clearCaches()
+	for _, node := range r.nodes {
+		if node.inactive {
+			continue
+		}
+		if strings.EqualFold(node.kind, "Microsoft.Resources/deployments") {
+			var child *planEnvironment
+			if node.child != nil && node.child.walked {
+				child = node.child
+			}
+			for _, key := range slices.Sorted(maps.Keys(node.raw)) {
+				if strings.EqualFold(key, "properties") {
+					continue
+				}
+				node.env.value(node.raw[key])
+			}
+			if properties, ok := node.raw["properties"].(map[string]any); ok {
+				for _, key := range slices.Sorted(maps.Keys(properties)) {
+					if strings.EqualFold(key, "template") ||
+						child != nil && strings.EqualFold(key, "parameters") {
+						continue
+					}
+					node.env.value(properties[key])
+				}
+			}
+			if child != nil {
+				r.outputs(child)
+			}
+			continue
+		}
+		node.env.value(node.raw)
+	}
+	if r.root != nil {
+		r.outputs(r.root)
+	}
+}
+
 func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	ctx context.Context, source *templateSource, evidence *onboarding.AuthorizationEvidence,
 ) (onboarding.Plan, error) {
@@ -528,6 +636,7 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	resolver := &templatePlanResolver{
 		ctx: ctx, provider: p, evidence: evidence, scopes: map[string]planScope{}, functions: map[string]any{},
 		references: map[*planResource]bool{}, owningSubscriptions: map[string]bool{},
+		consumedParameters: map[string]bool{},
 	}
 	encoded, err := json.Marshal(source.parameters)
 	if err != nil {
@@ -548,8 +657,22 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 			return planUnknown{"parameter " + key + " requires a runtime parameter reference"}
 		}
 	}
+	automaticPrincipals := automaticBYOBindings(source, map[string]any{
+		"hostingPrincipalId":  nil,
+		"workloadPrincipalId": nil,
+	})
+	for name := range automaticPrincipals {
+		binding := strings.ToLower(name)
+		parameters[binding] = func() any {
+			if resolver.trackingParameters {
+				resolver.consumedParameters[binding] = true
+			}
+			return planUnknown{"automatic deployment binding " + name}
+		}
+	}
 	scope := resolver.scope(p.subID, "")
 	env := resolver.environment(source.armTemplate, parameters, scope, "compiled template", p.deploymentName())
+	resolver.root = env
 	resolver.walk(env, "", 0)
 	plan := onboarding.Plan{SubscriptionID: p.subID}
 	resolver.owningSubscriptions[strings.ToLower(p.subID)] = true
@@ -571,6 +694,31 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 			"actual Foundry target resource-group scope", "actual Foundry target resource-group selection: "+missing))
 	}
 	resolver.bindNetwork(&plan)
+	principalBindings := []struct {
+		binding  string
+		resource *onboarding.Resource
+	}{
+		{"hostingPrincipalId", &plan.Hosting},
+		{"workloadPrincipalId", &plan.Workload},
+	}
+	needsScan := false
+	for _, item := range principalBindings {
+		if _, automatic := automaticPrincipals[item.binding]; automatic {
+			if item.resource.Supplied {
+				item.resource.PrincipalRequired = true
+			} else {
+				needsScan = true
+			}
+		}
+	}
+	if needsScan {
+		resolver.scanConsumedParameters()
+		for _, item := range principalBindings {
+			if _, automatic := automaticPrincipals[item.binding]; automatic && !item.resource.PrincipalRequired {
+				item.resource.PrincipalRequired = resolver.consumedParameters[strings.ToLower(item.binding)]
+			}
+		}
+	}
 	plan.OwningSubscriptions = append(plan.OwningSubscriptions, slices.Sorted(maps.Keys(resolver.owningSubscriptions))...)
 	return plan, resolver.err
 }

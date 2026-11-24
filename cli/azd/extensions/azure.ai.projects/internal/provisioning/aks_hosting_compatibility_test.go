@@ -345,3 +345,273 @@ func TestBYOSuppliedIdentityRequiresRealPrincipalBinding(t *testing.T) {
 		assert.Zero(t, fake.base.previews)
 	}
 }
+
+func customBYOIdentityPlanTemplate(
+	hostingID, workloadID, storageID, hostingPrincipalExpr, workloadPrincipalExpr string,
+) map[string]any {
+	hostingExpr := customPrincipalARMExpr(hostingPrincipalExpr, "customHosting", "forwardedHostingPrincipal")
+	workloadExpr := customPrincipalARMExpr(workloadPrincipalExpr, "customWorkload", "forwardedWorkloadPrincipal")
+	hostingCondition := "[if(equals('ref', '" + hostingPrincipalExpr +
+		"'), true(), not(empty(parameters('forwardedHostingPrincipal'))))]"
+	return map[string]any{
+		"$schema":         "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+		"languageVersion": "2.0",
+		"contentVersion":  "1.0.0.0",
+		"parameters": map[string]any{
+			"agentHosting": map[string]any{
+				"type": "object",
+				"defaultValue": map[string]any{
+					"enabled":                             false,
+					"clusterResourceId":                   "",
+					"storageAccountResourceId":            "",
+					"hostingManagementIdentityResourceId": "",
+					"workloadIdentityResourceId":          "",
+				},
+			},
+			"includeAcr":                        map[string]any{"type": "bool", "defaultValue": false},
+			"acrPullPrincipalId":                map[string]any{"type": "string", "defaultValue": ""},
+			"kubeletObjectId":                   map[string]any{"type": "string", "defaultValue": ""},
+			"federatedIdentityRoleDefinitionId": map[string]any{"type": "string", "defaultValue": ""},
+			"byoAksExistingRoleAssignmentKeys":  map[string]any{"type": "array", "defaultValue": []any{}},
+			"hostingPrincipalId":                map[string]any{"type": "string", "defaultValue": ""},
+			"workloadPrincipalId":               map[string]any{"type": "string", "defaultValue": ""},
+			"monitoringMode":                    map[string]any{"type": "string", "defaultValue": "none"},
+		},
+		"resources": map[string]any{
+			"customDeployment": map[string]any{
+				"type":          "Microsoft.Resources/deployments",
+				"apiVersion":    "2025-04-01",
+				"name":          "custom-deployment",
+				"resourceGroup": "target-rg",
+				"properties": map[string]any{
+					"expressionEvaluationOptions": map[string]any{"scope": "inner"},
+					"parameters": map[string]any{
+						"forwardedHostingPrincipal":  map[string]any{"value": "[parameters('hostingPrincipalId')]"},
+						"forwardedWorkloadPrincipal": map[string]any{"value": "[parameters('workloadPrincipalId')]"},
+					},
+					"template": map[string]any{
+						"$schema":         "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+						"languageVersion": "2.0",
+						"parameters": map[string]any{
+							"forwardedHostingPrincipal":  map[string]any{"type": "string", "defaultValue": ""},
+							"forwardedWorkloadPrincipal": map[string]any{"type": "string", "defaultValue": ""},
+						},
+						"resources": map[string]any{
+							"customHosting": map[string]any{
+								"type":       "Microsoft.ManagedIdentity/userAssignedIdentities",
+								"apiVersion": "2023-01-31",
+								"name":       hostingID[strings.LastIndex(hostingID, "/")+1:],
+								"location":   "westus",
+							},
+							"customWorkload": map[string]any{
+								"type":       "Microsoft.ManagedIdentity/userAssignedIdentities",
+								"apiVersion": "2023-01-31",
+								"name":       workloadID[strings.LastIndex(workloadID, "/")+1:],
+								"location":   "westus",
+							},
+							"customStorage": map[string]any{
+								"type":       "Microsoft.Storage/storageAccounts",
+								"apiVersion": "2023-05-01",
+								"name":       storageID[strings.LastIndex(storageID, "/")+1:],
+								"location":   "westus",
+							},
+							"customAccount": map[string]any{
+								"type":       "Microsoft.CognitiveServices/accounts",
+								"apiVersion": "2025-04-01-preview",
+								"name":       "custom-account",
+								"properties": map[string]any{
+									"agentHostingConfigurations": []any{map[string]any{
+										"hostingType":                         "ManagedCluster",
+										"clusterResourceId":                   offlineClusterID,
+										"storageAccountResourceId":            storageID,
+										"hostingManagementIdentityResourceId": hostingID,
+										"workloadIdentityResourceId":          workloadID,
+									}},
+								},
+							},
+							"disabledGrant": map[string]any{
+								"condition":  "[and(not(empty(parameters('forwardedHostingPrincipal'))), false())]",
+								"type":       "Microsoft.Authorization/roleAssignments",
+								"apiVersion": "2022-04-01",
+								"name":       "disabled-grant",
+								"properties": map[string]any{
+									"principalId": "[parameters('forwardedHostingPrincipal')]",
+								},
+							},
+							"hostingGrant": map[string]any{
+								"condition":  hostingCondition,
+								"type":       "Microsoft.Authorization/roleAssignments",
+								"apiVersion": "2022-04-01",
+								"name":       "[guid('hosting-grant', " + hostingExpr + ")]",
+								"properties": map[string]any{
+									"principalId": hostingExpr,
+								},
+							},
+							"workloadGrant": map[string]any{
+								"type":       "Microsoft.Authorization/roleAssignments",
+								"apiVersion": "2022-04-01",
+								"name":       "[guid('workload-grant', " + workloadExpr + ")]",
+								"properties": map[string]any{
+									"principalId": workloadExpr,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"outputs": map[string]any{
+			"AZURE_AI_PROJECT_ID":                  map[string]any{"type": "string", "value": offlineProjectID},
+			"AZURE_AI_PROJECT_ENDPOINT":            map[string]any{"type": "string", "value": offlineProjectEndpoint},
+			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"type": "string", "value": ""},
+		},
+	}
+}
+
+func customPrincipalARMExpr(mode, resourceSymbol, parameterName string) string {
+	if mode == "ref" {
+		return "[reference('" + resourceSymbol + "').principalId]"
+	}
+	return "[parameters('" + parameterName + "')]"
+}
+
+func TestBYOAutomaticPrincipalBindingsFollowCompiledPlan(t *testing.T) {
+	const existingUpdatedHostingID = suppliedGroupID +
+		"/providers/Microsoft.ManagedIdentity/userAssignedIdentities/existing-updated-hosting"
+	const existingUpdatedWorkloadID = suppliedGroupID +
+		"/providers/Microsoft.ManagedIdentity/userAssignedIdentities/existing-updated-workload"
+	const createdHostingID = suppliedGroupID +
+		"/providers/Microsoft.ManagedIdentity/userAssignedIdentities/created-hosting"
+	const createdWorkloadID = suppliedGroupID +
+		"/providers/Microsoft.ManagedIdentity/userAssignedIdentities/created-workload"
+	const updatedStorageID = suppliedGroupID + "/providers/Microsoft.Storage/storageAccounts/storage"
+
+	for _, preview := range []bool{false, true} {
+		t.Run(fmt.Sprintf("emptySelectorUpdatesExistingIdentity/preview=%t", preview), func(t *testing.T) {
+			p, fake, compiler := suppliedProvider(t, 0)
+			fake.missingGrant = offlineClusterID
+			for _, entry := range []struct{ id, principal string }{
+				{existingUpdatedHostingID, suppliedHostingPrincipal},
+				{existingUpdatedWorkloadID, suppliedWorkloadPrincipal},
+			} {
+				fake.overrides[strings.ToLower(entry.id)] = suppliedReply{
+					status: 200,
+					body: map[string]any{
+						"id": entry.id,
+						"properties": map[string]any{
+							"principalId": entry.principal,
+							"clientId":    entry.principal,
+							"tenantId":    "tenant",
+						},
+					},
+				}
+			}
+			template := customBYOIdentityPlanTemplate(
+				existingUpdatedHostingID, existingUpdatedWorkloadID, updatedStorageID, "param", "param",
+			)
+			p.armTemplate = template
+			p.onDiskSource = &templateSource{
+				mode:        templateModeBicep,
+				armTemplate: template,
+				parameters:  map[string]any{"monitoringMode": map[string]any{"value": "none"}},
+			}
+
+			source, err := p.resolveTemplate(t.Context(), func(string) {})
+			require.NoError(t, err)
+			plan, err := p.identifyBYOTemplatePlan(t.Context(), source, nil)
+			require.NoError(t, err)
+			assert.Equal(t, existingUpdatedHostingID, plan.Hosting.ID)
+			assert.Equal(t, existingUpdatedWorkloadID, plan.Workload.ID)
+			assert.False(t, plan.Hosting.Supplied, "ARM create/update targets must not be classified as supplied")
+			assert.False(t, plan.Workload.Supplied, "ARM create/update targets must not be classified as supplied")
+			assert.True(t, plan.Hosting.PrincipalRequired)
+			assert.True(t, plan.Workload.PrincipalRequired)
+
+			if preview {
+				_, err = p.Preview(t.Context(), func(string) {})
+				require.NoError(t, err)
+				assert.Equal(t, 1, fake.base.previews)
+				assert.Zero(t, fake.base.writes)
+			} else {
+				_, err = p.Deploy(t.Context(), func(string) {})
+				require.NoError(t, err)
+				assert.Equal(t, 1, fake.base.writes)
+				assert.Zero(t, fake.base.previews)
+			}
+			assert.Empty(t, compiler.buildParamCalls)
+			assert.Contains(t, fake.requests, "GET "+existingUpdatedHostingID)
+			assert.Contains(t, fake.requests, "GET "+existingUpdatedWorkloadID)
+			assert.Equal(t, map[string]any{"value": suppliedHostingPrincipal}, fake.base.parameters["hostingPrincipalId"])
+			assert.Equal(t, map[string]any{"value": suppliedWorkloadPrincipal}, fake.base.parameters["workloadPrincipalId"])
+		})
+
+		t.Run(fmt.Sprintf("nonemptySelectorIgnoredByNewIdentity/preview=%t", preview), func(t *testing.T) {
+			p, fake, compiler := suppliedProvider(t, 6)
+			template := customBYOIdentityPlanTemplate(
+				createdHostingID, createdWorkloadID, updatedStorageID, "ref", "ref",
+			)
+			p.armTemplate = template
+			p.onDiskSource = &templateSource{
+				mode:        templateModeBicep,
+				armTemplate: template,
+				parameters:  map[string]any{"monitoringMode": map[string]any{"value": "none"}},
+			}
+
+			source, err := p.resolveTemplate(t.Context(), func(string) {})
+			require.NoError(t, err)
+			plan, err := p.identifyBYOTemplatePlan(t.Context(), source, nil)
+			require.NoError(t, err)
+			assert.Equal(t, createdHostingID, plan.Hosting.ID)
+			assert.Equal(t, createdWorkloadID, plan.Workload.ID)
+			assert.False(t, plan.Hosting.Supplied)
+			assert.False(t, plan.Workload.Supplied)
+			assert.False(t, plan.Hosting.PrincipalRequired)
+			assert.False(t, plan.Workload.PrincipalRequired)
+
+			if preview {
+				_, err = p.Preview(t.Context(), func(string) {})
+				require.NoError(t, err)
+				assert.Equal(t, 1, fake.base.previews)
+				assert.Zero(t, fake.base.writes)
+			} else {
+				_, err = p.Deploy(t.Context(), func(string) {})
+				require.NoError(t, err)
+				assert.Equal(t, 1, fake.base.writes)
+				assert.Zero(t, fake.base.previews)
+			}
+			assert.Empty(t, compiler.buildParamCalls)
+			assert.NotContains(t, fake.requests, "GET "+createdHostingID)
+			assert.NotContains(t, fake.requests, "GET "+createdWorkloadID)
+			assert.NotContains(t, fake.requests, "GET "+suppliedHostingID)
+			assert.NotContains(t, fake.requests, "GET "+suppliedWorkloadID)
+			assert.NotContains(t, fake.base.parameters, "hostingPrincipalId")
+			assert.NotContains(t, fake.base.parameters, "workloadPrincipalId")
+		})
+
+		t.Run(fmt.Sprintf("missingConsumedIdentityBlocksPreflight/preview=%t", preview), func(t *testing.T) {
+			p, fake, _ := suppliedProvider(t, 0)
+			template := customBYOIdentityPlanTemplate(
+				createdHostingID, createdWorkloadID, updatedStorageID, "param", "ref",
+			)
+			p.armTemplate = template
+			p.onDiskSource = &templateSource{
+				mode:        templateModeBicep,
+				armTemplate: template,
+				parameters:  map[string]any{"monitoringMode": map[string]any{"value": "none"}},
+			}
+
+			var err error
+			if preview {
+				_, err = p.Preview(t.Context(), func(string) {})
+			} else {
+				_, err = p.Deploy(t.Context(), func(string) {})
+			}
+			require.ErrorContains(t, err, "preflight blocked")
+			require.ErrorContains(t, err, createdHostingID)
+			assert.Contains(t, fake.requests, "GET "+createdHostingID)
+			assert.NotContains(t, fake.requests, "GET "+createdWorkloadID)
+			assert.Zero(t, fake.base.writes)
+			assert.Zero(t, fake.base.previews)
+		})
+	}
+}

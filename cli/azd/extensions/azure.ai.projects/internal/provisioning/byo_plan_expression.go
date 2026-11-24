@@ -157,17 +157,19 @@ type planScope struct {
 }
 
 type planEnvironment struct {
-	template   map[string]any
-	parameters map[string]func() any
-	scope      planScope
-	path       string
-	deployment any
-	resources  map[string]*planResource
-	variables  map[string]any
-	active     map[string]bool
-	copyIndex  int
-	function   func(string, []string) any
-	walked     bool
+	template       map[string]any
+	parameters     map[string]func() any
+	scope          planScope
+	path           string
+	deployment     any
+	resources      map[string]*planResource
+	variables      map[string]any
+	outputs        map[string]any
+	outputsTracked bool
+	active         map[string]bool
+	copyIndex      int
+	function       func(string, []string) any
+	walked         bool
 }
 
 func planField(value any, key string) any {

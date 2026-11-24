@@ -88,37 +88,20 @@ func automaticProvisionInputs(
 			"the Bicep developer administrator inputs do not match supported bindings",
 		)
 	}
-	password := false
 	for _, field := range []string{"databasePassword", "databaseAdministratorPassword", "postgresAdministratorPassword"} {
-		binding, present := document.Parameters[field]
-		if !present {
-			continue
-		}
-		if binding.Value != "${SPRING_DATABASE_PASSWORD}" && binding.Value != "${SPRING_DATABASE_PASSWORD:-}" {
+		if _, present := document.Parameters[field]; present {
 			return resolvedDatabase{}, configurationError(
-				"the Bicep administrator password does not match the supported binding",
+				"password-authenticated PostgreSQL infrastructure bindings are unsupported; use Entra managed identity",
 			)
 		}
-		password = true
 	}
-	if managed && password {
-		return resolvedDatabase{}, configurationError("the infrastructure mixes incompatible database bootstrap credentials")
-	}
-	if selected.Type == databaseNone && (managed || password) {
+	if selected.Type == databaseNone && managed {
 		return resolvedDatabase{}, configurationError(
 			"database bootstrap bindings conflict with the database-free application",
 		)
 	}
 	if managed {
 		return resolvedDatabase{Type: databasePostgreSQL, Authentication: databaseAuthenticationManagedIdentity}, nil
-	}
-	if password {
-		if selected.Authentication == databaseAuthenticationManagedIdentity {
-			return resolvedDatabase{}, configurationError(
-				"the application and infrastructure database authentication modes conflict",
-			)
-		}
-		return resolvedDatabase{Type: databasePostgreSQL, Authentication: databaseAuthenticationPassword}, nil
 	}
 	if selected.Type == databasePostgreSQL || selected.selectionPending {
 		return resolvedDatabase{}, configurationError(

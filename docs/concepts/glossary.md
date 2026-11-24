@@ -41,9 +41,9 @@ Azure Container Apps. The extension uses host JDK 17+ and the Maven Wrapper to
 build a JAR, then packages it with an owned Java 17 runtime recipe in an
 isolated temporary context. It rejects any authored top-level service property
 outside its supported standard azd field set, discovers the effective Spring
-datasource, and verifies password, system-assigned identity, or explicitly
-selected user-assigned identity access before deployment. Spring initializes
-application schemas at startup. See the
+datasource, and verifies Entra system-assigned or explicitly selected
+user-assigned identity access before deployment. Spring initializes application
+schemas at startup. See the
 [extension README](../../cli/azd/extensions/azure.springboot/README.md).
 
 ### Framework Service

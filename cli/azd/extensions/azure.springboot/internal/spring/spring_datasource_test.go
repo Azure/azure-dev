@@ -63,8 +63,11 @@ func TestSpringDatasourceUnresolvedSelectorsAreNotSyntheticPostgresOrH2(t *testi
 		"spring.datasource.url=jdbc:postgresql://actual.example/petclinic?sslmode=verify-full\n" +
 			"spring.datasource.azure.passwordless-enabled=${AUTH}",
 	} {
-		config := datasourceProperties(t, selector+"\nspring.datasource.username=app\nspring.datasource.password=local-test")
-		intent, err := inferSpringDatasource(config, springDependencies{postgresql: true, h2: true}, false)
+		config := datasourceProperties(t, selector+"\nspring.datasource.username=app\n"+
+			"spring.datasource.hikari.data-source-properties[authenticationPluginClassName]="+azurePostgreSQLPlugin+"\n"+
+			"spring.datasource.hikari.data-source-properties[azure.managedIdentityEnabled]=true")
+		deps := springDependencies{postgresql: true, h2: true, azureIdentity: true}
+		intent, err := inferSpringDatasource(config, deps, false)
 		require.NoError(t, err)
 		require.True(t, intent.selectionPending)
 		require.True(t, intent.pending)
@@ -72,13 +75,13 @@ func TestSpringDatasourceUnresolvedSelectorsAreNotSyntheticPostgresOrH2(t *testi
 		require.Empty(t, intent.authentication)
 		require.Empty(t, intent.host)
 		require.Empty(t, intent.name)
-		_, err = inferSpringDatasource(config, springDependencies{postgresql: true, h2: true}, true)
+		_, err = inferSpringDatasource(config, deps, true)
 		require.Error(t, err)
 		config.environment = map[string]string{
 			"POSTGRES_URL": "jdbc:postgresql://actual.example/petclinic?sslmode=verify-full",
 			"HOST":         "actual.example", "AUTH": "false",
 		}
-		intent, err = inferSpringDatasource(config, springDependencies{postgresql: true, h2: true}, true)
+		intent, err = inferSpringDatasource(config, deps, true)
 		require.NoError(t, err)
 		require.False(t, intent.selectionPending)
 		require.Equal(t, databasePostgreSQL, intent.engine)
@@ -87,25 +90,23 @@ func TestSpringDatasourceUnresolvedSelectorsAreNotSyntheticPostgresOrH2(t *testi
 func TestSpringDatasourceDriverAndHikariOverridePrecedence(t *testing.T) {
 	config := datasourceProperties(t, `spring.datasource.url=jdbc:postgresql://unused.example/unused
 spring.datasource.username=source_user
-spring.datasource.password=source_password
 spring.datasource.hikari.jdbc-url=jdbc:postgresql://actual.example:5432/actual?\
-sslmode=verify-full&user=url_user&password=url_password
+sslmode=verify-full&user=url_user
 spring.datasource.hikari.username=hikari_user
-spring.datasource.hikari.password=hikari_password
 spring.datasource.hikari.data-source-properties[user]=map_user
-spring.datasource.hikari.data-source-properties[password]=map_password
 spring.datasource.hikari.data-source-properties[PGHOST]=ignored.example
 spring.datasource.hikari.data-source-properties[PGPORT]=6432
 spring.datasource.hikari.data-source-properties[PGDBNAME]=ignored
+spring.datasource.hikari.data-source-properties[authenticationPluginClassName]=`+azurePostgreSQLPlugin+`
+spring.datasource.hikari.data-source-properties[azure.managedIdentityEnabled]=true
 `)
-	intent, err := inferSpringDatasource(config, springDependencies{postgresql: true}, true)
+	intent, err := inferSpringDatasource(config, springDependencies{postgresql: true, azureIdentity: true}, true)
 	require.NoError(t, err)
-	require.Equal(t, databaseAuthenticationPassword, intent.authentication)
+	require.Equal(t, databaseAuthenticationManagedIdentity, intent.authentication)
 	require.Equal(t, "actual", intent.name)
 	require.Equal(t, "actual.example", intent.host)
 	require.Equal(t, 5432, intent.port)
 	require.Equal(t, "url_user", intent.username)
-	require.Equal(t, "url_password", intent.password)
 }
 
 func TestSpringDatasourceStarterUsesEffectiveManagedIdentitySelection(t *testing.T) {
@@ -123,12 +124,10 @@ spring.datasource.azure.credential.client-id=`+testSpringClientID)
 	require.True(t, intent.clientIDConfigured)
 	require.Equal(t, testSpringClientID, intent.clientID)
 	config.properties[springPropertyKey("spring.datasource.password")] = springProperty{"actual-password", "test"}
-	intent, err = inferSpringDatasource(config, springDependencies{
+	_, err = inferSpringDatasource(config, springDependencies{
 		postgresql: true, azureIdentity: true, azureJDBC: true,
 	}, true)
-	require.NoError(t, err)
-	require.Equal(t, databaseAuthenticationPassword, intent.authentication)
-	require.Equal(t, "actual-password", intent.password)
+	require.ErrorContains(t, err, "Entra managed identity")
 }
 
 func TestSpringDatasourceManagedIdentitySelectsSystemAssignedWithoutClientID(t *testing.T) {

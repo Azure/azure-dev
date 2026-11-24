@@ -5,12 +5,10 @@ package spring
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"maps"
 	"os"
 	"path/filepath"
-	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -256,44 +254,12 @@ func TestPreProvisionPromptsForMissingAdministratorInputsBeforePersisting(t *tes
 	}
 }
 
-func databaseFreeProject(t *testing.T, gradle bool) (*azdext.ProjectConfig, *azdext.ServiceConfig) {
+func databaseFreeProject(t *testing.T) (*azdext.ProjectConfig, *azdext.ServiceConfig) {
 	t.Helper()
 	project, service := createMavenProject(t)
 	require.NoError(t, os.WriteFile(filepath.Join(project.Path, "pom.xml"), []byte(`<project><dependencies>
 	<dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
 	</dependencies></project>`), 0o600))
-	if gradle {
-		project.Path = createGradleProject(t, "build.gradle.kts")
-		report, err := json.Marshal(gradleReport{
-			Version: 1, Root: project.Path, Archive: filepath.Join(project.Path, "build", "app.jar"),
-			Dependencies: []string{"org.springframework.boot:spring-boot-starter-web"},
-		})
-		require.NoError(t, err)
-		require.NoError(t, os.WriteFile(filepath.Join(project.Path, "dependencies.json"), report, 0o600))
-		wrapper := `#!/bin/sh
-	for argument do
-	  case "$argument" in
-	    -Dazd.spring.report=*) cp "$(dirname "$0")/dependencies.json" "${argument#*=}"; exit $?;;
-	  esac
-	done
-	exit 1
-	`
-		if goruntime.GOOS == "windows" {
-			wrapper = "@echo off\r\npowershell.exe -NoProfile -File \"%~dp0report.ps1\" %*\r\n"
-			require.NoError(t, os.WriteFile(filepath.Join(project.Path, "report.ps1"), []byte(`
-	param([Parameter(ValueFromRemainingArguments=$true)][string[]]$Arguments)
-	foreach ($argument in $Arguments) {
-	    if ($argument.StartsWith('-Dazd.spring.report=')) {
-	        [IO.File]::Copy((Join-Path $PSScriptRoot 'dependencies.json'), $argument.Split('=', 2)[1], $true)
-	        exit 0
-	    }
-	}
-	exit 1
-	`), 0o600))
-		}
-		// #nosec G306 -- isolated executable build-report fixture, not a real Gradle invocation.
-		require.NoError(t, os.WriteFile(filepath.Join(project.Path, gradleWrapperName()), []byte(wrapper), 0o700))
-	}
 	return project, service
 }
 
@@ -307,38 +273,33 @@ func databaseFreeApplication() *armappcontainers.ContainerApp {
 }
 
 func TestDatabaseFreeLifecycleDoesNotAcquirePostgresRequirements(t *testing.T) {
-	for _, gradle := range []bool{false, true} {
-		t.Run(map[bool]string{false: "Maven", true: "Gradle"}[gradle], func(t *testing.T) {
-			project, service := databaseFreeProject(t, gradle)
-			t.Setenv("DATABASE_ADMIN_NAME", "")
-			t.Setenv(postgresBootstrapClientIPEnv, "invalid-postgres-only-value")
-			t.Setenv(databasePasswordEnv, "irrelevant-to-this-application")
-			store := &fakeEnvironmentStore{name: "dev", data: map[string]string{}}
-			identities := &fakeDeveloperIdentityResolver{err: errors.New("PostgreSQL identity must not be resolved")}
-			binding := &deploymentBinding{
-				app: databaseFreeApplication(), automatic: true, values: map[string]string{
-					postgresServerIDEnv: "unrelated-postgres-output",
-				},
-			}
-			outputs := &fakeDeploymentOutputVerifier{bound: binding}
-			runtime := &Runtime{environments: store, identities: identities, outputs: outputs}
-			args := &azdext.ServiceEventArgs{Project: project, Service: service}
-			require.NoError(t, runtime.ValidateService(t.Context(), service, project))
-			require.NoError(t, runtime.PreBuild(t.Context(), args))
-			require.NoError(t, runtime.PreProvision(t.Context(), &azdext.ProjectEventArgs{Project: project}))
-			require.NoError(t, runtime.PostProvision(t.Context(), &azdext.ProjectEventArgs{Project: project}))
-			require.NoError(t, runtime.PreDeploy(t.Context(), args))
-			require.Zero(t, identities.calls)
-			require.Zero(t, outputs.calls)
-			require.Empty(t, store.writes)
-		})
+	project, service := databaseFreeProject(t)
+	t.Setenv("DATABASE_ADMIN_NAME", "")
+	t.Setenv(databasePasswordEnv, "irrelevant-to-this-application")
+	store := &fakeEnvironmentStore{name: "dev", data: map[string]string{}}
+	identities := &fakeDeveloperIdentityResolver{err: errors.New("PostgreSQL identity must not be resolved")}
+	binding := &deploymentBinding{
+		app: databaseFreeApplication(), automatic: true, values: map[string]string{
+			postgresServerIDEnv: "unrelated-postgres-output",
+		},
 	}
+	outputs := &fakeDeploymentOutputVerifier{bound: binding}
+	runtime := &Runtime{environments: store, identities: identities, outputs: outputs}
+	args := &azdext.ServiceEventArgs{Project: project, Service: service}
+	require.NoError(t, runtime.ValidateService(t.Context(), service, project))
+	require.NoError(t, runtime.PreBuild(t.Context(), args))
+	require.NoError(t, runtime.PreProvision(t.Context(), &azdext.ProjectEventArgs{Project: project}))
+	require.NoError(t, runtime.PostProvision(t.Context(), &azdext.ProjectEventArgs{Project: project}))
+	require.NoError(t, runtime.PreDeploy(t.Context(), args))
+	require.Zero(t, identities.calls)
+	require.Zero(t, outputs.calls)
+	require.Empty(t, store.writes)
 }
 
 func TestMixedProjectKeepsDatabaseFreeServiceIndependent(t *testing.T) {
 	for _, freeName := range []string{"a-web", "z-web"} {
 		t.Run(freeName, func(t *testing.T) {
-			project, service := databaseFreeProject(t, false)
+			project, service := databaseFreeProject(t)
 			service.Name = freeName
 			databaseService := &azdext.ServiceConfig{Name: "database", Host: SpringHost, RelativePath: "database"}
 			project.Services = map[string]*azdext.ServiceConfig{freeName: service, "database": databaseService}
@@ -350,11 +311,28 @@ func TestMixedProjectKeepsDatabaseFreeServiceIndependent(t *testing.T) {
 			}
 			require.NoError(t, os.WriteFile(filepath.Join(root, "pom.xml"), []byte(`<project><dependencies>
 	<dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency>
+	<dependency><groupId>com.azure</groupId><artifactId>azure-identity-extensions</artifactId></dependency>
 	</dependencies></project>`), 0o600))
 			require.NoError(t, os.WriteFile(filepath.Join(root, "src", "main", "resources", "application.properties"),
 				[]byte("spring.datasource.url=jdbc:postgresql://pg.example/petclinic?sslmode=verify-full\n"+
-					"spring.datasource.username=app\nspring.datasource.password=test-password"), 0o600))
+					"spring.datasource.username=app\n"+
+					"spring.datasource.hikari.data-source-properties[authenticationPluginClassName]="+
+					azurePostgreSQLPlugin+"\n"+
+					"spring.datasource.hikari.data-source-properties[azure.managedIdentityEnabled]=true\n"), 0o600))
 			const server = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.DBforPostgreSQL/flexibleServers/pg"
+			const dbAppID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/database"
+			const dbPrincipalID = "11111111-1111-1111-1111-111111111111"
+			dbApp := &armappcontainers.ContainerApp{
+				ID: new(dbAppID),
+				Identity: &armappcontainers.ManagedServiceIdentity{
+					Type:        new(armappcontainers.ManagedServiceIdentityTypeSystemAssigned),
+					PrincipalID: new(dbPrincipalID),
+				},
+				Properties: &armappcontainers.ContainerAppProperties{
+					Template: &armappcontainers.Template{Containers: []*armappcontainers.Container{{}}},
+				},
+			}
+			freeApp := databaseFreeApplication()
 			values := map[string]string{
 				postgresServerIDEnv: server, postgresHostEnv: "pg.example", provisionedDatabaseTypeEnv: "postgresql",
 			}
@@ -362,9 +340,10 @@ func TestMixedProjectKeepsDatabaseFreeServiceIndependent(t *testing.T) {
 				automatic: true, values: values,
 				resources: map[string]bool{
 					strings.ToLower(server): true, strings.ToLower(server + "/databases/petclinic"): true,
+					strings.ToLower(dbAppID): true, strings.ToLower(*freeApp.ID): true,
 				},
 				apps: map[string]*armappcontainers.ContainerApp{
-					freeName: databaseFreeApplication(), "database": databaseFreeApplication(),
+					freeName: freeApp, "database": dbApp,
 				},
 			}
 			store := &fakeEnvironmentStore{name: "dev", data: values}

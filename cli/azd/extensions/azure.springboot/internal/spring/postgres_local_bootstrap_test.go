@@ -131,7 +131,7 @@ func newLocalBootstrapFixture(t *testing.T, callerID string) (
 			return cloud, nil
 		},
 		sql: func(_ context.Context, session *verifiedPostgresResources, _ azcore.TokenCredential,
-			_ resolvedDatabase, _ map[string]string, _ string,
+			_ resolvedDatabase, _ string,
 		) error {
 			cloud.operations = append(cloud.operations, "sql")
 			require.Equal(t, "selected-user", session.AdministratorName)
@@ -175,7 +175,7 @@ func TestLocalPostgresBootstrapPreservesSelectedAndExistingCallerAdministrators(
 						PrincipalName: "existing-alias", PrincipalType: "User", TenantID: localTestTenantID,
 					}
 				r.sql = func(_ context.Context, session *verifiedPostgresResources, _ azcore.TokenCredential,
-					_ resolvedDatabase, _ map[string]string, _ string,
+					_ resolvedDatabase, _ string,
 				) error {
 					require.Equal(t, "existing-alias", session.sessionAdministratorName())
 					cloud.operations = append(cloud.operations, "sql")
@@ -211,7 +211,7 @@ func TestLocalPostgresBootstrapCleansPartialSuccessAndCancellation(t *testing.T)
 				cloud.createRuleErr = expected
 			default:
 				r.sql = func(context.Context, *verifiedPostgresResources, azcore.TokenCredential,
-					resolvedDatabase, map[string]string, string,
+					resolvedDatabase, string,
 				) error {
 					if failure == "cancellation" {
 						cancel()
@@ -292,7 +292,7 @@ func TestLocalPostgresBootstrapRejectsUnsafePrerequisitesBeforeMutation(t *testi
 func TestLocalPostgresBootstrapRefusesChangedAndConcurrentOwnership(t *testing.T) {
 	r, cloud, values, path := newLocalBootstrapFixture(t, localTestCallerID)
 	r.sql = func(ctx context.Context, _ *verifiedPostgresResources, _ azcore.TokenCredential,
-		_ resolvedDatabase, _ map[string]string, _ string,
+		_ resolvedDatabase, _ string,
 	) error {
 		require.ErrorContains(t, r.Reconcile(ctx, "dev", resolvedDatabase{}, values), "in progress")
 		require.ErrorContains(t, r.Recover(ctx, "dev", resolvedDatabase{}, values), "in progress")
@@ -349,7 +349,7 @@ func TestLocalPostgresBootstrapRetriesPropagationButNotSQLPolicy(t *testing.T) {
 		r, _, values, path := newLocalBootstrapFixture(t, localTestSelectedID)
 		calls := 0
 		r.sql = func(context.Context, *verifiedPostgresResources, azcore.TokenCredential,
-			resolvedDatabase, map[string]string, string,
+			resolvedDatabase, string,
 		) error {
 			calls++
 			if calls > 1 {

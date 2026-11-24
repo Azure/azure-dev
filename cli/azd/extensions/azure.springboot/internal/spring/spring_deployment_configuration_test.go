@@ -179,6 +179,7 @@ func TestAutomaticDiscoveryBindsActualAttachedIdentityBeforeReturningFinalSelect
 func TestAutomaticDiscoveryBindsSystemAssignedIdentityWithoutClientID(t *testing.T) {
 	project, service := automaticPostgresProject(t)
 	propertiesPath := filepath.Join(project.Path, "src", "main", "resources", "application.properties")
+	// #nosec G304 -- fixed path beneath a test-owned temporary project directory.
 	properties, err := os.ReadFile(propertiesPath)
 	require.NoError(t, err)
 	properties = []byte(strings.ReplaceAll(
@@ -228,42 +229,6 @@ func TestAutomaticDiscoveryBindsSystemAssignedIdentityWithoutClientID(t *testing
 	require.ErrorContains(t, err, "does not match")
 }
 
-func TestExplicitDatasourceChecksEffectiveApplicationSettings(t *testing.T) {
-	project, service := automaticPostgresProject(t)
-	binding := &deploymentBinding{
-		values: map[string]string{postgresHostEnv: "actual.example", serviceIdentityClientIDEnv: testSpringClientID},
-		app: &armappcontainers.ContainerApp{Properties: &armappcontainers.ContainerAppProperties{
-			Template: &armappcontainers.Template{Containers: []*armappcontainers.Container{{
-				Env: []*armappcontainers.EnvironmentVar{
-					{Name: new("POSTGRES_URL"), Value: new("jdbc:postgresql://actual.example/petclinic")},
-					{Name: new("AZURE_CLIENT_ID"), Value: new(testSpringClientID)},
-				},
-			}}},
-		}},
-	}
-	ctx := context.WithValue(t.Context(), deploymentBindingKey{}, binding)
-	expected := resolvedDatabase{
-		Type: databasePostgreSQL, Authentication: databaseAuthenticationManagedIdentity,
-		Name: "petclinic", Username: "petclinic_app",
-		AppIdentity: &databaseAppIdentity{Type: databaseAppIdentityTypeUserAssigned},
-	}
-	runtime := new(Runtime)
-	require.NoError(t, runtime.verifyExplicitDatasource(ctx, project, service, nil, expected, nil))
-	for _, mutate := range []func(*resolvedDatabase){
-		func(value *resolvedDatabase) { value.Name = "other" },
-		func(value *resolvedDatabase) { value.Username = "other" },
-		func(value *resolvedDatabase) { value.Type = databaseH2 },
-		func(value *resolvedDatabase) { value.Authentication = databaseAuthenticationPassword },
-	} {
-		selected := expected
-		mutate(&selected)
-		require.Error(t, runtime.verifyExplicitDatasource(ctx, project, service, nil, selected, nil))
-	}
-	binding.values[serviceIdentityClientIDEnv] = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-	require.Error(t, runtime.verifyExplicitDatasource(ctx, project, service, nil, expected, nil))
-	require.Error(t, runtime.verifyExplicitDatasource(t.Context(), project, service, nil, expected, nil))
-}
-
 func TestDeployedDatasourceRejectsMountsBeforeReadingSecrets(t *testing.T) {
 	app := &armappcontainers.ContainerApp{Properties: &armappcontainers.ContainerAppProperties{
 		Template: &armappcontainers.Template{Containers: []*armappcontainers.Container{{
@@ -279,7 +244,7 @@ func TestDeployedDatasourceRejectsMountsBeforeReadingSecrets(t *testing.T) {
 
 func TestMultiModuleProjectResolvesPostgresAndDatabaseFreeServices(t *testing.T) {
 	root := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(root, ".mvn", "wrapper"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".mvn", "wrapper"), 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "mvnw"), []byte("wrapper"), 0o600))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, ".mvn", "wrapper", "maven-wrapper.properties"), []byte("props"), 0o600,
@@ -296,7 +261,7 @@ func TestMultiModuleProjectResolvesPostgresAndDatabaseFreeServices(t *testing.T)
 	webJavaDir := filepath.Join(root, "petclinic-web", "src", "main", "java", "web")
 	webResDir := filepath.Join(root, "petclinic-web", "src", "main", "resources")
 	for _, dir := range []string{restJavaDir, restResDir, webJavaDir, webResDir} {
-		require.NoError(t, os.MkdirAll(dir, 0o755))
+		require.NoError(t, os.MkdirAll(dir, 0o700))
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(restJavaDir, "App.java"), []byte(
 		"package app;\nimport org.springframework.boot.SpringApplication;\n"+
@@ -431,7 +396,7 @@ func TestMultiModuleProjectResolvesPostgresAndDatabaseFreeServices(t *testing.T)
 
 func TestMultiDatabasePostgresServicesReconcileAndEnforcePerServiceAccess(t *testing.T) {
 	root := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(root, ".mvn", "wrapper"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".mvn", "wrapper"), 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "mvnw"), []byte("wrapper"), 0o600))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, ".mvn", "wrapper", "maven-wrapper.properties"), []byte("props"), 0o600,
@@ -442,7 +407,7 @@ func TestMultiDatabasePostgresServicesReconcileAndEnforcePerServiceAccess(t *tes
 		<artifactId>petclinic-microservices</artifactId>
 		<packaging>pom</packaging>
 	</project>`), 0o600))
-	require.NoError(t, os.MkdirAll(filepath.Join(root, "infra"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "infra"), 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "infra", "main.parameters.json"), []byte(`{
 		"parameters": {
 			"databaseAdministratorName": {"value": "${DATABASE_ADMIN_NAME=azd-preprovision-pending}"},
@@ -453,8 +418,8 @@ func TestMultiDatabasePostgresServicesReconcileAndEnforcePerServiceAccess(t *tes
 	writeModule := func(name, depsXML, appYML string) *azdext.ServiceConfig {
 		javaDir := filepath.Join(root, name, "src", "main", "java", "svc")
 		resDir := filepath.Join(root, name, "src", "main", "resources")
-		require.NoError(t, os.MkdirAll(javaDir, 0o755))
-		require.NoError(t, os.MkdirAll(resDir, 0o755))
+		require.NoError(t, os.MkdirAll(javaDir, 0o700))
+		require.NoError(t, os.MkdirAll(resDir, 0o700))
 		require.NoError(t, os.WriteFile(filepath.Join(javaDir, "App.java"), []byte(
 			"package svc;\nimport org.springframework.boot.SpringApplication;\n"+
 				"public class App { public static void main(String[] a) { SpringApplication.run(App.class, a); } }\n",
@@ -600,7 +565,6 @@ func TestMultiDatabasePostgresServicesReconcileAndEnforcePerServiceAccess(t *tes
 				return liveVerifier.Verify(ctx, db, v)
 			},
 		},
-		reconcile: func(context.Context, map[string]string) error { return nil },
 		prepareNetwork: func(context.Context, *deploymentBinding) (func(context.Context) error, error) {
 			return func(context.Context) error { return nil }, nil
 		},
@@ -702,7 +666,6 @@ func TestMultiDatabasePostgresServicesReconcileAndEnforcePerServiceAccess(t *tes
 				return liveVerifier.Verify(ctx, db, v)
 			},
 		},
-		reconcile: func(context.Context, map[string]string) error { return nil },
 		prepareNetwork: func(context.Context, *deploymentBinding) (func(context.Context) error, error) {
 			return func(context.Context) error { return nil }, nil
 		},

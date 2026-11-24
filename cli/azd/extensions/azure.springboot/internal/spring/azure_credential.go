@@ -37,3 +37,11 @@ func credentialForSubscription(
 	}
 	return credential, nil
 }
+
+func errorsNoTenant() error {
+	return validationError(
+		"missing_user_access_tenant",
+		"azd did not return a user access tenant for the selected subscription",
+		"run azd auth login for an account that can access the subscription",
+	)
+}

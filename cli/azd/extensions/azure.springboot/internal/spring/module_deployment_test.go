@@ -567,7 +567,7 @@ func moduleFixture(t *testing.T, module string) (*azdext.ProjectConfig, *azdext.
 	t.Helper()
 	root := t.TempDir()
 	modulePath := filepath.Join(root, "infra", filepath.FromSlash(module))
-	require.NoError(t, os.MkdirAll(filepath.Dir(modulePath), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Dir(modulePath), 0o700))
 	require.NoError(t, os.WriteFile(modulePath+".bicep", []byte("param imageName string"), 0o600))
 	parameters := `{
   "parameters": {

@@ -53,10 +53,9 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 
 The unpublished [`azure.springboot` prototype](../../cli/azd/extensions/azure.springboot/README.md)
 combines Java framework and Container Apps target providers. The project's Maven
-Wrapper or single-project Gradle Wrapper builds the executable JAR (Maven takes
-precedence when both build systems are present), and an extension-owned Java 17 runtime recipe packages it in an
-isolated temporary context through azd's container pipeline. Project
-Dockerfiles and ignore files stay unchanged and unused.
+Wrapper builds the executable JAR, and an extension-owned Java 17 runtime recipe
+packages it in an isolated temporary context through azd's container pipeline.
+Project Dockerfiles and ignore files stay unchanged and unused.
 
 The host is automatic-only: any authored top-level service property outside its
 supported standard azd field set is rejected before authentication or mutation.
@@ -64,26 +63,23 @@ Typed core fields such as `module` are retrieved through the project
 configuration RPC.
 The extension discovers the effective datasource from packaged Spring
 configuration and verifies the selected deployment and live resources before
-database mutations. PostgreSQL managed identity may use the verified Container
-App system identity or one explicitly selected attached user-assigned identity.
+database mutations. PostgreSQL datasources must use Entra managed identity via
+the verified Container App system identity or one explicitly selected attached
+user-assigned identity.
 Its fixed `app-owned-v2` policy allows application-owned startup SQL, not a
 privileged initializer/receipt gate. App object ownership permits ALTER/DROP,
 but does not grant database ownership or administrator privileges.
 Administrator connections use hostname-verified TLS with a catalog-only search
-path. Password mode verifies a real connection with the exact effective Spring
-credential rather than rotating an existing role. Endpoint selection recognizes
-`_ENDPOINT_URL` and preserves the application path after matching the live
-Container App hostname. Source-only discovery rejects recognizable custom
-bootstrap mechanisms but does not prove arbitrary programmatic or generated
-configuration.
-Source-only Gradle discovery evaluates the production runtime classpath through
-the wrapper; it may download dependencies and execute authored build logic.
+path. Endpoint selection recognizes `_ENDPOINT_URL` and preserves the
+application path after matching the live Container App hostname. Source-only
+discovery rejects recognizable custom bootstrap mechanisms but does not prove
+arbitrary programmatic or generated configuration.
 See the [extension design](../../cli/azd/extensions/azure.springboot/docs/design.md)
-for build-system limitations and exact `bootJar` artifact selection.
-Automatic PostgreSQL managed-identity setup runs privileged SQL locally only
-during `postprovision`, with owned temporary public firewall access and, when
-needed, a temporary caller administrator. Cleanup must finish before readiness
-is saved. Deployment checks provisioning and runtime bindings without repeating
+for Maven packaging and multi-module discovery details.
+PostgreSQL managed-identity setup runs privileged SQL locally only during
+`postprovision`, with owned temporary public firewall access and, when needed,
+a temporary caller administrator. Cleanup must finish before readiness is saved.
+Deployment checks provisioning and runtime bindings without repeating
 administrator SQL; there is no postdeploy SQL audit or bootstrap runner image.
 
 Extension command metadata can set `"launch": {"noAzdEnvironment": true}` on a command.

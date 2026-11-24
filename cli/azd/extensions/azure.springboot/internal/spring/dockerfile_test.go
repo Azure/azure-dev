@@ -19,8 +19,8 @@ import (
 func createMavenProject(t *testing.T) (*azdext.ProjectConfig, *azdext.ServiceConfig) {
 	t.Helper()
 	root := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(root, ".mvn", "wrapper"), 0o755))
-	require.NoError(t, os.MkdirAll(filepath.Join(root, "src"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".mvn", "wrapper"), 0o700))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "src"), 0o700))
 	for _, path := range []string{"pom.xml", "mvnw", filepath.Join(".mvn", "wrapper", "maven-wrapper.properties")} {
 		require.NoError(t, os.WriteFile(filepath.Join(root, path), []byte("fixture"), 0o600))
 	}
@@ -70,8 +70,8 @@ func TestServicePathSupportsMultiModuleAncestorMavenWrapper(t *testing.T) {
 	outer := t.TempDir()
 	projectRoot := filepath.Join(outer, "reactor")
 	moduleDir := filepath.Join(projectRoot, "petclinic-web")
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, ".mvn", "wrapper"), 0o755))
-	require.NoError(t, os.MkdirAll(filepath.Join(moduleDir, "src"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, ".mvn", "wrapper"), 0o700))
+	require.NoError(t, os.MkdirAll(filepath.Join(moduleDir, "src"), 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(projectRoot, "mvnw"), []byte("wrapper"), 0o600))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(projectRoot, ".mvn", "wrapper", "maven-wrapper.properties"), []byte("props"), 0o600,
@@ -91,7 +91,7 @@ func TestServicePathSupportsMultiModuleAncestorMavenWrapper(t *testing.T) {
 
 	// Wrapper outside projectRoot must not satisfy contained lookup.
 	require.NoError(t, os.Remove(filepath.Join(projectRoot, "mvnw")))
-	require.NoError(t, os.MkdirAll(filepath.Join(outer, ".mvn", "wrapper"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(outer, ".mvn", "wrapper"), 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(outer, "mvnw"), []byte("wrapper"), 0o600))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(outer, ".mvn", "wrapper", "maven-wrapper.properties"), []byte("props"), 0o600,
@@ -277,6 +277,7 @@ func TestCopyJarDoesNotClaimOrOverwriteExistingFile(t *testing.T) {
 	_, created, err := copyFileWithContext(t.Context(), source, destination)
 	require.Error(t, err)
 	require.False(t, created)
+	// #nosec G304 -- destination is created in t.TempDir() immediately above.
 	content, err := os.ReadFile(destination)
 	require.NoError(t, err)
 	require.Equal(t, "preserve", string(content))
@@ -323,7 +324,7 @@ func mavenJar(t *testing.T, classMajorVersion uint16) []byte {
 	_, err = classFile.Write([]byte{
 		0xca, 0xfe, 0xba, 0xbe,
 		0x00, 0x00,
-		byte(classMajorVersion >> 8), byte(classMajorVersion),
+		byte(classMajorVersion >> 8), byte(classMajorVersion & 0xff),
 	})
 	require.NoError(t, err)
 	require.NoError(t, writer.Close())

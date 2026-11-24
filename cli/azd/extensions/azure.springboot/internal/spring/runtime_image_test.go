@@ -52,13 +52,10 @@ func (s *nativePackagingServer) Package(
 }
 
 func TestNativeRuntimeImageUsesIsolatedContextAndCorePackageOnce(t *testing.T) {
-	for _, mode := range []string{"h2", "database-free-maven", "database-free-gradle"} {
+	for _, mode := range []string{"h2", "database-free-maven"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("AZD_CONTAINER_RUNTIME", "docker")
 			config, service := createMavenProject(t)
-			if mode == "database-free-gradle" {
-				config.Path = createGradleProject(t, "build.gradle")
-			}
 			t.Setenv("AZD_EXEC_PROJECT_DIR", config.Path)
 			require.NoError(t, os.WriteFile(filepath.Join(config.Path, "Dockerfile"), []byte("FROM authored"), 0o600))
 			require.NoError(t, os.WriteFile(filepath.Join(config.Path, ".dockerignore"), []byte("*"), 0o600))
@@ -91,9 +88,11 @@ func TestNativeRuntimeImageUsesIsolatedContextAndCorePackageOnce(t *testing.T) {
 						"build", "-f", filepath.Join(contextPath, "Dockerfile"), "--platform", "linux/amd64", contextPath,
 					}, args.Args[:6])
 					require.Equal(t, contextPath, args.Cwd)
+					// #nosec G304 -- contextPath is the isolated temporary directory passed to docker build.
 					content, err := os.ReadFile(filepath.Join(contextPath, "Dockerfile"))
 					require.NoError(t, err)
 					require.Equal(t, springDockerfile, string(content))
+					// #nosec G304 -- stagedJarName is a fixed filename inside contextPath.
 					content, err = os.ReadFile(filepath.Join(contextPath, stagedJarName))
 					require.NoError(t, err)
 					require.Equal(t, jar, content)
@@ -125,9 +124,6 @@ services:
 			target := newServiceTarget(packagingTestClient(t, config, server), nil, nil, nil)
 			target.images = newRuntimeImageBuilder(runner)
 			serviceContext := mavenPackageContext(t, jar)
-			if mode == "database-free-gradle" {
-				serviceContext.Package[0].Metadata["framework"] = "gradle"
-			}
 			result, err := target.Package(t.Context(), service, serviceContext, func(string) {})
 			require.NoError(t, err)
 			require.Equal(t, 1, builds)
@@ -138,6 +134,7 @@ services:
 			require.Len(t, serviceContext.Build, 1)
 			require.NoDirExists(t, contextPath)
 			for name, expected := range map[string]string{"Dockerfile": "FROM authored", ".dockerignore": "*"} {
+				// #nosec G304 -- fixed test filenames inside t.TempDir().
 				actual, err := os.ReadFile(filepath.Join(config.Path, name))
 				require.NoError(t, err)
 				require.Equal(t, expected, string(actual))

@@ -5,14 +5,11 @@ package spring
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -32,15 +29,11 @@ const (
 	postgresTokenScope         = "https://ossrdbms-aad.database.windows.net/.default"
 	postgresResourceAPIVersion = "2024-08-01"
 	postgresCleanupTimeout     = 2 * time.Minute
-	postgresFirewallStaleAfter = time.Hour
 )
 
 type postgresAccessReconciler struct {
-	client       *azdext.AzdClient
-	ipProvider   publicIPProvider
-	connect      func(context.Context, *pgx.ConnConfig) (*pgx.Conn, error)
-	now          func() time.Time
-	randomSuffix func() (string, error)
+	client  *azdext.AzdClient
+	connect func(context.Context, *pgx.ConnConfig) (*pgx.Conn, error)
 }
 
 type verifiedPostgresResources struct {
@@ -65,117 +58,9 @@ func (r *verifiedPostgresResources) sessionAdministratorName() string {
 
 func newPostgresAccessReconciler(client *azdext.AzdClient) *postgresAccessReconciler {
 	return &postgresAccessReconciler{
-		client:     client,
-		ipProvider: newPublicIPProvider(),
-		connect:    pgx.ConnectConfig,
-		now:        time.Now,
-		randomSuffix: func() (string, error) {
-			bytes := make([]byte, 8)
-			if _, err := rand.Read(bytes); err != nil {
-				return "", fmt.Errorf("generating PostgreSQL firewall rule ownership suffix: %w", err)
-			}
-			return hex.EncodeToString(bytes), nil
-		},
+		client:  client,
+		connect: pgx.ConnectConfig,
 	}
-}
-
-func (r *postgresAccessReconciler) Reconcile(
-	ctx context.Context,
-	envName string,
-	database resolvedDatabase,
-	values map[string]string,
-) error {
-	resources, credential, err := r.verifyResources(ctx, envName, database, values)
-	if err != nil {
-		return err
-	}
-	firewalls, err := armpostgresqlflexibleservers.NewFirewallRulesClient(
-		resources.SubscriptionID,
-		credential,
-		nil,
-	)
-	if err != nil {
-		return fmt.Errorf("creating PostgreSQL firewall client: %w", err)
-	}
-	return nonDisclosureError(r.withBootstrapFirewall(ctx, firewalls, resources, envName, func(ctx context.Context) error {
-		return r.reconcileSQL(ctx, resources, credential, database, values, envName)
-	}))
-}
-
-func (r *postgresAccessReconciler) withBootstrapFirewall(
-	ctx context.Context,
-	firewalls *armpostgresqlflexibleservers.FirewallRulesClient,
-	resources *verifiedPostgresResources,
-	envName string,
-	run func(context.Context) error,
-) error {
-	allPublic, err := hasAllPublicIPv4Rule(ctx, firewalls, resources.ResourceGroup, resources.ServerName)
-	if err != nil {
-		return err
-	}
-	if allPublic {
-		return run(ctx)
-	}
-	ip, err := discoverBootstrapIPv4(ctx, os.LookupEnv, r.ipProvider)
-	if err != nil {
-		return err
-	}
-	prefix := bootstrapFirewallRulePrefix(envName, resources.ServerID)
-	now := r.now()
-	if err := r.recoverStaleFirewallRules(
-		ctx,
-		firewalls,
-		resources.ResourceGroup,
-		resources.ServerName,
-		prefix,
-		now,
-	); err != nil {
-		return nonDisclosureError(err)
-	}
-	suffix, err := r.randomSuffix()
-	if err != nil {
-		return err
-	}
-	ruleName := bootstrapFirewallRuleName(prefix, now, suffix)
-	primaryErr := withTemporaryFirewall(
-		ctx,
-		func(createContext context.Context) error {
-			poller, createErr := firewalls.BeginCreateOrUpdate(
-				createContext,
-				resources.ResourceGroup,
-				resources.ServerName,
-				ruleName,
-				armpostgresqlflexibleservers.FirewallRule{
-					Properties: &armpostgresqlflexibleservers.FirewallRuleProperties{
-						StartIPAddress: new(ip),
-						EndIPAddress:   new(ip),
-					},
-				},
-				nil,
-			)
-			if createErr != nil {
-				return fmt.Errorf("creating an exact owned PostgreSQL bootstrap firewall rule: %w", createErr)
-			}
-			if _, createErr = poller.PollUntilDone(createContext, nil); createErr != nil {
-				return fmt.Errorf(
-					"waiting for the exact owned PostgreSQL bootstrap firewall rule: %w",
-					createErr,
-				)
-			}
-			return nil
-		},
-		func(cleanupContext context.Context) error {
-			return deleteBootstrapFirewallRule(
-				cleanupContext,
-				firewalls,
-				resources.ResourceGroup,
-				resources.ServerName,
-				ruleName,
-			)
-		},
-		run,
-	)
-	return primaryErr
 }
 
 func (r *postgresAccessReconciler) verifyResources(
@@ -290,57 +175,36 @@ func (r *postgresAccessReconciler) verifyResources(
 	network, _ := properties["network"].(map[string]any)
 	publicNetworkAccess, _ := network["publicNetworkAccess"].(string)
 	result.PublicNetworkAccessEnabled = strings.EqualFold(publicNetworkAccess, "Enabled")
-	switch database.Authentication {
-	case databaseAuthenticationPassword:
-		if !strings.EqualFold(activeDirectoryAuth, "Disabled") ||
-			!strings.EqualFold(passwordAuth, "Enabled") ||
-			server.Properties.AdministratorLogin == nil {
-			return nil, nil, validationError(
-				"postgres_password_authentication_unverified",
-				"the selected PostgreSQL server is not configured for the authored password authentication mode",
-				"reprovision the server with password auth enabled and Entra auth disabled",
-			)
-		}
-		result.AdministratorName = strings.TrimSpace(*server.Properties.AdministratorLogin)
-		if result.AdministratorName != database.AdministratorName {
-			return nil, nil, validationError(
-				"postgres_administrator_unverified",
-				"the actual PostgreSQL administrator login does not match the current deployment output",
-				"verify the selected database administrator and reprovision the current environment",
-			)
-		}
-	case databaseAuthenticationManagedIdentity:
-		if !strings.EqualFold(activeDirectoryAuth, "Enabled") ||
-			!strings.EqualFold(passwordAuth, "Disabled") {
-			return nil, nil, validationError(
-				"postgres_managed_identity_authentication_unverified",
-				"the selected PostgreSQL server is not Entra-only as required by managedidentity auth",
-				"reprovision the server with Entra auth enabled and password auth disabled",
-			)
-		}
-		if err := verifyPostgresAdministrator(
-			ctx,
-			generic,
-			database,
-			values,
-			authConfig,
-		); err != nil {
-			return nil, nil, err
-		}
-		result.AdministratorName = database.AdministratorName
-		principalID, clientID, verifyErr := r.verifySelectedIdentity(
-			ctx,
-			credential,
-			envName,
-			database,
-			values,
+	if !strings.EqualFold(activeDirectoryAuth, "Enabled") ||
+		!strings.EqualFold(passwordAuth, "Disabled") {
+		return nil, nil, validationError(
+			"postgres_managed_identity_authentication_unverified",
+			"the selected PostgreSQL server is not Entra-only as required by managedidentity auth",
+			"reprovision the server with Entra auth enabled and password auth disabled",
 		)
-		if verifyErr != nil {
-			return nil, nil, verifyErr
-		}
-		result.IdentityPrincipalID = principalID
-		result.IdentityClientID = clientID
 	}
+	if err := verifyPostgresAdministrator(
+		ctx,
+		generic,
+		database,
+		values,
+		authConfig,
+	); err != nil {
+		return nil, nil, err
+	}
+	result.AdministratorName = database.AdministratorName
+	principalID, clientID, verifyErr := r.verifySelectedIdentity(
+		ctx,
+		credential,
+		envName,
+		database,
+		values,
+	)
+	if verifyErr != nil {
+		return nil, nil, verifyErr
+	}
+	result.IdentityPrincipalID = principalID
+	result.IdentityClientID = clientID
 	return result, credential, nil
 }
 
@@ -518,82 +382,9 @@ func selectedApplicationIdentity(
 	return principalID, clientID, nil
 }
 
-func withTemporaryFirewall(
-	ctx context.Context,
-	create func(context.Context) error,
-	cleanup func(context.Context) error,
-	run func(context.Context) error,
-) error {
-	primaryErr := create(ctx)
-	if primaryErr == nil {
-		primaryErr = run(ctx)
-	}
-
-	cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), postgresCleanupTimeout)
-	defer cancel()
-	cleanupErr := cleanup(cleanupContext)
-	return errors.Join(primaryErr, cleanupErr)
-}
-
 func bootstrapFirewallRulePrefix(envName, serverID string) string {
 	sum := sha256.Sum256([]byte(strings.ToLower(envName + "|" + serverID)))
 	return "azd-springboot-bootstrap-" + hex.EncodeToString(sum[:6]) + "-"
-}
-
-func bootstrapFirewallRuleName(prefix string, now time.Time, suffix string) string {
-	return prefix + strconv.FormatInt(now.UTC().Unix(), 10) + "-" + suffix
-}
-
-func staleBootstrapFirewallRules(prefix string, now time.Time, names []string) []string {
-	cutoff := now.UTC().Add(-postgresFirewallStaleAfter).Unix()
-	stale := make([]string, 0)
-	for _, name := range names {
-		if !strings.HasPrefix(name, prefix) {
-			continue
-		}
-		parts := strings.Split(strings.TrimPrefix(name, prefix), "-")
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			continue
-		}
-		ownershipBytes, decodeErr := hex.DecodeString(parts[1])
-		if decodeErr != nil || len(ownershipBytes) != 8 {
-			continue
-		}
-		timestamp, err := strconv.ParseInt(parts[0], 10, 64)
-		if err == nil && timestamp < cutoff {
-			stale = append(stale, name)
-		}
-	}
-	return stale
-}
-
-func (r *postgresAccessReconciler) recoverStaleFirewallRules(
-	ctx context.Context,
-	client *armpostgresqlflexibleservers.FirewallRulesClient,
-	resourceGroup string,
-	serverName string,
-	prefix string,
-	now time.Time,
-) error {
-	pager := client.NewListByServerPager(resourceGroup, serverName, nil)
-	names := make([]string, 0)
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return fmt.Errorf("listing owned PostgreSQL bootstrap firewall rules: %w", err)
-		}
-		for _, rule := range page.Value {
-			if rule != nil && rule.Name != nil {
-				names = append(names, *rule.Name)
-			}
-		}
-	}
-	for _, name := range staleBootstrapFirewallRules(prefix, now, names) {
-		if err := deleteBootstrapFirewallRule(ctx, client, resourceGroup, serverName, name); err != nil {
-			return fmt.Errorf("recovering stale owned PostgreSQL bootstrap firewall rule %q: %w", name, err)
-		}
-	}
-	return nil
 }
 
 func deleteBootstrapFirewallRule(
@@ -629,120 +420,20 @@ func (r *postgresAccessReconciler) reconcileSQL(
 	resources *verifiedPostgresResources,
 	credential azcore.TokenCredential,
 	database resolvedDatabase,
-	values map[string]string,
 	envName string,
 ) error {
-	password := ""
-	switch database.Authentication {
-	case databaseAuthenticationPassword:
-		password = values[databasePasswordEnv]
-		if password == "" {
-			return missingExistingDatabasePasswordError()
-		}
-	case databaseAuthenticationManagedIdentity:
-		token, err := credential.GetToken(ctx, policy.TokenRequestOptions{Scopes: []string{postgresTokenScope}})
-		if err != nil {
-			return fmt.Errorf("acquiring the developer PostgreSQL access token: %w", err)
-		}
-		password = token.Token
+	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{Scopes: []string{postgresTokenScope}})
+	if err != nil {
+		return fmt.Errorf("acquiring the developer PostgreSQL access token: %w", err)
 	}
-	return r.reconcileSQLWithAdministratorPassword(ctx, resources, database, values, envName, password)
-}
-
-func (r *postgresAccessReconciler) reconcileSQLWithAdministratorPassword(
-	ctx context.Context,
-	resources *verifiedPostgresResources,
-	database resolvedDatabase,
-	values map[string]string,
-	envName string,
-	administratorPassword string,
-) error {
 	marker := databaseRoleMarker(envName, database)
-	if err := r.verifyDatabaseScope(
-		ctx,
-		resources,
-		database,
-		administratorPassword,
-		marker,
-	); err != nil {
+	if err := r.verifyDatabaseScope(ctx, resources, database, token.Token, marker); err != nil {
 		return err
 	}
-	if err := r.reconcileRole(
-		ctx,
-		resources,
-		database,
-		administratorPassword,
-		values[databaseAppPasswordEnv],
-		marker,
-	); err != nil {
+	if err := r.reconcileRole(ctx, resources, database, token.Token, marker); err != nil {
 		return err
 	}
-	if err := r.reconcileDatabasePrivileges(
-		ctx,
-		resources,
-		database,
-		administratorPassword,
-		marker,
-	); err != nil {
-		return err
-	}
-	if database.Authentication == databaseAuthenticationPassword {
-		return r.verifyPasswordApplicationLogin(ctx, resources, database, values[databaseAppPasswordEnv])
-	}
-	return nil
-}
-
-func (r *postgresAccessReconciler) verifyPasswordApplicationLogin(
-	ctx context.Context,
-	resources *verifiedPostgresResources,
-	database resolvedDatabase,
-	applicationPassword string,
-) error {
-	if applicationPassword == "" {
-		return missingExistingDatabaseAppPasswordError()
-	}
-	config, err := postgresConnectionConfig(
-		resources.Host,
-		database.Name,
-		database.Username,
-		applicationPassword,
-	)
-	if err != nil {
-		return err
-	}
-	delete(config.RuntimeParams, "search_path")
-	connection, err := r.connectConfigWithRetry(ctx, config)
-	if err != nil {
-		return errors.Join(
-			validationError(
-				"database_application_password_mismatch",
-				fmt.Sprintf(
-					"the effective Spring password cannot authenticate PostgreSQL role %q",
-					database.Username,
-				),
-				"restore the password for the existing application role or use a new application username",
-			),
-			err,
-		)
-	}
-	defer connection.Close(context.WithoutCancel(ctx))
-
-	var username string
-	var databaseName string
-	if err := connection.QueryRow(
-		ctx,
-		"SELECT current_user, pg_catalog.current_database()",
-	).Scan(&username, &databaseName); err != nil {
-		return fmt.Errorf("verifying the ordinary PostgreSQL application login: %w", nonDisclosureError(err))
-	}
-	if username != database.Username || databaseName != database.Name {
-		return validationError(
-			"database_application_login_mismatch",
-			"the effective Spring credential connected with an unexpected PostgreSQL identity or database",
-			"restore the application role and database binding before deployment",
-		)
-	}
-	return nil
+	return r.reconcileDatabasePrivileges(ctx, resources, database, token.Token, marker)
 }
 
 func (r *postgresAccessReconciler) verifyDatabaseScope(
@@ -801,8 +492,7 @@ func (r *postgresAccessReconciler) reconcileRole(
 	ctx context.Context,
 	resources *verifiedPostgresResources,
 	database resolvedDatabase,
-	administratorPassword string,
-	applicationPassword string,
+	administratorToken string,
 	marker string,
 ) error {
 	connection, err := r.connectWithRetry(
@@ -810,7 +500,7 @@ func (r *postgresAccessReconciler) reconcileRole(
 		resources.Host,
 		"postgres",
 		resources.sessionAdministratorName(),
-		administratorPassword,
+		administratorToken,
 	)
 	if err != nil {
 		return err
@@ -842,25 +532,13 @@ func (r *postgresAccessReconciler) reconcileRole(
 		)
 	}
 	if !role.Exists {
-		switch database.Authentication {
-		case databaseAuthenticationPassword:
-			if applicationPassword == "" {
-				return missingExistingDatabaseAppPasswordError()
-			}
-			statement := "CREATE ROLE " + pgx.Identifier{database.Username}.Sanitize() +
-				" LOGIN PASSWORD " + quoteSQLLiteral(applicationPassword)
-			if _, err := transaction.Exec(ctx, statement); err != nil {
-				return fmt.Errorf("creating the ordinary PostgreSQL application login: %w", err)
-			}
-		case databaseAuthenticationManagedIdentity:
-			if _, err := transaction.Exec(
-				ctx,
-				"SELECT * FROM pg_catalog.pgaadauth_create_principal_with_oid($1, $2, 'service', false, false)",
-				database.Username,
-				resources.IdentityPrincipalID,
-			); err != nil {
-				return fmt.Errorf("creating the non-admin PostgreSQL Entra application mapping: %w", err)
-			}
+		if _, err := transaction.Exec(
+			ctx,
+			"SELECT * FROM pg_catalog.pgaadauth_create_principal_with_oid($1, $2, 'service', false, false)",
+			database.Username,
+			resources.IdentityPrincipalID,
+		); err != nil {
+			return fmt.Errorf("creating the non-admin PostgreSQL Entra application mapping: %w", err)
 		}
 		comment := "COMMENT ON ROLE " + pgx.Identifier{database.Username}.Sanitize() +
 			" IS " + quoteSQLLiteral(marker)
@@ -868,15 +546,13 @@ func (r *postgresAccessReconciler) reconcileRole(
 			return fmt.Errorf("marking the owned PostgreSQL application role: %w", err)
 		}
 	}
-	if database.Authentication == databaseAuthenticationManagedIdentity {
-		if err := verifyEntraRoleMapping(
-			ctx,
-			transaction,
-			database.Username,
-			resources.IdentityPrincipalID,
-		); err != nil {
-			return err
-		}
+	if err := verifyEntraRoleMapping(
+		ctx,
+		transaction,
+		database.Username,
+		resources.IdentityPrincipalID,
+	); err != nil {
+		return err
 	}
 	if err := verifyRoleIsOrdinary(ctx, transaction, database.Username, marker); err != nil {
 		return err

@@ -18,13 +18,15 @@ func TestAutomaticProvisionInputsValidateAuthoredBindings(t *testing.T) {
 		document    string
 		h2          bool
 		noDatabase  bool
-		managed     bool
 		wantManaged bool
 		wantError   bool
 	}{
-		{name: "exact password", document: `{"parameters":{"databasePassword":{"value":"${SPRING_DATABASE_PASSWORD}"}}}`},
-		{name: "empty fallback password",
-			document: `{"parameters":{"databasePassword":{"value":"${SPRING_DATABASE_PASSWORD:-}"}}}`},
+		{name: "rejects exact password",
+			document:  `{"parameters":{"databasePassword":{"value":"${SPRING_DATABASE_PASSWORD}"}}}`,
+			wantError: true},
+		{name: "rejects empty fallback password",
+			document:  `{"parameters":{"databasePassword":{"value":"${SPRING_DATABASE_PASSWORD:-}"}}}`,
+			wantError: true},
 		{name: "exact managed identity", document: `{"parameters":{
 			"databaseAdministratorName":{"value":"${DATABASE_ADMIN_NAME}"},
 			"databaseAdministratorObjectId":{"value":"${DATABASE_ADMIN_OBJECT_ID}"}}}`, wantManaged: true},
@@ -47,9 +49,6 @@ func TestAutomaticProvisionInputsValidateAuthoredBindings(t *testing.T) {
 			"databaseAdministratorName":{"value":"${DATABASE_ADMIN_NAME}"},
 			"databaseAdministratorObjectId":{"value":"${DATABASE_ADMIN_OBJECT_ID}"},
 			"databasePassword":{"value":"${SPRING_DATABASE_PASSWORD}"}}}`, wantError: true},
-		{name: "MI app with password bootstrap",
-			document: `{"parameters":{"databasePassword":{"value":"${SPRING_DATABASE_PASSWORD:-}"}}}`,
-			managed:  true, wantError: true},
 		{name: "malformed JSON", document: "{", wantError: true},
 		{name: "PostgreSQL without parameters", wantError: true},
 		{name: "positive H2 without parameters", h2: true},
@@ -57,7 +56,9 @@ func TestAutomaticProvisionInputsValidateAuthoredBindings(t *testing.T) {
 		{name: "database-free generic parameters", noDatabase: true,
 			document: `{"parameters":{"location":{"value":"${AZURE_LOCATION}"}}}`},
 		{name: "database-free rejects bootstrap", noDatabase: true, wantError: true,
-			document: `{"parameters":{"databasePassword":{"value":"${SPRING_DATABASE_PASSWORD}"}}}`},
+			document: `{"parameters":{
+				"databaseAdministratorName":{"value":"${DATABASE_ADMIN_NAME}"},
+				"databaseAdministratorObjectId":{"value":"${DATABASE_ADMIN_OBJECT_ID}"}}}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			project := &azdext.ProjectConfig{Path: t.TempDir()}
@@ -66,15 +67,12 @@ func TestAutomaticProvisionInputsValidateAuthoredBindings(t *testing.T) {
 				require.NoError(t, os.WriteFile(filepath.Join(project.Path, "infra", "main.parameters.json"),
 					[]byte(test.document), 0o600))
 			}
-			selected := resolvedDatabase{Type: databasePostgreSQL, Authentication: databaseAuthenticationPassword}
+			selected := resolvedDatabase{Type: databasePostgreSQL, Authentication: databaseAuthenticationManagedIdentity}
 			if test.h2 {
-				selected.Type = databaseH2
+				selected = resolvedDatabase{Type: databaseH2}
 			}
 			if test.noDatabase {
-				selected.Type = databaseNone
-			}
-			if test.managed {
-				selected.Authentication = databaseAuthenticationManagedIdentity
+				selected = resolvedDatabase{Type: databaseNone}
 			}
 			actual, err := automaticProvisionInputs(t.Context(), project, selected)
 			if test.wantError {

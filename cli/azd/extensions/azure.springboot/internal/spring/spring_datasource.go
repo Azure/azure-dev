@@ -137,7 +137,7 @@ func inferSpringDatasource(
 		if !dependencies.h2 || (driver != "" && driver != "org.h2.Driver") {
 			return nil, configurationError("the H2 datasource does not match the application runtime dependencies")
 		}
-		return &discoveredDatasource{engine: databaseH2, authentication: databaseAuthenticationLegacy}, nil
+		return &discoveredDatasource{engine: databaseH2}, nil
 	}
 	if !dependencies.postgresql || (driver != "" && driver != "org.postgresql.Driver") {
 		return nil, configurationError("a supported datasource and its runtime JDBC driver could not be established")
@@ -146,7 +146,7 @@ func inferSpringDatasource(
 		return nil, configurationError("a single PostgreSQL JDBC URL is required for database discovery")
 	}
 	result := &discoveredDatasource{
-		engine: databasePostgreSQL, authentication: databaseAuthenticationPassword,
+		engine: databasePostgreSQL, authentication: databaseAuthenticationManagedIdentity,
 		host: "localhost", port: 5432, username: username, password: password,
 	}
 	driverProperties := map[string]string{}
@@ -363,12 +363,7 @@ func inferSpringDatasource(
 				return nil, configurationError("Azure JDBC credential settings have no effective authentication plugin")
 			}
 		}
-		if result.password == "" {
-			return nil, configurationError("password authentication requires the application's actual database password")
-		}
-		if strings.Contains(result.password, "${") {
-			result.pending = true
-		}
+		return nil, configurationError("PostgreSQL datasources must use Entra managed identity authentication")
 	}
 	if strings.EqualFold(result.host, "localhost") || net.ParseIP(result.host) != nil ||
 		strings.Contains(result.host, "${") {

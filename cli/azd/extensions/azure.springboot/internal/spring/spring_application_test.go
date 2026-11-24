@@ -15,6 +15,7 @@ import (
 func springJarFixture(t *testing.T, entries [][2]string) string {
 	t.Helper()
 	name := filepath.Join(t.TempDir(), "app.jar")
+	// #nosec G304 -- fixed filename inside t.TempDir().
 	file, err := os.Create(name)
 	require.NoError(t, err)
 	writer := zip.NewWriter(file)
@@ -183,6 +184,7 @@ func TestPackagedJDBCEvidenceIsNotDatabaseFree(t *testing.T) {
 func writeCustomJar(t *testing.T, path string, entries [][2]string) {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	// #nosec G304 -- path is constructed by test callers inside t.TempDir().
 	file, err := os.Create(path)
 	require.NoError(t, err)
 	writer := zip.NewWriter(file)
@@ -196,24 +198,14 @@ func writeCustomJar(t *testing.T, path string, entries [][2]string) {
 	require.NoError(t, file.Close())
 }
 
-func TestGradleLocalFileDependenciesClassifyDriversAndRejectIncompleteEvidence(t *testing.T) {
+func TestEmbeddedJarDependenciesClassifyDrivers(t *testing.T) {
 	root := t.TempDir()
 	localPGJar := filepath.Join(root, "libs", "custom-pg-bundle.jar")
 	writeCustomJar(t, localPGJar, [][2]string{
 		{"org/postgresql/Driver.class", "bytecode"},
 		{"com/azure/identity/extensions/jdbc/postgresql/Plugin.class", "bytecode"},
 	})
-	deps, err := classifyGradleDependencies(root, gradleReport{
-		Version:      1,
-		Root:         root,
-		Dependencies: []string{"org.springframework.boot:spring-boot-starter-web"},
-		LocalFiles:   []string{localPGJar},
-	})
-	require.NoError(t, err)
-	require.True(t, deps.postgresql)
-	require.True(t, deps.azureIdentity)
-	require.True(t, deps.database)
-
+	// #nosec G304 -- localPGJar is created inside t.TempDir() immediately above.
 	nestedBytes, err := os.ReadFile(localPGJar)
 	require.NoError(t, err)
 	bootArchive, err := openSpringArchive(springJarFixture(t, [][2]string{
@@ -229,24 +221,16 @@ func TestGradleLocalFileDependenciesClassifyDriversAndRejectIncompleteEvidence(t
 	writeCustomJar(t, vendorJar, [][2]string{
 		{"META-INF/services/java.sql.Driver", "com.vendor.Driver\n"},
 	})
-	vendorDeps, err := classifyGradleDependencies(root, gradleReport{
-		Version:      1,
-		Root:         root,
-		Dependencies: []string{"org.springframework.boot:spring-boot-starter-web"},
-		LocalFiles:   []string{vendorJar},
-	})
+	// #nosec G304 -- vendorJar is created inside t.TempDir() immediately above.
+	vendorBytes, err := os.ReadFile(vendorJar)
 	require.NoError(t, err)
-	require.True(t, vendorDeps.database)
-	_, err = inferSpringDatasource(datasourceProperties(t, ""), vendorDeps, true)
+	vendorArchive, err := openSpringArchive(springJarFixture(t, [][2]string{
+		{"BOOT-INF/classes/application.properties", "server.port=8080"},
+		{"BOOT-INF/lib/vendor-driver.jar", string(vendorBytes)},
+	}))
+	require.NoError(t, err)
+	require.NoError(t, vendorArchive.reader.Close())
+	require.True(t, vendorArchive.dependencies.database)
+	_, err = inferSpringDatasource(datasourceProperties(t, ""), vendorArchive.dependencies, true)
 	require.Error(t, err)
-
-	classesDir := filepath.Join(root, "extra-classes")
-	require.NoError(t, os.MkdirAll(classesDir, 0o700))
-	_, err = classifyGradleDependencies(root, gradleReport{
-		Version:      1,
-		Root:         root,
-		Dependencies: []string{},
-		LocalFiles:   []string{classesDir},
-	})
-	require.ErrorContains(t, err, "packaged JAR evidence")
 }

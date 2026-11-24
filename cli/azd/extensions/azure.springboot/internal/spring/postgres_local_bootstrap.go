@@ -5,6 +5,8 @@ package spring
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -23,6 +25,36 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+type postgresBootstrapAdministrator struct {
+	PrincipalName string `json:"principalName"`
+	PrincipalType string `json:"principalType"`
+	TenantID      string `json:"tenantId"`
+}
+
+func postgresBootstrapServerTagValue(serverID string) string {
+	sum := sha256.Sum256([]byte(strings.ToLower(serverID)))
+	return hex.EncodeToString(sum[:])
+}
+
+func postgresBootstrapRandomSuffix() (string, error) {
+	value := make([]byte, 8)
+	if _, err := rand.Read(value); err != nil {
+		return "", fmt.Errorf("generating PostgreSQL bootstrap ownership suffix: %w", err)
+	}
+	return hex.EncodeToString(value), nil
+}
+
+func sleepWithContext(ctx context.Context, duration time.Duration) error {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 type postgresLocalCloud interface {
 	administrator(context.Context, string) (*postgresBootstrapAdministrator, error)
 	createAdministrator(context.Context, string, postgresBootstrapAdministrator) error
@@ -38,12 +70,10 @@ type postgresLocalAccessReconciler struct {
 	resolveCaller func(context.Context, string) (*developerIdentity, error)
 	newCloud      func(*verifiedPostgresResources, azcore.TokenCredential) (postgresLocalCloud, error)
 	sql           func(context.Context, *verifiedPostgresResources, azcore.TokenCredential,
-		resolvedDatabase, map[string]string, string) error
-	stateDir      func() (string, error)
-	suffix        func() (string, error)
-	wait          func(context.Context, time.Duration) error
-	recoverLegacy func(context.Context, *deploymentBinding, string, resolvedDatabase,
-		*verifiedPostgresResources, azcore.TokenCredential) error
+		resolvedDatabase, string) error
+	stateDir func() (string, error)
+	suffix   func() (string, error)
+	wait     func(context.Context, time.Duration) error
 }
 
 type postgresLocalBootstrapState struct {
@@ -62,7 +92,6 @@ func newPostgresLocalAccessReconciler(local *postgresAccessReconciler) *postgres
 		sql:             local.reconcileSQL,
 		suffix:          postgresBootstrapRandomSuffix,
 		wait:            sleepWithContext,
-		recoverLegacy:   recoverLegacyPostgresBootstrap,
 		stateDir: func() (string, error) {
 			projectDir, err := azdext.GetProjectDir()
 			if err != nil {
@@ -168,6 +197,7 @@ func (r *postgresLocalAccessReconciler) Reconcile(
 		return err
 	}
 	// Flush ownership intent before either Azure write, including ambiguous partial successes.
+	// #nosec G304 -- path is derived from a SHA-256 server digest inside the project's .azure bootstrap directory.
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("recording PostgreSQL bootstrap ownership: %w", err)
@@ -194,7 +224,7 @@ func (r *postgresLocalAccessReconciler) Reconcile(
 	readyCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	for {
-		err := r.sql(readyCtx, &session, credential, database, values, envName)
+		err := r.sql(readyCtx, &session, credential, database, envName)
 		if err == nil {
 			return nil
 		}
@@ -243,14 +273,8 @@ func (r *postgresLocalAccessReconciler) Recover(
 		return err
 	}
 	defer func() { resultErr = errors.Join(resultErr, unlock()) }()
-	if err := recoverLocalPostgresBootstrap(ctx, cloud, path, resources.ServerID, envName,
-		resources.ServerID+"/administrators/"+values[databaseAdministratorObjectIDEnv]); err != nil {
-		return err
-	}
-	if binding, present := ctx.Value(deploymentBindingKey{}).(*deploymentBinding); present && r.recoverLegacy != nil {
-		return r.recoverLegacy(ctx, binding, envName, database, resources, credential)
-	}
-	return nil
+	return recoverLocalPostgresBootstrap(ctx, cloud, path, resources.ServerID, envName,
+		resources.ServerID+"/administrators/"+values[databaseAdministratorObjectIDEnv])
 }
 
 func isPostgresLocalReadinessError(err error) bool {
@@ -272,6 +296,7 @@ func isPostgresLocalReadinessError(err error) bool {
 func recoverLocalPostgresBootstrap(
 	ctx context.Context, cloud postgresLocalCloud, path, serverID, envName, selectedID string,
 ) error {
+	// #nosec G304 -- path is derived from a SHA-256 server digest inside the project's .azure bootstrap directory.
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil

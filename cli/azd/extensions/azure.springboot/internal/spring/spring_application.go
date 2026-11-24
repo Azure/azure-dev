@@ -15,8 +15,6 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-
-	azdexec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 )
 
 type springDependencies struct {
@@ -165,20 +163,6 @@ func readSpringDependenciesInProject(
 ) (springDependencies, error) {
 	if err := ctx.Err(); err != nil {
 		return springDependencies{}, err
-	}
-	system, err := detectJavaBuild(serviceRoot)
-	if err != nil {
-		return springDependencies{}, err
-	}
-	if system == gradleBuild {
-		runner := azdexec.NewCommandRunner(&azdexec.RunnerOptions{
-			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
-		})
-		report, err := runGradle(ctx, runner, serviceRoot, nil, "restore")
-		if err != nil {
-			return springDependencies{}, err
-		}
-		return classifyGradleDependencies(serviceRoot, report)
 	}
 
 	resolvedProject, err := filepath.Abs(projectRoot)
@@ -397,55 +381,6 @@ func classifyEmbeddedJar(file *zip.File) (springDependencies, bool) {
 		return springDependencies{}, false
 	}
 	return classifyDriverJarEntries(nested.File), true
-}
-
-func classifyGradleDependencies(serviceRoot string, report gradleReport) (springDependencies, error) {
-	resolvedRoot, err := filepath.Abs(serviceRoot)
-	if err != nil {
-		return springDependencies{}, configurationError("the Spring service project directory cannot be resolved")
-	}
-	resolvedRoot, err = filepath.EvalSymlinks(resolvedRoot)
-	if err != nil {
-		return springDependencies{}, configurationError("the Spring service project directory is unavailable")
-	}
-	result := springDependenciesFromCoordinates(report.Dependencies)
-	for _, localFile := range report.LocalFiles {
-		classified, err := classifyLocalRuntimeFile(resolvedRoot, localFile)
-		if err != nil {
-			return springDependencies{}, err
-		}
-		mergeSpringDependencies(&result, classified)
-	}
-	return result, nil
-}
-
-func classifyLocalRuntimeFile(projectRoot, filename string) (springDependencies, error) {
-	if !regularContainedFile(projectRoot, filename) || !strings.HasSuffix(strings.ToLower(filename), ".jar") {
-		return springDependencies{}, configurationError(
-			"unclassified local Gradle runtime file dependencies require packaged JAR evidence",
-		)
-	}
-	resolved, err := filepath.EvalSymlinks(filename)
-	if err != nil {
-		return springDependencies{}, configurationError(
-			"a local Gradle runtime file dependency cannot be resolved",
-		)
-	}
-	reader, err := zip.OpenReader(resolved)
-	if err != nil {
-		return springDependencies{}, configurationError(
-			"a local Gradle runtime dependency JAR is not readable",
-		)
-	}
-	defer reader.Close()
-	if len(reader.File) > 50000 {
-		return springDependencies{}, configurationError(
-			"a local Gradle runtime dependency JAR exceeds the supported entry count",
-		)
-	}
-	result := classifyLibraryJarName(filepath.Base(resolved))
-	mergeSpringDependencies(&result, classifyDriverJarEntries(reader.File))
-	return result, nil
 }
 
 func isDatabaseDependency(artifact string) bool {

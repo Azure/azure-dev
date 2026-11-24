@@ -40,10 +40,9 @@ const (
 	postgresHostEnv                       = "AZURE_POSTGRES_HOST"
 	postgresDatabaseEnv                   = "AZURE_POSTGRES_DATABASE"
 	postgresAdministratorEnv              = "AZURE_POSTGRES_ADMINISTRATOR"
-	serviceIdentityIDEnv                  = "SERVICE_PETCLINIC_IDENTITY_ID"
-	serviceIdentityClientIDEnv            = "SERVICE_PETCLINIC_IDENTITY_CLIENT_ID"
-	serviceIdentityPrincipalIDEnv         = "SERVICE_PETCLINIC_IDENTITY_PRINCIPAL_ID"
-	postgresBootstrapClientIPEnv          = "POSTGRES_BOOTSTRAP_CLIENT_IP"
+	serviceIdentityIDEnv                  = "SERVICE_APPLICATION_IDENTITY_ID"
+	serviceIdentityClientIDEnv            = "SERVICE_APPLICATION_IDENTITY_CLIENT_ID"
+	serviceIdentityPrincipalIDEnv         = "SERVICE_APPLICATION_IDENTITY_PRINCIPAL_ID"
 	databaseAppIdentityTypeSystemAssigned = "systemAssigned"
 	databaseAppIdentityTypeUserAssigned   = "userAssigned"
 )
@@ -59,8 +58,6 @@ const (
 type databaseAuthentication string
 
 const (
-	databaseAuthenticationLegacy          databaseAuthentication = "legacy"
-	databaseAuthenticationPassword        databaseAuthentication = "password"
 	databaseAuthenticationManagedIdentity databaseAuthentication = "managedidentity"
 )
 
@@ -81,7 +78,6 @@ type resolvedDatabase struct {
 	AdministratorName string
 	AppIdentity       *databaseAppIdentity
 	discovered        bool
-	appPassword       string
 }
 
 func validateApplicationPackaging(service *azdext.ServiceConfig) error {
@@ -89,8 +85,7 @@ func validateApplicationPackaging(service *azdext.ServiceConfig) error {
 }
 
 func (d resolvedDatabase) managedAccess() bool {
-	return d.Authentication == databaseAuthenticationPassword ||
-		d.Authentication == databaseAuthenticationManagedIdentity
+	return d.Authentication == databaseAuthenticationManagedIdentity
 }
 
 func (d resolvedDatabase) accessFingerprint() string {

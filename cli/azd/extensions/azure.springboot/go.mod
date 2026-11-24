@@ -12,7 +12,6 @@ require (
 	github.com/benbjohnson/clock v1.3.5
 	github.com/gofrs/flock v0.13.1
 	github.com/jackc/pgx/v5 v5.7.6
-	github.com/joho/godotenv v1.5.1
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
 	google.golang.org/grpc v1.84.0
@@ -88,6 +87,7 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jmespath-community/go-jmespath v1.1.1 // indirect
+	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/klauspost/compress v1.19.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect

@@ -644,13 +644,10 @@ overrides:
   - filename: docs/environment-variables.md
     words:
       - springboot
-  - filename: "extensions/azure.springboot/**/*.{go,md,gradle,yaml}"
+  - filename: "extensions/azure.springboot/**/*.{go,md,yaml}"
     words:
-      - abcdefghijkmnopqrstuvwxyz
-      - ABCDEFGHJKLMNPQRSTUVWXYZ
       - armpostgresqlflexibleservers
       - authid
-      - allprojects
       - azurespringboot
       - bicepprovider
       - bypassrls
@@ -658,19 +655,16 @@ overrides:
       - coreproject
       - createdb
       - createrole
-      - Dazd
       - datdba
       - datname
       - dbname
       - Dmaven
       - Dspring
       - dbcp
-      - esac
       - extensionless
       - flywaydb
       - gitcommitid
       - goruntime
-      - gradlew
       - hashtextextended
       - Hikari
       - hikaricp
@@ -716,7 +710,6 @@ overrides:
       - shobj
       - springboot
       - springbootapp
-      - subprojects
       - sslfactory
       - sslfactoryarg
       - sslhostnameverifier
@@ -732,7 +725,6 @@ overrides:
       - ufeff
       - userbyid
       - xact
-      - xiaofeicao
       - zaxxer
   - filename: docs/extensions/extension-telemetry.md
     words:

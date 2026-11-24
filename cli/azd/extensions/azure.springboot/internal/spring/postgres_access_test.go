@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/jackc/pgx/v5"
@@ -132,7 +131,6 @@ func TestPostgresConnectionConfigUsesVerifiedTLSWithoutCredentialURL(t *testing.
 func TestPostgresOwnedNamesAreStableAndScoped(t *testing.T) {
 	server := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.DBforPostgreSQL/flexibleServers/pg"
 	prefix := bootstrapFirewallRulePrefix("env", server)
-	now := time.Unix(1_700_000_000, 0)
 	require.Equal(
 		t,
 		prefix,
@@ -143,15 +141,17 @@ func TestPostgresOwnedNamesAreStableAndScoped(t *testing.T) {
 		prefix,
 		bootstrapFirewallRulePrefix("other", server),
 	)
-	firstRule := bootstrapFirewallRuleName(prefix, now, "1111111111111111")
-	secondRule := bootstrapFirewallRuleName(prefix, now, "2222222222222222")
-	require.NotEqual(t, firstRule, secondRule)
-	require.True(t, len(firstRule) <= 128)
+	state := postgresLocalBootstrapState{
+		ServerID:    server,
+		Environment: "env",
+		Suffix:      "1111111111111111",
+	}
+	require.True(t, len(state.firewallName()) <= 128)
 	database := resolvedDatabase{
 		Type:             databasePostgreSQL,
 		ServerResourceID: server,
 		Name:             "petclinic",
-		Authentication:   databaseAuthenticationPassword,
+		Authentication:   databaseAuthenticationManagedIdentity,
 		Username:         "petclinic_app",
 	}
 	firstMarker := databaseRoleMarker("env", database)
@@ -169,47 +169,13 @@ func TestPostgresRetryClassification(t *testing.T) {
 	require.False(t, isTransientPostgresError(context.Canceled))
 }
 
-func TestTemporaryFirewallAlwaysCleansUpAmbiguousCreate(t *testing.T) {
-	parent, cancel := context.WithCancel(t.Context())
-	cancel()
-	cleanupCalled := false
-	err := withTemporaryFirewall(
-		parent,
-		func(context.Context) error {
-			return errors.New("create request outcome unknown")
-		},
-		func(ctx context.Context) error {
-			cleanupCalled = true
-			require.NoError(t, ctx.Err(), "cleanup must not inherit parent cancellation")
-			return errors.New("cleanup failed")
-		},
-		func(context.Context) error {
-			t.Fatal("SQL must not run when firewall creation fails")
-			return nil
-		},
-	)
-	require.True(t, cleanupCalled)
-	require.ErrorContains(t, err, "create request outcome unknown")
-	require.ErrorContains(t, err, "cleanup failed")
-}
+func TestVerifiedPostgresResourcesSessionAdministrator(t *testing.T) {
+	resources := &verifiedPostgresResources{AdministratorName: "developer"}
+	require.Equal(t, "developer", resources.sessionAdministratorName())
 
-func TestStaleFirewallRecoveryPreservesRecentAndUnrelatedRules(t *testing.T) {
-	now := time.Unix(1_700_000_000, 0)
-	prefix := "azd-springboot-bootstrap-owned-"
-	stale := bootstrapFirewallRuleName(
-		prefix,
-		now.Add(-postgresFirewallStaleAfter-time.Second),
-		"1111111111111111",
-	)
-	recent := bootstrapFirewallRuleName(prefix, now.Add(-time.Minute), "2222222222222222")
-	unrelated := "customer-firewall-rule"
-	malformed := prefix + "100-not-owned-format-extra"
-
-	require.Equal(
-		t,
-		[]string{stale},
-		staleBootstrapFirewallRules(prefix, now, []string{recent, unrelated, malformed, stale}),
-	)
+	resources.SessionAdministratorName = "azd-local-0123456789abcdef"
+	require.Equal(t, "azd-local-0123456789abcdef", resources.sessionAdministratorName())
+	require.Equal(t, "developer", resources.AdministratorName)
 }
 
 func TestValidateDatabaseOwnerAllowsOnlyVerifiedAzureAdminRoles(t *testing.T) {

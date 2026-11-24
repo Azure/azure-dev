@@ -20,8 +20,18 @@ import (
 const (
 	containerAppNameEnv = "AZURE_CONTAINER_APP_NAME"
 	containerAppType    = "Microsoft.App/containerApps"
+	azdEnvironmentTag   = "azd-env-name"
 	azdServiceNameTag   = "azd-service-name"
 )
+
+func tagEqualsPointers(tags map[string]*string, expectedKey, expectedValue string) bool {
+	for key, value := range tags {
+		if strings.EqualFold(key, expectedKey) && value != nil {
+			return strings.EqualFold(*value, expectedValue)
+		}
+	}
+	return false
+}
 
 type containerAppResourceService interface {
 	Resolve(

@@ -1,7 +1,7 @@
 # `springbootapp` design
 
-`azure.springboot` provides one automatic Spring Boot workflow for Maven and
-single-project Gradle Java applications deployed to Azure Container Apps. The extension discovers the
+`azure.springboot` provides one automatic Spring Boot workflow for Maven Java
+applications deployed to Azure Container Apps. The extension discovers the
 application contract from Spring Boot's effective configuration and verifies
 that contract against the current deployment.
 
@@ -19,51 +19,20 @@ file staging, or Azure operations.
 
 ## Packaging
 
-Build-system detection prefers Maven whenever `pom.xml` exists; malformed Maven
-input does not trigger a fallback to Gradle. Otherwise, `build.gradle` or
-`build.gradle.kts` selects the extension-local Gradle adapter. Other Java hosts
-retain native Maven behavior, and core existing-code discovery is unchanged.
-
 A Maven Wrapper service contains `pom.xml` and `src` at its service root, and
 locates `mvnw` and `.mvn/wrapper/maven-wrapper.properties` at the service root
 or a contained ancestor directory within the azd project. Contained local
 `<parent>` POM hierarchies within the azd project are also traversed during
-source-only dependency discovery.
+source-only dependency discovery. Other Java hosts retain native Maven behavior,
+and core existing-code discovery is unchanged.
 
-A Gradle project contains a build script, `src`, the platform wrapper
-(`gradlew` with executable permission on Unix or `gradlew.bat` on Windows),
-`gradle/wrapper/gradle-wrapper.properties`, and `gradle/wrapper/gradle-wrapper.jar`
-at its configured service root. Wrapper inputs, scripts, and archive outputs
-must be contained regular files, not links. Gradle's normal build-file selection
-applies when both build DSL files exist. The evaluated model must contain one
-root project without subprojects or included builds.
-
-The Java framework provider keeps native Maven restore/build/package behavior.
-For Gradle, an extension-owned temporary init script registers a metadata task.
-Restore strictly resolves production `runtimeClasspath`; build also invokes
-`classes`; package invokes `bootJar` with tests excluded and is self-sufficient.
-A fresh bounded JSON report supplies the evaluated dependency coordinates and
-`bootJar.archiveFile`, avoiding build-DSL regexes, console parsing, output globs,
-and stale/plain-JAR selection. Missing or disabled tasks, failed dependency
-resolution, skipped packaging, unsafe paths, and malformed reports fail
-explicitly. Valid up-to-date or build-cache-restored output is verified normally.
-Custom contained archive names/directories are supported. Standard `dist`/output,
-when supplied, must agree with the task's archive or its directory.
-
-Gradle commands inherit the build environment, propagate cancellation, and use
-plain console output with no persistent daemon or configuration cache. Wrapper
-execution is a deliberate boundary after static service/file validation: it can
-download dependencies and execute authored build logic, including during
-source-only datasource discovery. It does not modify authored configuration or
-write azd state to manufacture dependency evidence. Metadata is not persisted
-across commands. Errors use the existing URL non-disclosure boundary.
-
-Both paths normalize the selected executable JAR to a local package directory
-containing `app.jar`, with `framework: maven` or `framework: gradle` metadata.
-Consumers require a single package artifact matching the selected build system.
-Gradle additionally verifies the executable Spring Boot manifest and archive
-layout. The service target stages the resulting executable JAR and an
-extension-owned Java 17 runtime Dockerfile in a new temporary directory. It
+The Java framework provider keeps native Maven restore/build/package behavior,
+accommodating unborn Git `HEAD` states during packaging and redacting
+credential-bearing URLs in command errors. Packaging normalizes the executable
+JAR to a local package directory containing `app.jar` with `framework: maven`
+metadata. Consumers require a single Maven package artifact. The service target
+stages the resulting executable JAR and an extension-owned Java 17 runtime
+Dockerfile in a new temporary directory. It
 then uses azd's container build and package APIs. Project `Dockerfile` and
 `.dockerignore` files are neither read nor modified. Application classes must
 target Java 17 or earlier; packaging fails before container staging when the
@@ -79,11 +48,9 @@ on infrastructure outputs. Provisioning and deployment require a final,
 unambiguous selection.
 
 Without a package context, Maven dependency discovery reads its supported POM
-declarations; Gradle dependency discovery evaluates the production runtime
-classpath, including transitive libraries. Test-only dependencies are not
+declarations and contained parent POM hierarchy. Test-only dependencies are not
 datasource evidence. With a package context, the actual JAR resources/libraries
-remain authoritative for both build systems. Kotlin build DSL support does not
-expand the existing Java-only application-bootstrap analysis.
+remain authoritative.
 
 An internal no-database result requires positive evidence: no database runtime
 dependencies and no authored database settings, after pending selectors have
@@ -126,9 +93,8 @@ PostgreSQL configuration never falls back to H2.
 PostgreSQL authentication is identified from the effective Spring/pgJDBC
 configuration:
 
-- Without an effective supported Azure PostgreSQL authentication plugin, the
-  datasource uses password authentication and must resolve the application's
-  actual password.
+- Without an effective supported Azure PostgreSQL Entra authentication plugin,
+  the PostgreSQL datasource is rejected.
 - With
   `com.azure.identity.extensions.jdbc.postgresql.AzurePostgresqlAuthenticationPlugin`
   and `azure.managedIdentityEnabled=true`, the datasource uses managed identity.
@@ -189,18 +155,12 @@ The application role is an ordinary, owned, non-admin login. The fixed
 `app-owned-v2` policy grants database `CONNECT`, public-schema `USAGE` and
 `CREATE`, table read/write privileges, and sequence usage. It grants no database
 ownership, database `CREATE` or `TEMPORARY`, administrator membership, or
-elevated role attributes.
+elevated role attributes. The selected system-assigned or attached
+user-assigned identity must match the verified deployment and PostgreSQL Entra
+mapping.
 
-For password authentication, reconciliation verifies a real connection using
-the exact effective Spring host, database, username, and password after role and
-grant checks. An existing role with a different password fails; the extension
-does not rotate it. For managed identity, the selected system-assigned or
-attached user-assigned identity must match the verified deployment and
-PostgreSQL Entra mapping.
-
-Automatic managed-identity deployments reconcile privileged PostgreSQL access
-locally, only in `postprovision`. The public endpoint must already be explicitly
-enabled. The extension never converts private or adopted infrastructure to
+Managed-identity deployments reconcile privileged PostgreSQL access locally,
+only in `postprovision`. The public endpoint must already be explicitly enabled. The extension never converts private or adopted infrastructure to
 public access. It verifies current resources, authentication, selected User
 administrator, application identity, datasource, and exact deployment-owned
 runtime firewall rules before opening bootstrap access.
@@ -242,19 +202,6 @@ does not acquire an administrator database token or perform SQL reconciliation.
 The extension does not register a postdeploy SQL handler. Consequently,
 post-startup SQL ownership/effective-privilege drift is no longer audited
 immediately; running provisioning again reconciles it.
-
-Legacy recovery only inventories and deletes verified stale bootstrap Jobs.
-The previous non-secret input shape is retained solely as ownership evidence;
-it is never executed. Exact metadata, identity, environment, template and
-input must still match. The administrator is verified and removed before the
-Job, whose absence is then confirmed. Recent, changed or unmatched resources
-require explicit operator intervention.
-
-Password-authenticated and unsupported custom deployments retain local
-reconciliation. That path can create a temporary exact firewall rule and can
-accept `POSTGRES_BOOTSTRAP_CLIENT_IP` as a troubleshooting-only public IPv4
-candidate. HTTPS discovery cannot prove the direct PostgreSQL route, so it is
-not used for automatic managed-identity bootstrap.
 
 Legacy automatic deployments may still contain the exact template-authored
 `bootstrap-local-ip` rule. The extension deletes it only when current deployment
@@ -326,8 +273,7 @@ The real PostgreSQL 2024-08-01 API rejected a fresh omitted-name administrator
 request, while the otherwise identical explicitly named control succeeded.
 Keep names and ARM `principalName` required. Live administrator verification
 checks the exact ARM ID, object ID, User type, server authentication tenant and
-explicit name. Legacy input metadata remains available only for conservative
-cleanup. Native extension builds require no runner image or image-related
+explicit name. Native extension builds require no runner image or image-related
 linker input.
 
 ## Failure behavior

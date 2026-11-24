@@ -238,7 +238,7 @@ func bindDiscoveredDatasource(
 ) (resolvedDatabase, error) {
 	result := resolvedDatabase{
 		Type: intent.engine, Authentication: intent.authentication, Name: intent.name, Username: intent.username,
-		discovered: true, appPassword: intent.password,
+		discovered:       true,
 		selectionPending: intent.selectionPending,
 	}
 	if intent.engine == databaseH2 || intent.engine == databaseNone {
@@ -332,52 +332,4 @@ func hasSystemAssignedIdentity(identity *armappcontainers.ManagedServiceIdentity
 	}
 	return *identity.Type == armappcontainers.ManagedServiceIdentityTypeSystemAssigned ||
 		*identity.Type == armappcontainers.ManagedServiceIdentityTypeSystemAssignedUserAssigned
-}
-
-func (r *Runtime) verifyExplicitDatasource(
-	ctx context.Context, project *azdext.ProjectConfig, service *azdext.ServiceConfig,
-	serviceContext *azdext.ServiceContext, database resolvedDatabase, values map[string]string,
-) error {
-	if database.discovered || !database.managedAccess() {
-		return nil
-	}
-	binding, _ := ctx.Value(deploymentBindingKey{}).(*deploymentBinding)
-	if binding == nil || binding.app == nil {
-		return configurationError("explicit application-auth settings require verified application configuration")
-	}
-	intent, err := r.readServiceDatasource(ctx, project, service, serviceContext, true)
-	if err != nil {
-		return err
-	}
-	if intent.engine != database.Type || intent.authentication != database.Authentication ||
-		intent.name != database.Name || intent.username != database.Username ||
-		intent.port != 5432 || !strings.EqualFold(intent.host, binding.values[postgresHostEnv]) {
-		return configurationError("explicit database settings conflict with the effective Spring datasource")
-	}
-	if database.Authentication == databaseAuthenticationManagedIdentity {
-		if database.AppIdentity == nil {
-			return configurationError("explicit appIdentity is unavailable for the effective Spring datasource")
-		}
-		switch database.AppIdentity.Type {
-		case databaseAppIdentityTypeSystemAssigned:
-			if intent.clientIDConfigured {
-				return configurationError(
-					"explicit system-assigned appIdentity conflicts with the effective Spring client ID selector",
-				)
-			}
-		case databaseAppIdentityTypeUserAssigned:
-			if !intent.clientIDConfigured ||
-				!strings.EqualFold(intent.clientID, binding.values[serviceIdentityClientIDEnv]) {
-				return configurationError(
-					"explicit appIdentity conflicts with the effective Spring managed identity selector",
-				)
-			}
-		default:
-			return configurationError("explicit appIdentity uses an unsupported managed identity type")
-		}
-	}
-	if database.Authentication == databaseAuthenticationPassword && intent.password != values[databaseAppPasswordEnv] {
-		return configurationError("the effective application password conflicts with the configured application credential")
-	}
-	return nil
 }

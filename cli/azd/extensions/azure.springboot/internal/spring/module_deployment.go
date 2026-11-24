@@ -343,6 +343,7 @@ func resolveServiceModulesFromSection(
 }
 
 func loadServiceModuleParameters(path string, values map[string]string) (map[string]any, error) {
+	// #nosec G304 -- path is verified by resolveContainedInfraFile to be a regular contained project file.
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading service module parameters: %w", err)

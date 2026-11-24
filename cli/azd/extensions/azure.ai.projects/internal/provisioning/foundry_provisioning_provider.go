@@ -117,6 +117,8 @@ type FoundryProvisioningProvider struct {
 	acrDeferPromptedEnv       bool
 	acrPromptedEnv            map[string]string
 	acrRequest                func(context.Context, string, string, string, any) error
+	byoHostingEnabled         bool
+	byoPullPrincipalID        string
 	preflightReport           strings.Builder
 	reportProvisioned         func(string)
 	modelPolicyCheck          func(
@@ -2711,7 +2713,7 @@ func (p *FoundryProvisioningProvider) deploymentsClient(ctx context.Context) (*a
 		return nil, err
 	}
 	options := p.armClientOptions
-	if p.synthResult != nil && p.synthResult.Hosting != nil {
+	if p.byoHostingEnabled || p.synthResult != nil && p.synthResult.Hosting != nil {
 		options = byoARMOptions(options)
 	}
 	factory, err := armdeployments.NewClientFactory(p.subID, p.credential, options)

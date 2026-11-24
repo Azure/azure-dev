@@ -464,13 +464,13 @@ func templateDeclaresParameter(src *templateSource, name string) bool {
 	return false
 }
 
-func byoACRPullPrincipal(src *templateSource) (string, error) {
+func (p *FoundryProvisioningProvider) byoACRPullPrincipal(src *templateSource) (string, error) {
 	include, _ := parameterValue(src, "includeAcr").(bool)
 	if !include {
 		return "", nil
 	}
-	hosting, err := byoHostingParameter(src)
-	if err != nil || !hosting.Enabled {
+	enabled, err := p.effectiveBYOHosting(src)
+	if err != nil || !enabled {
 		return "", err
 	}
 	if !templateDeclaresParameter(src, "acrPullPrincipalId") {
@@ -478,6 +478,9 @@ func byoACRPullPrincipal(src *templateSource) (string, error) {
 			"re-eject the Foundry Bicep templates for kubelet-only registry access")
 	}
 	principal, _ := parameterValue(src, "kubeletObjectId").(string)
+	if principal == "" {
+		principal = p.byoPullPrincipalID
+	}
 	if uuid.Validate(principal) != nil {
 		return "", errors.New("BYO AKS registry access requires kubeletObjectId to be a principal object ID GUID")
 	}
@@ -558,11 +561,11 @@ func (p *FoundryProvisioningProvider) validateACRTemplate(src *templateSource) e
 			return errors.New("enableNetworkIsolation must be a literal boolean for registry networking validation")
 		}
 		if isolated {
-			hosting, err := byoHostingParameter(src)
+			enabled, err := p.effectiveBYOHosting(src)
 			if err != nil {
 				return err
 			}
-			if err := synthesis.ValidateACRNetworking(include, id, isolated, hosting.Enabled); err != nil {
+			if err := synthesis.ValidateACRNetworking(include, id, isolated, enabled); err != nil {
 				return err
 			}
 		}
@@ -716,7 +719,7 @@ func (p *FoundryProvisioningProvider) planACRAccess(
 	}
 	include, _ := parameterValue(src, "includeAcr").(bool)
 	id, _ := parameterValue(src, "existingAcrResourceId").(string)
-	kubeletPrincipal, err := byoACRPullPrincipal(src)
+	kubeletPrincipal, err := p.byoACRPullPrincipal(src)
 	if err != nil {
 		return nil, err
 	}
@@ -1028,7 +1031,7 @@ func (p *FoundryProvisioningProvider) persistACRBinding(
 		ProjectResourceID: project.Value, PrincipalID: actual.Identity.PrincipalID,
 		DeploymentSalt: p.acrDeploymentSalt,
 	}
-	pullPrincipalID, err := byoACRPullPrincipal(src)
+	pullPrincipalID, err := p.byoACRPullPrincipal(src)
 	if err != nil {
 		return err
 	}

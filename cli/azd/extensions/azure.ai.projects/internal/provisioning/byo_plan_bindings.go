@@ -12,6 +12,48 @@ import (
 	"azure.ai.projects/internal/onboarding"
 )
 
+func accountHostingConfigs(node *planResource, properties any) (any, bool) {
+	switch current := properties.(type) {
+	case map[string]any:
+		for name, value := range current {
+			if strings.EqualFold(name, "agentHostingConfigurations") {
+				return value, value != nil
+			}
+		}
+	case planUnknown:
+		if node.mentionsHosting() {
+			return current, true
+		}
+	}
+	return nil, false
+}
+
+func configIndicatesBYOHosting(config map[string]any) bool {
+	for name, value := range config {
+		switch {
+		case strings.EqualFold(name, "hostingType"):
+			if kind, ok := value.(string); ok && strings.EqualFold(kind, "ManagedCluster") {
+				return true
+			}
+			if _, unknown := value.(planUnknown); unknown {
+				return true
+			}
+		case strings.EqualFold(name, "clusterResourceId"):
+			if value == nil {
+				continue
+			}
+			if id, ok := value.(string); ok {
+				if strings.TrimSpace(id) != "" {
+					return true
+				}
+				continue
+			}
+			return true
+		}
+	}
+	return false
+}
+
 func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEnvironment) {
 	type accountSelection struct {
 		node   *planResource
@@ -24,9 +66,24 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 			continue
 		}
 		properties := node.env.value(node.raw["properties"])
-		configs := planField(properties, "agentHostingConfigurations")
+		configs, present := accountHostingConfigs(node, properties)
+		if !present {
+			continue
+		}
 		if values, ok := configs.([]any); ok {
 			for _, config := range values {
+				if config == nil {
+					continue
+				}
+				if entry, isMap := config.(map[string]any); isMap {
+					if configIndicatesBYOHosting(entry) {
+						r.hasHosting = true
+					}
+				} else if unknown, isUnknown := config.(planUnknown); isUnknown {
+					r.hasHosting = true
+					unresolved = node.path + ": " + unknown.reason
+					continue
+				}
 				id, missing := planString(planField(config, "clusterResourceId"))
 				typeValue := planField(config, "hostingType")
 				hostingType, typeMissing := planString(typeValue)
@@ -43,6 +100,7 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 				}
 			}
 		} else if unknown, ok := configs.(planUnknown); ok {
+			r.hasHosting = true
 			unresolved = node.path + ": " + unknown.reason
 		}
 	}

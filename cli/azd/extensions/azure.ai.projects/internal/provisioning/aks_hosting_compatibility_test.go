@@ -7,11 +7,13 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"net/http"
 	"strings"
 	"testing"
 
 	"azure.ai.projects/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -236,6 +238,10 @@ func TestBYOSuppliedUsesEffectiveDeploymentInputs(t *testing.T) {
 				hosting["enabled"], hosting["clusterResourceId"] = false, 42
 			case "undeclared":
 				delete(definitions, "agentHosting")
+				source.armTemplate["resources"] = map[string]any{"account": map[string]any{
+					"type": "Microsoft.CognitiveServices/accounts", "name": "cog-native",
+					"properties": map[string]any{"allowProjectManagement": true},
+				}}
 				source.parameters["AGENTHOSTING"] = map[string]any{"value": "leave undeclared parameters to ARM"}
 			}
 			require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
@@ -344,4 +350,173 @@ func TestBYOSuppliedIdentityRequiresRealPrincipalBinding(t *testing.T) {
 		assert.Zero(t, fake.base.writes)
 		assert.Zero(t, fake.base.previews)
 	}
+}
+
+func customBYOProperties(clusterExpr any) map[string]any {
+	return map[string]any{"agentHostingConfigurations": []any{map[string]any{
+		"hostingType":                         "ManagedCluster",
+		"clusterResourceId":                   clusterExpr,
+		"storageAccountResourceId":            suppliedStorageID,
+		"hostingManagementIdentityResourceId": suppliedHostingID,
+		"workloadIdentityResourceId":          suppliedWorkloadID,
+	}}}
+}
+
+func customTemplateWithoutAgentHosting(
+	t *testing.T, mask int, accountProps any,
+) (*FoundryProvisioningProvider, *suppliedARMFake, *templateSource) {
+	t.Helper()
+	p, fake, _ := suppliedProvider(t, mask)
+	result, err := synthesis.Synthesize(synthesis.Input{
+		ServiceName:  "project",
+		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n"),
+	})
+	require.NoError(t, err)
+	p.synthResult = result
+	definitions, ok := p.armTemplate["parameters"].(map[string]any)
+	require.True(t, ok)
+	delete(definitions, "agentHosting")
+	delete(definitions, "kubeletObjectId")
+	definitions["aksClusterId"] = map[string]any{"type": "string", "defaultValue": offlineClusterID}
+	p.armTemplate["resources"] = map[string]any{"customAccount": map[string]any{
+		"type": "Microsoft.CognitiveServices/accounts", "name": "custom-account", "properties": accountProps,
+	}}
+	source := &templateSource{
+		mode: templateModeBicep, armTemplate: p.armTemplate,
+		parameters: map[string]any{
+			"includeAcr":     map[string]any{"value": false},
+			"monitoringMode": map[string]any{"value": "none"},
+		},
+	}
+	p.onDiskSource = source
+	return p, fake, source
+}
+
+func TestBYOCustomTemplateWithoutAgentHosting(t *testing.T) {
+	customClusterID := offlineClusterID + "-custom"
+	for _, preview := range []bool{false, true} {
+		for _, scenario := range []string{"renamed parameter", "disabled agentHosting parameter", "preflight failure"} {
+			t.Run(fmt.Sprintf("preview=%t/%s", preview, scenario), func(t *testing.T) {
+				p, fake, source := customTemplateWithoutAgentHosting(
+					t, 7, customBYOProperties("[parameters('aksClusterId')]"),
+				)
+				fake.base.clusterID = customClusterID
+				source.parameters["aksClusterId"] = map[string]any{"value": customClusterID}
+				if scenario == "preflight failure" {
+					fake.base.clusterVersion = "1.30.0"
+				}
+				if scenario == "disabled agentHosting parameter" {
+					p.armTemplate["parameters"].(map[string]any)["agentHosting"] = map[string]any{"type": "object"}
+					source.parameters["agentHosting"] = map[string]any{"value": map[string]any{
+						"enabled": false, "clusterResourceId": 42,
+					}}
+				}
+
+				var err error
+				if preview {
+					_, err = p.Preview(t.Context(), func(string) {})
+				} else {
+					_, err = p.Deploy(t.Context(), func(string) {})
+				}
+
+				assert.Contains(t, fake.requests, "GET "+customClusterID)
+				if scenario == "preflight failure" {
+					require.ErrorContains(t, err, "aks-version FAIL")
+					assert.Zero(t, fake.base.writes)
+					assert.Zero(t, fake.base.previews)
+					return
+				}
+				require.NoError(t, err)
+				assert.Equal(t, map[string]any{"value": suppliedHostingPrincipal},
+					fake.base.parameters["hostingPrincipalId"])
+				assert.Equal(t, map[string]any{"value": suppliedWorkloadPrincipal},
+					fake.base.parameters["workloadPrincipalId"])
+				assert.Contains(t, fake.base.parameters, "federatedIdentityRoleDefinitionId")
+				if scenario != "disabled agentHosting parameter" {
+					assert.NotContains(t, fake.base.parameters, "agentHosting")
+				}
+			})
+		}
+	}
+}
+
+func TestBYOCustomTemplateGateAndNonAKSIsolation(t *testing.T) {
+	for _, props := range []any{
+		customBYOProperties(offlineClusterID),
+		map[string]any{"agentHostingConfigurations": "[reference('runtimeSource').configs]"},
+		"[union(variables('aksProps'), reference('runtimeSource').properties)]",
+	} {
+		p, fake, _ := customTemplateWithoutAgentHosting(t, 7, props)
+		p.armTemplate["variables"] = map[string]any{"aksProps": customBYOProperties(offlineClusterID)}
+		t.Setenv(synthesis.BYOAKSEnvVar, "false")
+		p.credential = nil
+		_, err := p.Deploy(t.Context(), func(string) {})
+		requireBYOFeatureNotEnabled(t, err)
+		assert.Nil(t, p.credential)
+		assert.Empty(t, fake.requests)
+	}
+
+	p, fake, source := customTemplateWithoutAgentHosting(t, 7, customBYOProperties("/not-a-cluster"))
+	t.Setenv(synthesis.BYOAKSEnvVar, "false")
+	p.credential = nil
+	require.ErrorContains(t, p.prepareBYO(t.Context(), source, func(string) {}),
+		"expected a complete Microsoft.ContainerService/managedClusters resource ID")
+	assert.Empty(t, fake.requests)
+
+	// An inactive BYO account must not taint an active non-AKS account with unresolved runtime properties.
+	p, fake, source = customTemplateWithoutAgentHosting(t, 0, nil)
+	t.Setenv(synthesis.BYOAKSEnvVar, "false")
+	p.credential = nil
+	p.armTemplate["variables"] = map[string]any{"baseProps": map[string]any{"allowProjectManagement": true}}
+	p.armTemplate["resources"] = map[string]any{
+		"inactiveBYO": map[string]any{
+			"type": "Microsoft.CognitiveServices/accounts", "name": "aks-cog", "condition": false,
+			"properties": customBYOProperties(offlineClusterID),
+		},
+		"activeStandard": map[string]any{
+			"type": "Microsoft.CognitiveServices/accounts", "name": "cog",
+			"properties": "[union(variables('baseProps'), reference('runtimeSource').properties)]",
+		},
+		"emptyConfigs": map[string]any{
+			"type": "Microsoft.CognitiveServices/accounts", "name": "cog-empty",
+			"properties": map[string]any{"agentHostingConfigurations": []any{}},
+		},
+	}
+	require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
+	assert.Nil(t, p.credential)
+	assert.Empty(t, fake.requests)
+}
+
+func TestBYOCustomTemplateWithoutAgentHostingAlignsACRLifecycle(t *testing.T) {
+	const registryID = "/subscriptions/target-sub/resourceGroups/shared/providers/" +
+		"Microsoft.ContainerRegistry/registries/registry"
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
+	p, fake, source := customTemplateWithoutAgentHosting(t, 7, customBYOProperties("[parameters('aksClusterId')]"))
+	source.parameters["includeAcr"] = map[string]any{"value": true}
+	source.parameters["existingAcrResourceId"] = map[string]any{"value": registryID}
+	p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+		require.Equal(t, http.MethodGet, method)
+		if strings.HasPrefix(path, registryID+"/providers/Microsoft.Authorization/roleAssignments?") {
+			assignment := acrTestAssignment()
+			assignment.Properties.Scope = registryID
+			assignment.Properties.PrincipalID = offlineKubeletObjectID
+			return acrTestReply(out, map[string]any{"value": []acrRoleAssignment{assignment}})
+		}
+		if path != registryID {
+			return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+		}
+		return acrTestReply(out, map[string]any{"properties": map[string]any{
+			"roleAssignmentMode": "LegacyRegistryPermissions",
+		}})
+	}
+
+	_, err := p.Preview(t.Context(), func(string) {})
+	require.NoError(t, err)
+	assert.NotContains(t, fake.base.parameters, "kubeletObjectId")
+	assert.Equal(t, map[string]any{"value": offlineKubeletObjectID}, fake.base.parameters["acrPullPrincipalId"])
+
+	source.parameters["existingAcrResourceId"] = map[string]any{"value": ""}
+	source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
+	err = p.validateACRTemplate(source)
+	require.ErrorContains(t, err, "for external registry reuse")
 }

@@ -35,6 +35,8 @@ type byoHostingParameters struct {
 func (p *FoundryProvisioningProvider) prepareBYO(
 	ctx context.Context, source *templateSource, progress grpcbroker.ProgressFunc,
 ) (prepareErr error) {
+	p.byoHostingEnabled = false
+	p.byoPullPrincipalID = ""
 	p.preflightReport.Reset()
 	defer func() { prepareErr = p.preflightFailure(prepareErr) }()
 	hosting, err := byoHostingParameter(source)
@@ -42,21 +44,29 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		return err
 	}
 	if !hosting.Enabled {
-		return nil
+		templateEnabled, planErr := p.localBYOPlan(source)
+		if !templateEnabled {
+			return nil
+		}
+		if planErr != nil {
+			return planErr
+		}
 	}
 	if include, _ := parameterValue(source, "includeAcr").(bool); include &&
 		!templateDeclaresParameter(source, "acrPullPrincipalId") {
 		return errors.New("the ejected Bicep registry access contract is outdated; " +
 			"re-eject the Foundry Bicep templates for kubelet-only registry access")
 	}
-	var clusterID string
-	if err := json.Unmarshal(hosting.ClusterResourceID, &clusterID); err != nil {
-		return exterrors.Validation(exterrors.CodeInvalidParameter,
-			"agentHosting.clusterResourceId must be a resource ID string for AKS binding lookups",
-			"supply the complete resource ID of the effective AKS cluster")
-	}
-	if _, err := onboarding.ParseID(clusterID, "Microsoft.ContainerService/managedClusters"); err != nil {
-		return err
+	if hosting.Enabled {
+		var clusterID string
+		if err := json.Unmarshal(hosting.ClusterResourceID, &clusterID); err != nil {
+			return exterrors.Validation(exterrors.CodeInvalidParameter,
+				"agentHosting.clusterResourceId must be a resource ID string for AKS binding lookups",
+				"supply the complete resource ID of the effective AKS cluster")
+		}
+		if _, err := onboarding.ParseID(clusterID, "Microsoft.ContainerService/managedClusters"); err != nil {
+			return err
+		}
 	}
 	hostBindings := map[string]any{
 		"federatedIdentityRoleDefinitionId": nil,
@@ -82,9 +92,12 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		value              json.RawMessage
 		fact               onboarding.Identity
 	}{
-		{field: "hostingManagementIdentityResourceId", binding: "hostingPrincipalId",
-			value: hosting.HostingManagementIdentityResourceID},
-		{field: "workloadIdentityResourceId", binding: "workloadPrincipalId", value: hosting.WorkloadIdentityResourceID},
+		{field: "hostingManagementIdentityResourceId", binding: "hostingPrincipalId"},
+		{field: "workloadIdentityResourceId", binding: "workloadPrincipalId"},
+	}
+	if hosting.Enabled {
+		identities[0].value = hosting.HostingManagementIdentityResourceID
+		identities[1].value = hosting.WorkloadIdentityResourceID
 	}
 	roleSubscription := p.subID
 	for i := range identities {
@@ -183,6 +196,8 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 				explicitKubeletID, facts.KubeletObjectID, plan.Cluster.ID),
 			"remove kubeletObjectId to resolve it automatically, or set it to the selected AKS cluster's actual kubelet ID")
 	}
+	p.byoHostingEnabled = true
+	p.byoPullPrincipalID = facts.KubeletObjectID
 	workloadScope := plan.Workload.ID
 	if workloadScope == "" {
 		workloadScope = plan.Workload.Parent
@@ -369,6 +384,15 @@ func byoHostingParameter(source *templateSource) (byoHostingParameters, error) {
 			"supply agentHosting as a literal object with the values needed for local AKS binding lookups")
 	}
 	return hosting, nil
+}
+
+func (p *FoundryProvisioningProvider) effectiveBYOHosting(source *templateSource) (bool, error) {
+	hosting, err := byoHostingParameter(source)
+	if err != nil || hosting.Enabled {
+		return hosting.Enabled, err
+	}
+	enabled, _ := p.localBYOPlan(source)
+	return enabled, nil
 }
 
 func byoParameterValue(source *templateSource, key string) any {

@@ -99,9 +99,10 @@ func TestIdentityEvidenceHonorsInheritanceConditionsAndPaging(t *testing.T) {
 	grant := grantRequests(suppliedPlan(t), Identity{}, suppliedFacts().WorkloadIdentity)[3]
 	for _, state := range []string{
 		"inherited", "management group", "unrelated", "conditional", "missing", "incomplete", "paged",
-		"null final page", "paged null final page",
+		"null final page", "paged null final page", "invalid target",
 	} {
 		t.Run(state, func(t *testing.T) {
+			current := grant
 			fake := authorizationFake()
 			scope := testGroup
 			if state == "management group" {
@@ -124,22 +125,28 @@ func TestIdentityEvidenceHonorsInheritanceConditionsAndPaging(t *testing.T) {
 			case "paged", "paged null final page":
 				fake.replies["/next-role-page"] = readReply{200, page}
 				page = map[string]any{"value": []any{}, "nextLink": "https://management.azure.com/next-role-page"}
+			case "invalid target":
+				current.scope = "invalid"
 			}
 			fake.replies[strings.ToLower(testStorage+assignmentSuffix)] = readReply{200, page}
 			authorizer := NewAuthorizationEvidence(testCredential{}, fake.options())
-			status, _, err := authorizer.identityGrantAllows(t.Context(), grant)
-			assert.Equal(t, state == "incomplete", err != nil)
-			if err != nil {
+			check := authorizer.identityGrantCheck(t.Context(), current)
+			assert.Equal(t, state == "incomplete" || state == "invalid target", check.Cause != nil)
+			if state == "incomplete" {
+				require.Error(t, check.Cause)
 				report := authorizer.suppliedIdentityChecks(t.Context(), suppliedPlan(t), suppliedFacts())
-				assert.ErrorIs(t, checkWithID(t, report, "workload-blob").Cause, err)
+				assert.ErrorIs(t, checkWithID(t, report, "workload-blob").Cause, check.Cause)
+				assert.Contains(t, report.Err().Error(), "\n\nDetails:\n- "+check.Cause.Error())
+			} else if check.blocks() {
+				assert.NotContains(t, Report{check}.Err().Error(), "\n\nDetails:")
 			}
 			switch state {
 			case "inherited", "management group", "paged", "unrelated", "null final page", "paged null final page":
-				assert.Equal(t, Pass, status)
-			case "incomplete":
-				assert.Equal(t, Unverified, status)
+				assert.Equal(t, Pass, check.Status)
+			case "incomplete", "invalid target":
+				assert.Equal(t, Unverified, check.Status)
 			case "missing", "conditional":
-				assert.Equal(t, Fail, status)
+				assert.Equal(t, Fail, check.Status)
 			}
 		})
 	}
@@ -170,10 +177,15 @@ func TestRoleAssignmentPaginationValidation(t *testing.T) {
 				"value": []any{last}, "nextLink": tt.nextLink,
 			}}
 			evidence := NewAuthorizationEvidence(testCredential{}, fake.options())
-			assignments, err := evidence.readAssignments(t.Context(), testStorage, false)
+			assignments, err := evidence.roleAssignments(t.Context(), testStorage, false)
 			if tt.wantError != "" {
 				require.ErrorContains(t, err, tt.wantError)
 				assert.Nil(t, assignments, "invalid pagination must not expose partial authorization evidence")
+				grant := grantRequests(suppliedPlan(t), Identity{}, suppliedFacts().WorkloadIdentity)[3]
+				check := evidence.identityGrantCheck(t.Context(), grant)
+				require.ErrorIs(t, check.Cause, err)
+				assert.Equal(t, Unverified, check.Status)
+				assert.Contains(t, Report{check}.Err().Error(), "\n\nDetails:\n- "+err.Error())
 			} else {
 				require.NoError(t, err)
 				require.Len(t, assignments, 2)

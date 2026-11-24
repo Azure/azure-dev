@@ -56,10 +56,12 @@ func TestBlockedErrorGroupsAndDeduplicatesOnlyBlockingReasons(t *testing.T) {
 			FailureReasons: []string{"Workload identity is not enabled", "The selected User node pool is not Kata-enabled"}},
 		{ID: "agent-label", ResourceType: aksResourceType, Status: Unverified, Mandatory: true,
 			FailureReasons: []string{"The selected User node pool is not Kata-enabled"}},
-		{ResourceType: aksResourceType, Status: Pass, Mandatory: true, FailureReasons: []string{"passed check"}},
+		{ResourceType: aksResourceType, Status: Pass, Mandatory: true, FailureReasons: []string{"passed check"},
+			ShowCause: true, Cause: errors.New("passed diagnostic")},
 		{ResourceType: networkResourceType, Status: NotApplicable, Mandatory: true,
 			FailureReasons: []string{"not applicable"}},
-		{ResourceType: hostingIdentityResourceType, Status: Fail, FailureReasons: []string{"optional check"}},
+		{ResourceType: hostingIdentityResourceType, Status: Fail, FailureReasons: []string{"optional check"},
+			ShowCause: true, Cause: errors.New("optional diagnostic")},
 		{ResourceType: subscriptionResourceType, Status: Skipped, FailureReasons: []string{"unresolved template"}},
 	}
 	err := report.Err()
@@ -69,6 +71,37 @@ func TestBlockedErrorGroupsAndDeduplicatesOnlyBlockingReasons(t *testing.T) {
 		"- The selected User node pool is not Kata-enabled\n- Workload identity is not enabled\n\n"+
 		"Storage account does not meet requirements. Review the requirements ("+prerequisitesURL+
 		") and edit your configuration before proceeding.\n- Hot storage access tier is required")
+}
+
+func TestBlockedErrorDetailsPreserveAndDeduplicateFullCauses(t *testing.T) {
+	cause := fmt.Errorf("read AKS metadata: %w", errors.New("certificate verification failed\nrequest aborted"))
+	poolCause := fmt.Errorf("read node pool metadata: %w", cause)
+	inputCause := errors.New("invalid input diagnostic")
+	report := Report{
+		{ResourceType: aksResourceType, Status: Unverified, Mandatory: true,
+			FailureReasons: []string{"AKS cluster could not be read"}, ShowCause: true, Cause: cause},
+		{ResourceType: storageResourceType, Status: Unverified, Mandatory: true,
+			FailureReasons: []string{"Storage account could not be read"},
+			ShowCause:      true, Cause: errors.New(cause.Error())},
+		{ResourceType: aksResourceType, Status: Unverified, Mandatory: true,
+			FailureReasons: []string{"Node pools could not be read"}, ShowCause: true, Cause: poolCause},
+		{ResourceType: aksResourceType, Status: Fail, Mandatory: true,
+			FailureReasons: []string{"AKS resource ID is invalid"}, Cause: inputCause},
+		{ResourceType: aksResourceType, Status: Unverified, Mandatory: true,
+			FailureReasons: []string{"Cluster managed identity could not be verified"}, ShowCause: true},
+	}
+	err := report.Err()
+	require.ErrorIs(t, err, cause)
+	require.ErrorIs(t, err, poolCause)
+	require.ErrorIs(t, err, inputCause)
+	assert.EqualError(t, err, "AKS does not meet requirements. Review the requirements ("+prerequisitesURL+
+		") and edit your configuration before proceeding.\n"+
+		"- AKS cluster could not be read\n- Node pools could not be read\n- AKS resource ID is invalid\n"+
+		"- Cluster managed identity could not be verified\n\n"+
+		"Storage account does not meet requirements. Review the requirements ("+prerequisitesURL+
+		") and edit your configuration before proceeding.\n- Storage account could not be read\n\n"+
+		"Details:\n- "+cause.Error()+"\n- "+poolCause.Error())
+	assert.Same(t, cause, report[0].Cause)
 }
 
 func TestReportMissingFailureReasonsStillBlocks(t *testing.T) {

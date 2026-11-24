@@ -62,8 +62,10 @@ func existingResourceID(raw, kind string) (*arm.ResourceID, error) {
 func readFailure(id, scope, resourceType, operation string, err error) Check {
 	c := resourceCheck(id, scope, resourceType, operation+" could not be read")
 	c.Cause = err
+	c.ShowCause = true
 	if response, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		if response.StatusCode == http.StatusNotFound {
+			c.ShowCause = false
 			c = resourceResult(c, Fail, operation+" does not exist")
 		} else if response.StatusCode == http.StatusForbidden {
 			c.FailureReasons = []string{"Permission to read " + operation + " was denied"}
@@ -378,6 +380,7 @@ func (c *sdkResourceChecker) readIdentity(
 		})
 	if err != nil {
 		check.Cause = err
+		check.ShowCause = true
 		return Identity{}, check
 	}
 	defer c.progress.start(description)()

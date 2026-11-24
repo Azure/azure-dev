@@ -34,6 +34,8 @@ type Check struct {
 	FailureReasons []string
 	Mandatory      bool
 	Cause          error
+	// ShowCause includes diagnostics when execution or evidence collection could not finish.
+	ShowCause bool
 }
 
 func (c Check) blocks() bool {
@@ -65,6 +67,7 @@ type BlockedError struct {
 func (e *BlockedError) Error() string {
 	groups := map[string][]string{}
 	var resourceTypes []string
+	var details []string
 	for _, c := range e.Checks {
 		if !c.blocks() {
 			continue
@@ -89,6 +92,12 @@ func (e *BlockedError) Error() string {
 				groups[resourceType] = append(groups[resourceType], reason)
 			}
 		}
+		if c.ShowCause && c.Cause != nil {
+			detail := c.Cause.Error()
+			if !slices.Contains(details, detail) {
+				details = append(details, detail)
+			}
+		}
 	}
 	var message strings.Builder
 	for i, resourceType := range resourceTypes {
@@ -99,6 +108,12 @@ func (e *BlockedError) Error() string {
 			resourceType, prerequisitesLink())
 		for _, reason := range groups[resourceType] {
 			message.WriteString("\n- " + reason)
+		}
+	}
+	if len(details) > 0 {
+		message.WriteString("\n\nDetails:")
+		for _, detail := range details {
+			message.WriteString("\n- " + detail)
 		}
 	}
 	return message.String()

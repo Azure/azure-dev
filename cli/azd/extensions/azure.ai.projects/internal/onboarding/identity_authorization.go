@@ -6,6 +6,8 @@ package onboarding
 import (
 	"context"
 	"strings"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 )
 
 func (e *AuthorizationEvidence) suppliedIdentityChecks(ctx context.Context, plan Plan, facts Facts) Report {
@@ -29,26 +31,26 @@ func (e *AuthorizationEvidence) suppliedIdentityChecks(ctx context.Context, plan
 			report = append(report, SkippedCheck(grant.checkID, target.diagnosticScope(), grant.resourceType()))
 			continue
 		}
-		check := resourceCheck(grant.checkID, grant.scope, grant.resourceType(),
-			"Managed identity principal could not be verified")
 		if grant.principalID == "" {
-			report = append(report, check)
+			report = append(report, resourceCheck(grant.checkID, grant.scope, grant.resourceType(),
+				"Managed identity principal could not be verified"))
 			continue
 		}
-		status, reason, cause := e.identityGrantAllows(ctx, grant)
-		check = resourceResult(check, status, reason)
-		check.Cause = cause
-		report = append(report, check)
+		report = append(report, e.identityGrantCheck(ctx, grant))
 	}
 	return report
 }
 
-func (e *AuthorizationEvidence) identityGrantAllows(
-	ctx context.Context, grant grantRequest,
-) (Status, string, error) {
+func (e *AuthorizationEvidence) identityGrantCheck(ctx context.Context, grant grantRequest) Check {
+	check := resourceCheck(grant.checkID, grant.scope, grant.resourceType(),
+		grant.roleName+" role assignments could not be read")
 	assignments, err := e.roleAssignments(ctx, grant.scope, false)
 	if err != nil {
-		return Unverified, grant.roleName + " role assignments could not be read", err
+		check.Cause = err
+		// Invalid target IDs are input failures, not authorization-read diagnostics.
+		scope, scopeErr := arm.ParseResourceID(grant.scope)
+		check.ShowCause = scopeErr == nil && scope.SubscriptionID != ""
+		return check
 	}
 	for _, assignment := range assignments {
 		p := assignment.Properties
@@ -67,8 +69,8 @@ func (e *AuthorizationEvidence) identityGrantAllows(
 				roleID == "b24988ac-6180-42a0-ab88-20f7382dd24c"
 		}
 		if accepted {
-			return Pass, "", nil
+			return resourceResult(check, Pass)
 		}
 	}
-	return Fail, "Required " + grant.roleName + " permission is missing or conditional", nil
+	return resourceResult(check, Fail, "Required "+grant.roleName+" permission is missing or conditional")
 }

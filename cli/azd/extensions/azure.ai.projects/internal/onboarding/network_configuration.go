@@ -49,6 +49,7 @@ func delegatedSubnetCheck(
 	prefixes, err := subnetPrefixes(subnet)
 	if err != nil {
 		c.Cause = err
+		c.ShowCause = true
 		return c
 	}
 	if parent == nil || parent.Properties == nil || parent.Properties.AddressSpace == nil ||
@@ -61,6 +62,7 @@ func delegatedSubnetCheck(
 		prefix, err := netip.ParsePrefix(resourceValue(raw))
 		if err != nil {
 			c.Cause = err
+			c.ShowCause = true
 			c.FailureReasons = []string{"Parent virtual network address space could not be parsed"}
 			return c
 		}
@@ -205,6 +207,7 @@ func (c *sdkResourceChecker) readNodeSubnetPrefixes(
 					metadata := resourceCheck("agent-subnet", subnetID, networkResourceType,
 						"The selected AKS node pool's node subnet address space could not be verified")
 					metadata.Cause = err
+					metadata.ShowCause = true
 					report = append(report, metadata)
 				}
 				if err == nil && readiness.Status == Pass {

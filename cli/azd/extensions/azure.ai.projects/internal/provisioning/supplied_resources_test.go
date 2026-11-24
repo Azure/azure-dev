@@ -414,11 +414,13 @@ func TestBYOSuppliedPreflightBlocksDeployAndWhatIfBeforeMutations(t *testing.T) 
 				}, byoPreparationStages(progress))
 				assert.NotContains(t, err.Error(), "BYO-AKS preflight report:")
 				assert.NotContains(t, err.Error(), "resource-refs PASS")
+				summary, _, hasDetails := strings.Cut(err.Error(), "\n\nDetails:")
+				assert.Equal(t, failure == "forbidden Storage", hasDetails)
 				for _, hidden := range []string{
 					"aks-type", offlineClusterID, suppliedStorageID, suppliedHostingID, suppliedWorkloadID,
 					"Scope:", "Observed:", "Remediation:",
 				} {
-					assert.NotContains(t, err.Error(), hidden)
+					assert.NotContains(t, summary, hidden)
 				}
 				assert.Zero(t, fake.base.writes)
 				assert.Zero(t, fake.base.previews)
@@ -513,7 +515,8 @@ func TestBYOReadFailuresPreserveCausesWithoutReport(t *testing.T) {
 		for _, preview := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/preview=%t", failure, preview), func(t *testing.T) {
 				p, fake, _ := suppliedProvider(t, 7)
-				cause := errors.New("connection reset while reading " + endpoint)
+				cause := fmt.Errorf("read selected AKS cluster: %w",
+					errors.New("connection reset while reading "+endpoint))
 				p.armClientOptions.Transport = acrTestTransport(func(request *http.Request) (*http.Response, error) {
 					if request.Method != http.MethodGet || request.URL.Path != offlineClusterID {
 						return fake.Do(request)
@@ -550,6 +553,12 @@ func TestBYOReadFailuresPreserveCausesWithoutReport(t *testing.T) {
 				switch failure {
 				case "transport":
 					require.ErrorIs(t, err, cause)
+					require.EqualError(t, err,
+						"AKS does not meet requirements. Review the requirements ("+byoRequirementsURL+
+							") and edit your configuration before proceeding.\n"+
+							"- AKS cluster could not be read\n- AKS configuration could not be read\n\n"+
+							"Details:\n- read selected AKS cluster: connection reset while reading "+
+							"https://example.test/resource")
 				case "authentication":
 					service, ok := errors.AsType[*azcore.ResponseError](err)
 					require.True(t, ok)
@@ -558,7 +567,9 @@ func TestBYOReadFailuresPreserveCausesWithoutReport(t *testing.T) {
 				case "decoding":
 					require.ErrorContains(t, errors.Join(blocked.Unwrap()...), "cannot unmarshal")
 				}
-				exitErr := fmt.Errorf("provisioning failed: %w", roundTripProvisioningError(t, err))
+				transported := roundTripProvisioningError(t, err)
+				require.EqualError(t, transported, err.Error())
+				exitErr := fmt.Errorf("provisioning failed: %w", transported)
 				if failure == "authentication" {
 					service, ok := errors.AsType[*azdext.ServiceError](exitErr)
 					require.True(t, ok)
@@ -569,13 +580,28 @@ func TestBYOReadFailuresPreserveCausesWithoutReport(t *testing.T) {
 				assert.Contains(t, exitOutput, "ERROR:")
 				assert.Contains(t, exitOutput, "AKS does not meet requirements.")
 				assert.Contains(t, exitOutput, "- "+reason)
+				for _, output := range []string{
+					err.Error(), azdext.WrapError(err).GetMessage(), transported.Error(), exitOutput,
+					fmt.Sprintf("Handler returned error: %v", err),
+				} {
+					require.Contains(t, output, "\n\nDetails:")
+					for _, check := range blocked.Checks {
+						if check.ShowCause && check.Cause != nil {
+							assert.Contains(t, output, "\n- "+redactBYOErrorMessage(check.Cause.Error()))
+						}
+					}
+				}
 				assert.NotContains(t, progress.String(), "preflight")
-				for _, output := range []string{err.Error(), exitOutput, progress.String()} {
+				for _, output := range []string{
+					err.Error(), azdext.WrapError(err).GetMessage(), transported.Error(), exitOutput, progress.String(),
+					fmt.Sprintf("Handler returned error: %v", err),
+				} {
 					assert.NotContains(t, output, "BYO-AKS preflight report:")
 					assert.NotContains(t, output, "resource-refs PASS")
 					assert.NotContains(t, output, "  Expected:")
 					assert.NotContains(t, output, "  Cause:")
-					assert.NotContains(t, output, offlineClusterID)
+					summary, _, _ := strings.Cut(output, "\n\nDetails:")
+					assert.NotContains(t, summary, offlineClusterID)
 					for _, secret := range []string{"cause-user", "cause-password", "sig=", "cause-secret", "cause-fragment"} {
 						assert.NotContains(t, output, secret)
 					}
@@ -753,6 +779,10 @@ func TestBYOPreparationErrorRedactionPreservesClassification(t *testing.T) {
 			Message: message, StatusCode: http.StatusForbidden,
 			ErrorCode: "AuthorizationFailed", ServiceName: "example.test",
 		}, nil},
+		{"service without URL", &azdext.ServiceError{
+			Message: "read AKS metadata: request failed", StatusCode: http.StatusForbidden,
+			ErrorCode: "AuthorizationFailed", ServiceName: "example.test",
+		}, nil},
 		{"local", &azdext.LocalError{
 			Message: message, Category: azdext.LocalErrorCategoryAuth, Code: "login_required",
 		}, nil},
@@ -763,36 +793,48 @@ func TestBYOPreparationErrorRedactionPreservesClassification(t *testing.T) {
 		{"deadline", fmt.Errorf("%s: %w", message, context.DeadlineExceeded), context.DeadlineExceeded},
 		{"grpc auth", status.Error(codes.Unauthenticated, message), nil},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			original := fmt.Errorf("BYO lookup: %w", test.cause)
-			before := original.Error()
-			expected := strings.ReplaceAll(before, endpoint, "https://example.test/resource")
-			classified := azdext.WrapError(original)
-			classified.Message = expected
-			redacted := redactBYOPreparationError(original)
-			assert.EqualError(t, redacted, expected)
-			require.ErrorIs(t, redacted, original)
-			require.ErrorIs(t, redacted, test.cause)
-			assert.Equal(t, before, original.Error(), "the original shared cause must not be modified")
-			assert.True(t, proto.Equal(classified, azdext.WrapError(redacted)))
-			transported := roundTripProvisioningError(t, redacted)
-			assert.EqualError(t, transported, expected)
-			assert.Equal(t, "ERROR: "+expected, strings.TrimSpace((&ux.ActionResult{Err: transported}).ToString("")))
-			assert.Equal(t, "Handler returned error: "+expected, fmt.Sprintf("Handler returned error: %v", redacted))
-			if test.canonical != nil {
-				require.ErrorIs(t, redacted, test.canonical)
-				require.ErrorIs(t, transported, test.canonical)
-			}
-			if originalTool, ok := errors.AsType[*azdext.ToolError](test.cause); ok {
-				copy, ok := errors.AsType[*azdext.ToolError](redacted)
-				require.True(t, ok)
-				assert.NotSame(t, originalTool, copy)
-				expectedTool := *originalTool
-				expectedTool.Message = expected
-				assert.Equal(t, &expectedTool, copy)
-				require.ErrorIs(t, redacted, toolCause)
-			}
-		})
+		for _, blocked := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/blocked=%t", test.name, blocked), func(t *testing.T) {
+				original := fmt.Errorf("BYO lookup: %w", test.cause)
+				if blocked {
+					original = onboarding.Report{{
+						ResourceType: "AKS", Status: onboarding.Unverified, Mandatory: true,
+						FailureReasons: []string{"AKS cluster could not be read"}, ShowCause: true, Cause: original,
+					}}.Err()
+				}
+				before := original.Error()
+				expected := strings.ReplaceAll(before, endpoint, "https://example.test/resource")
+				classified := azdext.WrapError(original)
+				classified.Message = expected
+				redacted := redactBYOPreparationError(original)
+				assert.EqualError(t, redacted, expected)
+				require.ErrorIs(t, redacted, original)
+				require.ErrorIs(t, redacted, test.cause)
+				assert.Equal(t, before, original.Error(), "the original shared cause must not be modified")
+				assert.True(t, proto.Equal(classified, azdext.WrapError(redacted)))
+				transported := roundTripProvisioningError(t, redacted)
+				assert.EqualError(t, transported, expected)
+				if blocked {
+					assert.Contains(t, expected, "\n\nDetails:\n- BYO lookup: "+
+						strings.ReplaceAll(test.cause.Error(), endpoint, "https://example.test/resource"))
+				}
+				assert.Equal(t, "ERROR: "+expected, strings.TrimSpace((&ux.ActionResult{Err: transported}).ToString("")))
+				assert.Equal(t, "Handler returned error: "+expected, fmt.Sprintf("Handler returned error: %v", redacted))
+				if test.canonical != nil {
+					require.ErrorIs(t, redacted, test.canonical)
+					require.ErrorIs(t, transported, test.canonical)
+				}
+				if originalTool, ok := errors.AsType[*azdext.ToolError](test.cause); ok {
+					copy, ok := errors.AsType[*azdext.ToolError](redacted)
+					require.True(t, ok)
+					assert.NotSame(t, originalTool, copy)
+					expectedTool := *originalTool
+					expectedTool.Message = expected
+					assert.Equal(t, &expectedTool, copy)
+					require.ErrorIs(t, redacted, toolCause)
+				}
+			})
+		}
 	}
 }
 

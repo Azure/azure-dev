@@ -676,11 +676,17 @@ func TestResourceCheckerRejectsIncompleteOrMismatchedEvidence(t *testing.T) {
 			require.Error(t, err)
 			require.Error(t, report.Err())
 			assert.Contains(t, err.Error(), test.reason)
+			summary, _, hasDetails := strings.Cut(err.Error(), "\n\nDetails:")
+			assert.Equal(t, test.name == "read forbidden", hasDetails)
 			for _, check := range report {
 				if check.blocks() {
 					assert.NotEmpty(t, check.ResourceType)
 					assert.NotEmpty(t, check.FailureReasons)
-					assert.NotContains(t, err.Error(), check.Scope)
+					assert.NotContains(t, summary, check.Scope)
+					if check.ShowCause {
+						require.Error(t, check.Cause)
+						assert.Contains(t, err.Error(), "\n- "+check.Cause.Error())
+					}
 				}
 			}
 			assert.NotContains(t, err.Error(), "No Kata-enabled node pool found")
@@ -716,6 +722,42 @@ func TestResourceCheckerRejectsIncompleteOrMismatchedEvidence(t *testing.T) {
 	subnet, report = checker.readNetworkSubnet(t.Context(), subnetID, "agent-subnet")
 	require.NotNil(t, subnet)
 	require.Empty(t, report)
+}
+
+func TestReadFailureDetailsRespectEvidenceSemantics(t *testing.T) {
+	missing := &azcore.ResponseError{StatusCode: http.StatusNotFound, ErrorCode: "ResourceNotFound"}
+	readErr := errors.New("read AKS metadata: connection reset")
+	for _, test := range []struct {
+		name       string
+		check      Check
+		status     Status
+		hasDetails bool
+	}{
+		{"missing selected resource",
+			readFailure("resource-refs", testCluster, aksResourceType, "AKS cluster", missing), Fail, false},
+		{"missing managed-node evidence",
+			managedNodeReadFailure(testCluster, "Managed node resource group", missing), Unverified, true},
+		{"failed selected-resource read",
+			readFailure("resource-refs", testCluster, aksResourceType, "AKS cluster", readErr), Unverified, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.status, test.check.Status)
+			err := Report{test.check}.Err()
+			require.ErrorIs(t, err, test.check.Cause)
+			_, details, found := strings.Cut(err.Error(), "\n\nDetails:")
+			assert.Equal(t, test.hasDetails, found)
+			if test.hasDetails {
+				assert.Equal(t, "\n- "+test.check.Cause.Error(), details)
+			}
+		})
+	}
+
+	checker := &sdkResourceChecker{credential: testCredential{}, options: resourceFake().options()}
+	_, report := checker.readNetworkSubnet(t.Context(), "invalid", "agent-subnet")
+	require.Len(t, report, 1)
+	require.Error(t, report[0].Cause)
+	require.Error(t, report.Err())
+	assert.NotContains(t, report.Err().Error(), "\n\nDetails:")
 }
 
 func TestAgentPoolFailureReasonsFollowEachPredicate(t *testing.T) {
@@ -810,6 +852,9 @@ func TestNetworkChecksPreserveDiagnosticsWithoutNodeSubnetEvidence(t *testing.T)
 		{"invalid subnet CIDR", func(subnet *armnetwork.Subnet, _ *armnetwork.VirtualNetwork) {
 			subnet.Properties.AddressPrefix = new("invalid")
 		}, Unverified, "Agent subnet address space could not be verified"},
+		{"invalid parent CIDR", func(_ *armnetwork.Subnet, parent *armnetwork.VirtualNetwork) {
+			parent.Properties.AddressSpace.AddressPrefixes = []*string{new("invalid")}
+		}, Unverified, "Parent virtual network address space could not be parsed"},
 		{"missing delegation", func(subnet *armnetwork.Subnet, _ *armnetwork.VirtualNetwork) {
 			subnet.Properties.Delegations = nil
 		}, Fail, "Agent subnet is not delegated to Microsoft.App/environments"},
@@ -877,8 +922,10 @@ func TestNetworkChecksPreserveDiagnosticsWithoutNodeSubnetEvidence(t *testing.T)
 			if original.Cause != nil {
 				require.Error(t, check.Cause)
 				assert.EqualError(t, check.Cause, original.Cause.Error())
+				assert.Contains(t, report.Err().Error(), "\n\nDetails:\n- "+original.Cause.Error())
 			} else {
 				assert.NoError(t, check.Cause)
+				assert.NotContains(t, report.Err().Error(), "\n\nDetails:")
 			}
 			assert.True(t, check.blocks())
 			assert.Error(t, report.Err())

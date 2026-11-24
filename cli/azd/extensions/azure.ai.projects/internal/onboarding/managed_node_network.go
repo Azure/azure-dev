@@ -45,6 +45,7 @@ func (c *sdkResourceChecker) nodeSubnetIDs(
 	groups, err := armresources.NewResourceGroupsClient(clusterID.SubscriptionID, c.credential, c.options)
 	if err != nil {
 		check.Cause = err
+		check.ShowCause = true
 		return nil, Report{check}
 	}
 	group, err := groups.Get(ctx, nodeRG, nil)
@@ -60,6 +61,7 @@ func (c *sdkResourceChecker) nodeSubnetIDs(
 	sets, err := armcompute.NewVirtualMachineScaleSetsClient(clusterID.SubscriptionID, c.credential, c.options)
 	if err != nil {
 		check.Cause = err
+		check.ShowCause = true
 		return nil, Report{check}
 	}
 	var subnetIDs []string
@@ -80,6 +82,7 @@ func (c *sdkResourceChecker) nodeSubnetIDs(
 					"Selected node pool's virtual machine scale set subnet configuration is incomplete",
 				}
 				check.Cause = err
+				check.ShowCause = true
 				return nil, Report{check}
 			}
 			matched = true
@@ -99,6 +102,7 @@ func (c *sdkResourceChecker) nodeSubnetIDs(
 func managedNodeReadFailure(scope, operation string, err error) Check {
 	check := readFailure("agent-subnet", scope, networkResourceType, operation, err)
 	check.Status = Unverified
+	check.ShowCause = true
 	return check
 }
 

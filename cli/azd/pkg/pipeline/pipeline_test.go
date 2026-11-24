@@ -2124,7 +2124,7 @@ func Test_azdoPipeline_url_construction(t *testing.T) {
 	}
 
 	assert.Equal(t, "build-pipeline", p.name())
-	assert.Equal(t, "https://dev.azure.com/myorg/myproject/_build?definitionId=99", p.url())
+	assert.Equal(t, "https://dev.azure.com/myorg/myproject/_build?definitionId=99", p.url(t.Context()))
 }
 
 // =====================================================================
@@ -4745,7 +4745,7 @@ func Test_pipeline_nameAndUrl_cov3(t *testing.T) {
 	*p.repoDetails.buildDefinition.Name = "my-pipeline"
 
 	assert.Equal(t, "my-pipeline", p.name())
-	assert.Contains(t, p.url(), "_build?definitionId=42")
+	assert.Contains(t, p.url(t.Context()), "_build?definitionId=42")
 }
 
 // =====================================================================
@@ -4916,7 +4916,7 @@ func Test_GitHubCiProvider_configurePipeline_withSecretsAndVars_cov3(t *testing.
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, "actions", result.name())
-	assert.Contains(t, result.url(), "test-owner/test-repo")
+	assert.Contains(t, result.url(t.Context()), "test-owner/test-repo")
 }
 
 func Test_GitHubCiProvider_configurePipeline_listSecretsError_cov3(t *testing.T) {
@@ -5266,7 +5266,7 @@ func Test_workflow_nameAndUrl_cov3(t *testing.T) {
 	}
 
 	assert.Equal(t, "actions", w.name())
-	assert.Contains(t, w.url(), "test-owner/test-repo")
+	assert.Contains(t, w.url(t.Context()), "test-owner/test-repo")
 }
 
 // =====================================================================

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -296,23 +297,36 @@ func Test_workflow_CiPipeline(t *testing.T) {
 		name       string
 		file       string
 		pushStatus bool
+		lookupErr  error
 		want       string
 	}{
-		{"no default workflow file", "", true, repoUrl + "/actions"},
-		{"workflow file not pushed", "azure-dev.yml", false, repoUrl + "/actions"},
-		{"yml workflow file pushed", "azure-dev.yml", true, repoUrl + "/actions/workflows/azure-dev.yml"},
-		{"yaml workflow file pushed", "azure-dev.yaml", true, repoUrl + "/actions/workflows/azure-dev.yaml"},
+		{"no default workflow file", "", true, nil, repoUrl + "/actions"},
+		{"workflow file not pushed", "azure-dev.yml", false, nil, repoUrl + "/actions"},
+		{"yml workflow available", "azure-dev.yml", true, nil, repoUrl + "/actions/workflows/azure-dev.yml"},
+		{"yaml workflow available", "azure-dev.yaml", true, nil, repoUrl + "/actions/workflows/azure-dev.yaml"},
+		{"workflow lookup failed", "azure-dev.yml", true, fmt.Errorf("HTTP 503"), repoUrl + "/actions"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			mc := mocks.NewMockContext(t.Context())
+			if tt.file != "" && tt.pushStatus {
+				mc.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+					return slices.Equal(args.Args, []string{
+						"api", "https://api.github.com/repos/Azure/azure-dev/actions/workflows/" + tt.file,
+					})
+				}).SetError(tt.lookupErr)
+			}
 			w := &workflow{
-				repoDetails: &gitRepositoryDetails{url: repoUrl, pushStatus: tt.pushStatus},
-				file:        tt.file,
+				repoDetails: &gitRepositoryDetails{
+					owner: "Azure", repoName: "azure-dev", url: repoUrl, pushStatus: tt.pushStatus,
+				},
+				file:  tt.file,
+				ghCli: github.NewGitHubCli(mc.Console, mc.CommandRunner),
 			}
 
 			assert.Equal(t, "actions", w.name())
-			assert.Equal(t, tt.want, w.url())
+			assert.Equal(t, tt.want, w.url(t.Context()))
 		})
 	}
 }
@@ -371,7 +385,7 @@ func Test_azdoPipeline_CiPipeline(t *testing.T) {
 	assert.Equal(t, "my-pipeline", p.name())
 	assert.Equal(t,
 		"https://dev.azure.com/org/project/_build?definitionId=42",
-		p.url())
+		p.url(t.Context()))
 }
 
 // ------------------------------------------------------------------

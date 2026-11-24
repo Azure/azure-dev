@@ -863,7 +863,7 @@ type pipeline struct {
 func (p *pipeline) name() string {
 	return *p.repoDetails.buildDefinition.Name
 }
-func (p *pipeline) url() string {
+func (p *pipeline) url(context.Context) string {
 	repoUrl := p.repoDetails.repoWebUrl
 	repoPrefix, _, _ := strings.Cut(repoUrl, "_git")
 	return fmt.Sprintf("%s_build?definitionId=%d", repoPrefix, *p.repoDetails.buildDefinition.Id)

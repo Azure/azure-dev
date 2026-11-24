@@ -797,7 +797,7 @@ func (pm *PipelineManager) Configure(
 
 	return &PipelineConfigResult{
 		RepositoryLink: gitRepoInfo.url,
-		PipelineLink:   ciPipeline.url(),
+		PipelineLink:   ciPipeline.url(ctx),
 	}, nil
 }
 

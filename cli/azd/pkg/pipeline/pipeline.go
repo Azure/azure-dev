@@ -89,7 +89,7 @@ type CiPipeline interface {
 	// name returns a string label that represents the pipeline identifier.
 	name() string
 	// url provides the web address to access the pipeline.
-	url() string
+	url(ctx context.Context) string
 }
 
 // configurePipelineOptions holds the configuration options for the configurePipeline method.

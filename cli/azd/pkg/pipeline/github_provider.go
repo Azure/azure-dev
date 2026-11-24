@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"maps"
 	"path/filepath"
 	"regexp"
@@ -1254,6 +1255,7 @@ func (p *GitHubCiProvider) configurePipeline(
 	return &workflow{
 		repoDetails: repoDetails,
 		file:        options.pipelineFile,
+		ghCli:       p.ghCli,
 	}, nil
 }
 
@@ -1270,6 +1272,7 @@ func actionsSettingsUrl(repoSlug string, hasSecrets bool) string {
 // workflow is the implementation for a CiPipeline for GitHub
 type workflow struct {
 	repoDetails *gitRepositoryDetails
+	ghCli       *github.Cli
 	// file is the name of the default workflow file (azure-dev.yml or azure-dev.yaml) in the repository, if any.
 	file string
 }
@@ -1278,13 +1281,18 @@ func (w *workflow) name() string {
 	return "actions"
 }
 
-// url links to the workflow page once its file has been pushed, since GitHub returns a 404 for a workflow that is not
-// in the repository yet. Otherwise, it links to the Actions overview.
-func (w *workflow) url() string {
-	if w.file != "" && w.repoDetails.pushStatus {
-		return w.repoDetails.url + "/actions/workflows/" + w.file
+func (w *workflow) url(ctx context.Context) string {
+	overview := w.repoDetails.url + "/actions"
+	if w.file == "" || !w.repoDetails.pushStatus {
+		return overview
 	}
-	return w.repoDetails.url + "/actions"
+	// Pushing a nested project may leave the root workflow untracked.
+	path := fmt.Sprintf("/repos/%s/%s/actions/workflows/%s", w.repoDetails.owner, w.repoDetails.repoName, w.file)
+	if _, err := w.ghCli.ApiCall(ctx, github.GitHubHostName, path, github.ApiCallOptions{}); err != nil {
+		log.Printf("Could not confirm GitHub workflow %s; using the Actions overview: %v", w.file, err)
+		return overview
+	}
+	return overview + "/workflows/" + w.file
 }
 
 // ensureGitHubLogin ensures the user is logged into the GitHub CLI. If not, it prompt the user

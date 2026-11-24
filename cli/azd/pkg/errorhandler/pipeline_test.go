@@ -732,6 +732,21 @@ func TestErrorSuggestionsYaml_AADSTS700082_SpecificRule(t *testing.T) {
 	assert.Contains(t, result.Links[0].URL, "azd-auth-login")
 }
 
+func TestErrorSuggestionsYaml_AADSTS7002381_GitHubEnterprisePolicy(t *testing.T) {
+	t.Parallel()
+	err := errors.New("AADSTS7002381: Federated identity credentials issued by " +
+		"'https://token.actions.githubusercontent.com/' for applications or managed identities registered in this tenant " +
+		"must contain the enterprise claim with value 'contoso' but actual value is ''")
+	wrapped := fmt.Errorf("ClientAssertionCredential authentication failed: %w", err)
+	result := NewErrorHandlerPipeline(nil).Process(t.Context(), wrapped)
+	require.NotNil(t, result)
+	assert.ErrorIs(t, result.Err, err)
+	assert.Contains(t, result.Message, "GitHub Actions")
+	assert.Contains(t, result.Suggestion, "approved GitHub enterprise")
+	assert.Contains(t, result.Suggestion, "Microsoft Entra administrator")
+	assert.NotContains(t, result.Suggestion, "azd auth login")
+}
+
 func TestErrorSuggestionsYaml_AADSTS_GenericRule(t *testing.T) {
 	t.Parallel()
 	pipeline := NewErrorHandlerPipeline(nil)

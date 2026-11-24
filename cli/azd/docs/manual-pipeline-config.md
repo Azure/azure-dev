@@ -76,6 +76,8 @@ You can use the [github cli](https://cli.github.com) to set secrets for your Git
 
 The `client id` and `tenant id` are the ones from a `Service Principal` which has configured a federated credential for the GitHub repository you are using. You can follow [these steps](https://learn.microsoft.com/azure/active-directory/workload-identities/workload-identity-federation-create-trust?pivots=identity-wif-apps-methods-azp#github-actions) to set up the federated credential for the app registration (Service principal).
 
+If the workflow's Azure login fails with [AADSTS7002381](https://login.microsoftonline.com/error?code=7002381), the tenant requires the GitHub Actions token to identify an approved GitHub enterprise. Ask your Microsoft Entra administrator which repositories qualify and run the workflow from one of them. Signing in again on your machine does not change the workflow's token.
+
 #### Client Secret with GitHub
 
 You need to set the secret `AZURE_CREDENTIALS` which is a json file that includes:

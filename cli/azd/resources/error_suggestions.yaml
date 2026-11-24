@@ -652,6 +652,16 @@ rules:
         title: "azd auth login reference"
 
   - patterns:
+      - "AADSTS7002381:"
+    message: "Your tenant rejected the GitHub Actions token because it did not identify an approved GitHub enterprise."
+    suggestion: >-
+      Run the workflow from a repository in an approved GitHub enterprise.
+      If you're not sure which repositories qualify, ask your Microsoft Entra administrator.
+    links:
+      - url: "https://login.microsoftonline.com/error?code=7002381"
+        title: "Microsoft Entra error AADSTS7002381"
+
+  - patterns:
       - "AADSTS"
     message: "Authentication with Azure failed."
     suggestion: >-

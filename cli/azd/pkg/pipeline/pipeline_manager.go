@@ -1544,18 +1544,21 @@ func (pm *PipelineManager) resolvePipelineAuth(
 		optionOidc,
 	}
 	optionDetails := []string{
-		"Use a user-assigned managed identity. No secret to store.",
-		"Use a Microsoft Entra app registration. No secret to store.",
+		"Creates or reuses a user-assigned managed identity. No client secret to store.",
+		"Uses a Microsoft Entra app registration. No client secret to store.",
 	}
 	if authType != AuthTypeFederated {
 		options = append(options, optionClientSec)
 		optionDetails = append(
 			optionDetails,
-			"Use an expiring client secret. Use only when OIDC isn't supported.",
+			"Stores an expiring client secret so the pipeline can sign in without OIDC.",
 		)
 	}
 	options = append(options, optionSkip)
-	optionDetails = append(optionDetails, "Use existing Azure access or set it up manually.")
+	optionDetails = append(
+		optionDetails,
+		"Choose this if your pipeline already has Azure access or you'll set it up yourself.",
+	)
 
 	selectedOption, err := pm.console.Select(ctx, input.ConsoleOptions{
 		Message:                "Select how to authenticate the pipeline to Azure:",

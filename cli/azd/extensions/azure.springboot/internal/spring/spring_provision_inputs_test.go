@@ -52,10 +52,14 @@ func TestAutomaticProvisionInputsValidateAuthoredBindings(t *testing.T) {
 		{name: "malformed JSON", document: "{", wantError: true},
 		{name: "PostgreSQL without parameters", wantError: true},
 		{name: "positive H2 without parameters", h2: true},
+		{name: "positive H2 preserves selection with administrator bindings", h2: true,
+			document: `{"parameters":{
+				"databaseAdministratorName":{"value":"${DATABASE_ADMIN_NAME}"},
+				"databaseAdministratorObjectId":{"value":"${DATABASE_ADMIN_OBJECT_ID}"}}}`},
 		{name: "database-free without parameters", noDatabase: true},
 		{name: "database-free generic parameters", noDatabase: true,
 			document: `{"parameters":{"location":{"value":"${AZURE_LOCATION}"}}}`},
-		{name: "database-free rejects bootstrap", noDatabase: true, wantError: true,
+		{name: "database-free preserves selection in mixed-host projects", noDatabase: true,
 			document: `{"parameters":{
 				"databaseAdministratorName":{"value":"${DATABASE_ADMIN_NAME}"},
 				"databaseAdministratorObjectId":{"value":"${DATABASE_ADMIN_OBJECT_ID}"}}}`},

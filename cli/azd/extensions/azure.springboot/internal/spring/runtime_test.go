@@ -294,6 +294,19 @@ func TestDatabaseFreeLifecycleDoesNotAcquirePostgresRequirements(t *testing.T) {
 	require.Zero(t, identities.calls)
 	require.Zero(t, outputs.calls)
 	require.Empty(t, store.writes)
+
+	// Mixed-host project with non-Spring service owning administrator bindings must not block DB-free Spring services.
+	project.Services["other-api"] = &azdext.ServiceConfig{Name: "other-api", Language: "python", Host: "containerapp"}
+	require.NoError(t, os.MkdirAll(filepath.Join(project.Path, "infra"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(project.Path, "infra", "main.parameters.json"), []byte(`{
+		"parameters": {
+			"databaseAdministratorName": {"value": "${DATABASE_ADMIN_NAME=azd-preprovision-pending}"},
+			"databaseAdministratorObjectId": {"value": "${DATABASE_ADMIN_OBJECT_ID=00000000-0000-0000-0000-000000000000}"}
+		}
+	}`), 0o600))
+	require.NoError(t, runtime.PreProvision(t.Context(), &azdext.ProjectEventArgs{Project: project}))
+	require.Zero(t, identities.calls)
+	require.Empty(t, store.writes)
 }
 
 func TestMixedProjectKeepsDatabaseFreeServiceIndependent(t *testing.T) {

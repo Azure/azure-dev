@@ -2,10 +2,9 @@
 
 `azure.springboot` packages Maven-based Java Spring Boot applications for Azure
 Container Apps, deploys project-owned Bicep service modules, and prepares
-Entra-authenticated PostgreSQL application access. This is an **unpublished
-development prototype**: use azd 1.37.2 or newer and a matching locally built
-extension bundle. The version requirement in the examples is not a public
-release guarantee.
+Entra-authenticated PostgreSQL application access. This extension is currently
+in **preview**: use azd 1.37.2 or newer and install the extension before
+initializing or deploying a `host: springbootapp` project.
 
 See the [extension design](docs/design.md) for automatic datasource discovery,
 packaging, deployment, and PostgreSQL access verification.
@@ -102,7 +101,7 @@ custom property sources, bootstrap registrations and datasource factories while
 ignoring comments/string literals. This is not proof of generated or transitive
 code, reflection or arbitrary programmatic configuration. Such customization,
 non-Java bootstrap, mounted application files and custom launch scripts require
-additional runtime evidence that this prototype does not provide; do not use
+additional runtime evidence that this extension does not provide; do not use
 automatic or complete-block managed access for those applications.
 
 PostgreSQL datasources must use Entra managed-identity authentication. Automatic

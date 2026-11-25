@@ -48,14 +48,14 @@ func automaticProvisionInputs(
 	if !osutil.IsPathContained(root, name) {
 		return resolvedDatabase{}, configurationError("the Bicep parameter path is outside the project")
 	}
-	resolved, err := filepath.EvalSymlinks(name)
-	if errors.Is(err, os.ErrNotExist) && (selected.Type == databaseH2 || selected.Type == databaseNone) {
+	if !selected.selectionPending && (selected.Type == databaseH2 || selected.Type == databaseNone) {
 		return selected, nil
 	}
+	resolved, err := filepath.EvalSymlinks(name)
 	if err != nil || !osutil.IsPathContained(root, resolved) {
 		return resolvedDatabase{}, configurationError("the Bicep parameter file cannot be verified for database bootstrap")
 	}
-	file, err := os.Open(resolved)
+	file, err := os.Open(resolved) //nolint:gosec // G304: path containment verified via osutil.IsPathContained above
 	if err != nil {
 		return resolvedDatabase{}, configurationError("the Bicep parameter file cannot be read")
 	}
@@ -94,11 +94,6 @@ func automaticProvisionInputs(
 				"password-authenticated PostgreSQL infrastructure bindings are unsupported; use Entra managed identity",
 			)
 		}
-	}
-	if selected.Type == databaseNone && managed {
-		return resolvedDatabase{}, configurationError(
-			"database bootstrap bindings conflict with the database-free application",
-		)
 	}
 	if managed {
 		return resolvedDatabase{Type: databasePostgreSQL, Authentication: databaseAuthenticationManagedIdentity}, nil

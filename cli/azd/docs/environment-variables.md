@@ -258,10 +258,10 @@ and [compatibility with existing generated projects](../extensions/azure.ai.cont
 | --- | --- |
 | `AZURE_AI_ROUTINES_HTTP_TIMEOUT` | Overrides the `azure.ai.routines` HTTP request timeout when no `--timeout` flag is provided. Parsed with Go's `time.ParseDuration` format (for example, `90s`, `2m`, or `1m30s`) and must be a positive duration. |
 
-### azure.springboot (development prototype)
+### azure.springboot (preview)
 
-These are extension-specific inputs and state, not general azd settings. The
-unpublished development extension must be installed separately.
+These are extension-specific inputs and state, not general azd settings. Install
+the `azure.springboot` extension separately when using `host: springbootapp`.
 
 | Variable | Description |
 | --- | --- |

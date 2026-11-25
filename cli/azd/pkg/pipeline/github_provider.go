@@ -477,30 +477,30 @@ const (
         shell: pwsh
         env:
           AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}`
+	gitHubFederatedPermissions = `permissions:
+  id-token: write
+  contents: read`
 )
 
 // gitHubWorkflowAuthReminder tells the user how to update an existing azd-generated workflow after the pipeline
 // switches to authType, since azd doesn't rewrite existing workflows.
 func gitHubWorkflowAuthReminder(authType PipelineAuthType, isTerraform bool) string {
-	step, followUp := gitHubFederatedLoginStep, "Also add `permissions: id-token: write` to the workflow"
-	if isTerraform {
-		followUp += " and `ARM_USE_OIDC: \"true\"` to the job env"
-	}
-	if authType == AuthTypeClientCredentials {
-		step, followUp = gitHubClientCredentialsLoginStep, ""
-		if isTerraform {
-			followUp = "Also remove `ARM_USE_OIDC` and add " +
-				"`ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}` to the provision and deploy step env"
-		}
-	}
-
 	lines := []string{
 		output.WithWarningFormat("azd didn't change your existing workflow. " +
 			"If azd generated it, replace its Azure login step with:"),
-		step,
 	}
-	if followUp != "" {
-		lines = append(lines, followUp+".")
+	if authType == AuthTypeClientCredentials {
+		lines = append(lines, gitHubClientCredentialsLoginStep)
+		if isTerraform {
+			lines = append(lines, "For Terraform, also remove `ARM_USE_OIDC` and add "+
+				"`ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}` to the provision and deploy step env.")
+		}
+	} else {
+		lines = append(lines, gitHubFederatedLoginStep, "Also set the workflow permissions to:", gitHubFederatedPermissions)
+		if isTerraform {
+			lines = append(lines, "For Terraform, also add `ARM_USE_OIDC: \"true\"` to the job env and remove "+
+				"`ARM_CLIENT_SECRET` from the provision and deploy step env. You can keep the repository secret.")
+		}
 	}
 	lines = append(lines, "For custom workflows, such as ones using azure/login, make the equivalent change.")
 	return strings.Join(lines, "\n")

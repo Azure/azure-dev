@@ -1320,10 +1320,16 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 			wantReminder:     true,
 		},
 		{
-			name:       "failed switch keeps managed identity",
+			name:       "failed upload then unflagged retry",
 			flag:       string(AuthTypeClientCredentials),
-			env:        msiEnv,
 			failUpload: true,
+		},
+		{
+			name:         "failed switch then unflagged retry",
+			flag:         string(AuthTypeClientCredentials),
+			env:          msiEnv,
+			failUpload:   true,
+			wantReminder: true, // the failed run generated the workflow, so the retry sees it as existing
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1347,10 +1353,11 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 				return strings.Contains(cmd, "variable set")
 			}).Respond(exec.NewRunResult(0, "", ""))
 			var secrets []string
+			fail := tc.failUpload
 			mc.CommandRunner.When(func(_ exec.RunArgs, cmd string) bool {
 				return strings.Contains(cmd, "secret set")
 			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				if tc.failUpload {
+				if fail {
 					return exec.NewRunResult(1, "", "HTTP 403"), errors.New("exit status 1")
 				}
 				name := args.Args[len(args.Args)-1]
@@ -1397,9 +1404,13 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 			})
 			if tc.failUpload {
 				require.Error(t, err)
-				assert.Equal(t, "msi-id", env.Getenv(AzurePipelineMsiResourceId))
-				assert.Empty(t, env.Getenv(AzurePipelineAuthTypeEnvVarName))
-				return
+				assert.Equal(t, tc.env[AzurePipelineMsiResourceId], env.Getenv(AzurePipelineMsiResourceId))
+				assert.Equal(t, string(AuthTypeClientCredentials), env.Getenv(AzurePipelineAuthTypeEnvVarName))
+				fail = false
+				pm.args.PipelineAuthTypeName = ""
+				_, err = pm.Configure(t.Context(), "test", &project.Infra{
+					Options: provisioning.Options{Provider: provisioning.Terraform},
+				})
 			}
 			require.NoError(t, err)
 			require.ElementsMatch(t, []string{"AZURE_CREDENTIALS", "ARM_CLIENT_SECRET"}, secrets)

@@ -11,7 +11,7 @@ The Azure Developer CLI provides the command `azd pipeline config` to automatica
 
 When `azd pipeline config` generates a GitHub Actions workflow, its Azure login step uses the authentication method you selected in the prompt or with `--auth-type`. If you change methods, update the login step in your existing workflow; `azd` does not rewrite it. For Terraform with client credentials, pass the `ARM_CLIENT_SECRET` repository secret to the provision step as `ARM_CLIENT_SECRET`.
 
-`azd` saves the method in the environment's `AZURE_PIPELINE_AUTH_TYPE` value, so rerunning `azd pipeline config` without `--auth-type` keeps the same method. To switch a pipeline that uses a managed identity to client credentials, rerun with `--auth-type client-credentials`; `azd` uses a service principal and clears `AZURE_PIPELINE_MSI_CLIENT_ID` from the environment.
+`azd` saves the method in the environment's `AZURE_PIPELINE_AUTH_TYPE` value, so rerunning `azd pipeline config` without `--auth-type` keeps the same method, including after a run that failed partway. To switch a pipeline that uses a managed identity to client credentials, rerun with `--auth-type client-credentials`; `azd` uses a service principal and clears `AZURE_PIPELINE_MSI_CLIENT_ID` from the environment once the switch succeeds.
 
 Each time you configure client credentials, `azd` adds a new client secret to the app registration, including on reruns. It does not revoke existing secrets, which other pipelines or workloads may still use.
 

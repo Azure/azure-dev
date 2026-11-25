@@ -301,8 +301,10 @@ func (pm *PipelineManager) Configure(
 	}
 
 	// An explicit --auth-type client-credentials switches a managed identity pipeline to a service principal.
-	switchingFromMsi := usingMsi &&
-		PipelineAuthType(strings.TrimSpace(pm.args.PipelineAuthTypeName)) == AuthTypeClientCredentials
+	// A saved client-credentials method alongside a managed identity means an earlier switch didn't finish.
+	authTypeArg := PipelineAuthType(strings.TrimSpace(pm.args.PipelineAuthTypeName))
+	switchingFromMsi := usingMsi && (authTypeArg == AuthTypeClientCredentials ||
+		authTypeArg == "" && pm.env.Getenv(AzurePipelineAuthTypeEnvVarName) == string(AuthTypeClientCredentials))
 	if switchingFromMsi {
 		usingMsi = false
 		pm.console.Message(ctx, "Switching the pipeline from a managed identity to client credentials.")
@@ -414,8 +416,10 @@ func (pm *PipelineManager) Configure(
 		}
 		pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 
-		// Set in .env to be retrieved for any additional runs
+		// Set in .env to be retrieved for any additional runs. Saving the method now lets a rerun without
+		// --auth-type finish it if credential configuration fails.
 		pm.env.DotenvSet(AzurePipelineClientIdEnvVarName, servicePrincipal.AppId)
+		pm.env.DotenvSet(AzurePipelineAuthTypeEnvVarName, string(authType))
 		if err := pm.envManager.Save(ctx, pm.env); err != nil {
 			return result, fmt.Errorf("failed to save environment: %w", err)
 		}
@@ -657,17 +661,15 @@ func (pm *PipelineManager) Configure(
 			return result, err
 		}
 
-		// Save the method so reruns without --auth-type keep it.
-		if usingMsi {
-			pm.env.DotenvDelete(AzurePipelineAuthTypeEnvVarName)
-		} else {
-			pm.env.DotenvSet(AzurePipelineAuthTypeEnvVarName, string(authType))
-			if switchingFromMsi {
+		if usingMsi || switchingFromMsi {
+			if usingMsi {
+				pm.env.DotenvDelete(AzurePipelineAuthTypeEnvVarName)
+			} else {
 				pm.env.DotenvDelete(AzurePipelineMsiResourceId)
 			}
-		}
-		if err := pm.envManager.Save(ctx, pm.env); err != nil {
-			return result, fmt.Errorf("failed to save environment: %w", err)
+			if err := pm.envManager.Save(ctx, pm.env); err != nil {
+				return result, fmt.Errorf("failed to save environment: %w", err)
+			}
 		}
 
 		// azd doesn't rewrite an existing GitHub workflow. Azure DevOps uses the service connection instead.

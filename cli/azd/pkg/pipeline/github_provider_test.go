@@ -157,6 +157,9 @@ func Test_gitHubWorkflowAuthReminder_matchesTemplate(t *testing.T) {
 			require.NoError(t, err)
 			require.Contains(t, normalizeEOL(content), step)
 			require.Contains(t, gitHubWorkflowAuthReminder(authType, false), step)
+			if authType == AuthTypeFederated {
+				require.Contains(t, normalizeEOL(content), gitHubFederatedPermissions)
+			}
 		})
 	}
 }

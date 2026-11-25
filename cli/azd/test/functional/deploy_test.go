@@ -362,16 +362,20 @@ func Test_CLI_Deploy_StorageStaticWebsite(t *testing.T) {
 	prober := newServiceHealthProber(httpClient, session)
 	indexPath := filepath.Join(dir, "src", "index.html")
 
+	// Write the page from the test instead of relying on the sample file, so git line-ending conversion (CRLF on
+	// Windows checkouts) cannot change the content compared against the recording.
+	v1 := "<!DOCTYPE html>\n<html><body><h1>azd storage static website v1</h1></body></html>\n"
+	//nolint:gosec // G703: indexPath is inside the test temp dir
+	require.NoError(t, os.WriteFile(indexPath, []byte(v1), osutil.PermissionFile))
+
 	t.Log("Deploying static website (enables static website hosting)")
 	deploy()
 
-	v1, err := os.ReadFile(indexPath)
-	require.NoError(t, err)
-	require.NoError(t, prober.probe(t, ctx, websiteURL+"/", string(v1)))
+	require.NoError(t, prober.probe(t, ctx, websiteURL+"/", v1))
 	require.NoError(t, prober.probe(t, ctx, websiteURL+"/old.txt", "removed on redeploy\n"))
 
 	t.Log("Redeploying updated static website")
-	v2 := strings.Replace(string(v1), "v1", "v2", 1)
+	v2 := strings.Replace(v1, "v1", "v2", 1)
 	//nolint:gosec // G703: indexPath is inside the test temp dir
 	require.NoError(t, os.WriteFile(indexPath, []byte(v2), osutil.PermissionFile))
 	require.NoError(t, os.Remove(filepath.Join(dir, "src", "old.txt")))

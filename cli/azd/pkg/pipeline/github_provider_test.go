@@ -5,6 +5,8 @@ package pipeline
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -135,6 +137,26 @@ func Test_credentialNameSanitizer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := credentialNameSanitizer.ReplaceAllString(tt.input, "-")
 			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func Test_gitHubWorkflowAuthReminder_matchesTemplate(t *testing.T) {
+	for authType, step := range map[PipelineAuthType]string{
+		AuthTypeFederated:         gitHubFederatedLoginStep,
+		AuthTypeClientCredentials: gitHubClientCredentialsLoginStep,
+	} {
+		t.Run(string(authType), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "azure-dev.yml")
+			require.NoError(t, generatePipelineDefinition(path, projectProperties{
+				CiProvider: ciProviderGitHubActions,
+				BranchName: "main",
+				AuthType:   authType,
+			}))
+			content, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Contains(t, normalizeEOL(content), step)
+			require.Contains(t, gitHubWorkflowAuthReminder(authType, false), step)
 		})
 	}
 }

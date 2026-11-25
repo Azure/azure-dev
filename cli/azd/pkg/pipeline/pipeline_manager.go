@@ -673,12 +673,7 @@ func (pm *PipelineManager) Configure(
 		// azd doesn't rewrite an existing GitHub workflow. Azure DevOps uses the service connection instead.
 		if previousAuthType != "" && previousAuthType != authType &&
 			pm.ciProviderType == ciProviderGitHubActions && pm.configOptions.pipelineFileExisted {
-			method := "federated credentials"
-			if authType == AuthTypeClientCredentials {
-				method = "client credentials"
-			}
-			pm.console.Message(ctx, output.WithWarningFormat(
-				"azd didn't change your existing workflow. Update its Azure login step to use %s.", method))
+			pm.console.Message(ctx, gitHubWorkflowAuthReminder(authType, usesTerraform(infra.Options)))
 		}
 	}
 

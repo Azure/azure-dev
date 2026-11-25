@@ -36,7 +36,7 @@ func TestDeployCommandsPauseProgressTableDuringPrompt(t *testing.T) {
 				t, command, serviceEventMessageFormatter(output.NoneFormat), singleServiceProject, nil,
 			)
 
-			var beforePrompt, duringPrompt, afterPrompt string
+			var beforePrompt, duringPrompt string
 			fixture.manager.deploy = func(context.Context, string) error {
 				// Let the ticker draw the table at least once.
 				time.Sleep(1500 * time.Millisecond)
@@ -51,12 +51,13 @@ func TestDeployCommandsPauseProgressTableDuringPrompt(t *testing.T) {
 				duringPrompt = fixture.consoleOutput.String()
 
 				endInteraction()
-				afterPrompt = fixture.consoleOutput.String()
 				return nil
 			}
 
 			_, err := fixture.run(t.Context())
 			require.NoError(t, err)
+			// The ticker has stopped once the command returns, so the buffer is safe to read.
+			afterPrompt := fixture.consoleOutput.String()
 
 			require.Contains(t, beforePrompt, "Service", "the table must render before the prompt")
 			require.Regexp(t, eraseTableRe, beforePrompt, "the table must be erased when the prompt starts")

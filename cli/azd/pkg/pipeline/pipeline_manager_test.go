@@ -4,6 +4,7 @@
 package pipeline
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -1559,6 +1560,7 @@ func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {
 	tests := []struct {
 		name                 string
 		authTypeArg          string
+		ciProvider           ciProviderType
 		savedAuthType        string
 		usingMsi             bool
 		usingAppRegistration bool
@@ -1652,10 +1654,44 @@ func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {
 			},
 		},
 		{
-			name:                 "existing service principal skips prompt",
+			name:                 "existing service principal skips prompt on GitHub",
+			ciProvider:           ciProviderGitHubActions,
 			usingAppRegistration: true,
 			want: pipelineAuthSelection{
 				usingAppRegistration: true,
+			},
+		},
+		{
+			name:                 "legacy Azure DevOps service principal prompts for client credentials",
+			ciProvider:           ciProviderAzureDevOps,
+			usingAppRegistration: true,
+			selectOption:         "Client Credentials (SP + Secret)",
+			wantPrompted:         true,
+			wantOptionCount:      2,
+			want: pipelineAuthSelection{
+				usingAppRegistration: true,
+				authType:             AuthTypeClientCredentials,
+			},
+		},
+		{
+			name:                 "legacy Azure DevOps service principal defaults to federated",
+			ciProvider:           ciProviderAzureDevOps,
+			usingAppRegistration: true,
+			wantPrompted:         true,
+			wantOptionCount:      2,
+			want: pipelineAuthSelection{
+				usingAppRegistration: true,
+				authType:             AuthTypeFederated,
+			},
+		},
+		{
+			name:                 "saved Azure DevOps method skips prompt",
+			ciProvider:           ciProviderAzureDevOps,
+			savedAuthType:        string(AuthTypeClientCredentials),
+			usingAppRegistration: true,
+			want: pipelineAuthSelection{
+				usingAppRegistration: true,
+				authType:             AuthTypeClientCredentials,
 			},
 		},
 	}
@@ -1665,23 +1701,26 @@ func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {
 			mockContext := mocks.NewMockContext(t.Context())
 			prompted := false
 			mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-				return options.Message == "Select how to authenticate the pipeline to Azure:"
+				return options.Message == "Select how to authenticate the pipeline to Azure:" ||
+					options.Message == "Select the authentication method for this Azure DevOps pipeline:"
 			}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 				prompted = true
 				require.True(t, options.ShowOptionDetailsBelow)
 				require.Len(t, options.Options, tt.wantOptionCount)
 				require.Len(t, options.OptionDetails, tt.wantOptionCount)
+				selectOption := cmp.Or(tt.selectOption, options.DefaultValue.(string))
 				for i, opt := range options.Options {
-					if opt == tt.selectOption {
+					if opt == selectOption {
 						return i, nil
 					}
 				}
-				return 0, fmt.Errorf("option %q not found in %v", tt.selectOption, options.Options)
+				return 0, fmt.Errorf("option %q not found in %v", selectOption, options.Options)
 			})
 
 			pm := &PipelineManager{
-				args:    &PipelineManagerArgs{PipelineAuthTypeName: tt.authTypeArg},
-				console: mockContext.Console,
+				args:           &PipelineManagerArgs{PipelineAuthTypeName: tt.authTypeArg},
+				console:        mockContext.Console,
+				ciProviderType: tt.ciProvider,
 				env: environment.NewWithValues("dev", map[string]string{
 					AzurePipelineAuthTypeEnvVarName: tt.savedAuthType,
 				}),

@@ -1552,6 +1552,16 @@ func (pm *PipelineManager) resolvePipelineAuth(
 		authType = PipelineAuthType(strings.TrimSpace(pm.args.PipelineAuthTypeName))
 	}
 
+	const (
+		optionMsi       = "Federated Managed Identity (MSI + OIDC) (Recommended)"
+		optionOidc      = "Federated Service Principal (SP + OIDC)"
+		optionClientSec = "Client Credentials (SP + Secret)"
+		optionSkip      = "Skip authentication setup"
+
+		detailOidc      = "Uses a Microsoft Entra app registration. No client secret to store."
+		detailClientSec = "A fallback for pipelines that can't use OIDC. Stores an expiring client secret."
+	)
+
 	if usingMsi || usingAppRegistration {
 		if usingAppRegistration && authType == "" {
 			saved, err := pm.savedPipelineAuthType()
@@ -1560,6 +1570,30 @@ func (pm *PipelineManager) resolvePipelineAuth(
 			}
 			authType = saved
 		}
+
+		// Azure DevOps reruns update the service connection in place, so ask once for environments configured
+		// before the method was saved instead of silently switching it to federation.
+		if usingAppRegistration && authType == "" && pm.ciProviderType == ciProviderAzureDevOps {
+			options := []string{optionOidc, optionClientSec}
+			selected, err := pm.console.Select(ctx, input.ConsoleOptions{
+				Message:                "Select the authentication method for this Azure DevOps pipeline:",
+				Options:                options,
+				OptionDetails:          []string{detailOidc, detailClientSec},
+				ShowOptionDetailsBelow: true,
+				DefaultValue:           optionOidc,
+				Help: "If you're not sure, check Project settings > Service connections > azconnection. " +
+					"\"Workload identity federation\" means federated, and " +
+					"\"Service principal (secret)\" means client credentials.",
+			})
+			if err != nil {
+				return pipelineAuthSelection{}, fmt.Errorf("prompting for authentication type: %w", err)
+			}
+			authType = AuthTypeFederated
+			if options[selected] == optionClientSec {
+				authType = AuthTypeClientCredentials
+			}
+		}
+
 		return pipelineAuthSelection{
 			usingMsi:             usingMsi,
 			usingAppRegistration: usingAppRegistration,
@@ -1575,27 +1609,17 @@ func (pm *PipelineManager) resolvePipelineAuth(
 	}
 
 	log.Printf("Authentication mode has not been set. Prompt user if they want to set it up now.")
-	const (
-		optionMsi       = "Federated Managed Identity (MSI + OIDC) (Recommended)"
-		optionOidc      = "Federated Service Principal (SP + OIDC)"
-		optionClientSec = "Client Credentials (SP + Secret)"
-		optionSkip      = "Skip authentication setup"
-	)
-
 	options := []string{
 		optionMsi,
 		optionOidc,
 	}
 	optionDetails := []string{
 		"Creates or reuses a user-assigned managed identity. No client secret to store.",
-		"Uses a Microsoft Entra app registration. No client secret to store.",
+		detailOidc,
 	}
 	if authType != AuthTypeFederated {
 		options = append(options, optionClientSec)
-		optionDetails = append(
-			optionDetails,
-			"A fallback for pipelines that can't use OIDC. Stores an expiring client secret.",
-		)
+		optionDetails = append(optionDetails, detailClientSec)
 	}
 	options = append(options, optionSkip)
 	optionDetails = append(

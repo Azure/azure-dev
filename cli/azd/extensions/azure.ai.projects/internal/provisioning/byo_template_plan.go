@@ -716,20 +716,21 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	resolver.owningSubscriptions[strings.ToLower(p.subID)] = true
 	resolver.bindResources(&plan, env)
 	_, missing := planString(env.parameter("resourceGroupName"))
+	unresolvedScope := missing != ""
 	if resolver.account != nil {
-		missing = resolver.account.env.scope.missing
+		unresolvedScope = resolver.account.env.scope.missing != ""
 		if subscription := resolver.account.env.scope.subscriptionID; subscription != "" {
 			plan.SubscriptionID = subscription
 			resolver.owningSubscriptions[strings.ToLower(subscription)] = true
 		} else {
-			missing = strings.Trim(missing+"; actual Foundry account subscription is not resolved", "; ")
+			unresolvedScope = true
 			plan.SkippedChecks = append(plan.SkippedChecks, onboarding.SkippedCheck("resource-refs",
-				resolver.account.path, "Foundry account subscription owning tenant", missing))
+				resolver.account.path, "Subscription"))
 		}
 	}
-	if missing != "" {
+	if unresolvedScope {
 		plan.SkippedChecks = append(plan.SkippedChecks, onboarding.SkippedCheck("resource-plan", env.path,
-			"actual Foundry target resource-group scope", "actual Foundry target resource-group selection: "+missing))
+			"Foundry account"))
 	}
 	resolver.bindNetwork(&plan)
 	plan.OwningSubscriptions = append(plan.OwningSubscriptions, slices.Sorted(maps.Keys(resolver.owningSubscriptions))...)

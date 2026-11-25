@@ -124,7 +124,7 @@ func TestBYOKubeletBindingFailureBeforeRegistryWrites(t *testing.T) {
 					case "missing actual identity":
 						principal = offlineKubeletObjectID
 						fake.kubeletID = ""
-						expectedError = "aks-identity"
+						expectedError = "Kubelet identity principal could not be verified"
 					}
 					source.parameters["kubeletObjectId"] = map[string]any{"value": principal}
 					if external {
@@ -244,12 +244,21 @@ func TestBYOSuppliedUsesEffectiveDeploymentInputs(t *testing.T) {
 				}}
 				source.parameters["AGENTHOSTING"] = map[string]any{"value": "leave undeclared parameters to ARM"}
 			}
-			require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
+			var progress []string
+			require.NoError(t, p.prepareBYO(t.Context(), source, func(message string) {
+				progress = append(progress, message)
+			}))
 			assert.NotContains(t, source.parameters, "agentHosting")
 			if name == "disabled" || name == "undeclared" {
 				assert.Empty(t, fake.requests)
 				assert.NotContains(t, source.parameters, "federatedIdentityRoleDefinitionId")
+				assert.Empty(t, progress)
 			} else {
+				assert.Equal(t, []string{
+					"Checking AKS and supporting resources...",
+					"Checking required permissions...",
+					"Resolving deployment identity and role bindings...",
+				}, byoPreparationStages(progress))
 				assert.Contains(t, fake.requests, "GET "+clusterID)
 				assert.NotContains(t, fake.requests, "GET "+offlineClusterID)
 				assert.Equal(t, map[string]any{"value": suppliedHostingPrincipal}, source.parameters["hostingPrincipalId"])
@@ -431,7 +440,7 @@ func TestBYOCustomTemplateWithoutAgentHosting(t *testing.T) {
 
 				assert.Contains(t, fake.requests, "GET "+customClusterID)
 				if scenario == "preflight failure" {
-					require.ErrorContains(t, err, "aks-version FAIL")
+					require.ErrorContains(t, err, "The running Kubernetes version is below the required minimum")
 					assert.Zero(t, fake.base.writes)
 					assert.Zero(t, fake.base.previews)
 					return

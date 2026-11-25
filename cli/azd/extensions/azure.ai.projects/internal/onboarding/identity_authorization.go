@@ -5,8 +5,9 @@ package onboarding
 
 import (
 	"context"
-	"fmt"
 	"strings"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 )
 
 func (e *AuthorizationEvidence) suppliedIdentityChecks(ctx context.Context, plan Plan, facts Facts) Report {
@@ -23,42 +24,33 @@ func (e *AuthorizationEvidence) suppliedIdentityChecks(ctx context.Context, plan
 			principal, target = plan.Workload, plan.Storage
 		}
 		if missing := principal.Missing + principal.LifecycleMissing; missing != "" {
-			report = append(report, SkippedCheck(grant.checkID, principal.diagnosticScope(),
-				"supplied identity grant requirements", missing))
+			report = append(report, SkippedCheck(grant.checkID, principal.diagnosticScope(), grant.resourceType()))
 			continue
 		}
 		if missing := target.Missing + target.LifecycleMissing; missing != "" {
-			report = append(report, SkippedCheck(grant.checkID, target.diagnosticScope(),
-				"supplied identity role assignment on its dependency", missing))
+			report = append(report, SkippedCheck(grant.checkID, target.diagnosticScope(), grant.resourceType()))
 			continue
 		}
-		check := resourceCheck(grant.checkID, grant.scope,
-			"matching role assignment for supplied identity "+grant.principalID+
-				" and "+grant.roleName+" or an accepted built-in role")
 		if grant.principalID == "" {
-			check.Observed, check.Missing = "supplied identity metadata is unavailable", "verified identity principal ID"
-			report = append(report, check)
+			report = append(report, resourceCheck(grant.checkID, grant.scope, grant.resourceType(),
+				"Managed identity principal could not be verified"))
 			continue
 		}
-		status, observed, cause := e.identityGrantAllows(ctx, grant)
-		check = resourceResult(check, status, observed)
-		check.Cause = cause
-		if check.Status != Pass && check.Status != NotApplicable {
-			check.Missing = "readable applicable role assignment with an accepted role ID and no condition"
-			check.Remediation = "Have the resource administrator configure the supplied identity's required permissions; " +
-				"azd does not repair customer-preexisting grants."
-		}
-		report = append(report, check)
+		report = append(report, e.identityGrantCheck(ctx, grant))
 	}
 	return report
 }
 
-func (e *AuthorizationEvidence) identityGrantAllows(
-	ctx context.Context, grant grantRequest,
-) (Status, string, error) {
+func (e *AuthorizationEvidence) identityGrantCheck(ctx context.Context, grant grantRequest) Check {
+	check := resourceCheck(grant.checkID, grant.scope, grant.resourceType(),
+		grant.roleName+" role assignments could not be read")
 	assignments, err := e.roleAssignments(ctx, grant.scope, false)
 	if err != nil {
-		return Unverified, "supplied identity role assignments cannot be read", err
+		check.Cause = err
+		// Invalid target IDs are input failures, not authorization-read diagnostics.
+		scope, scopeErr := arm.ParseResourceID(grant.scope)
+		check.ShowCause = scopeErr == nil && scope.SubscriptionID != ""
+		return check
 	}
 	for _, assignment := range assignments {
 		p := assignment.Properties
@@ -77,9 +69,8 @@ func (e *AuthorizationEvidence) identityGrantAllows(
 				roleID == "b24988ac-6180-42a0-ab88-20f7382dd24c"
 		}
 		if accepted {
-			return Pass, "found an accepted role assignment without a condition; effective access is not verified", nil
+			return resourceResult(check, Pass)
 		}
 	}
-	return Fail, fmt.Sprintf("no accepted role assignment without a condition for identity %s and role %s",
-		grant.principalID, grant.roleName), nil
+	return resourceResult(check, Fail, "Required "+grant.roleName+" permission is missing or conditional")
 }

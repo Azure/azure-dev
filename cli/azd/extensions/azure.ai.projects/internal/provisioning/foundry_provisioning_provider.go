@@ -119,8 +119,6 @@ type FoundryProvisioningProvider struct {
 	acrRequest                func(context.Context, string, string, string, any) error
 	byoHostingEnabled         bool
 	byoPullPrincipalID        string
-	preflightReport           strings.Builder
-	reportProvisioned         func(string)
 	modelPolicyCheck          func(
 		ctx context.Context,
 		cred azcore.TokenCredential,
@@ -150,11 +148,10 @@ func readProjectFile(projectRoot string) ([]byte, string, error) {
 
 // NewFoundryProvisioningProvider constructs the provider with a live
 // AzdClient. The host calls Initialize before any other method.
-func NewFoundryProvisioningProvider(azdClient *azdext.AzdClient, report func(string)) azdext.ProvisioningProvider {
+func NewFoundryProvisioningProvider(azdClient *azdext.AzdClient) azdext.ProvisioningProvider {
 	return &FoundryProvisioningProvider{
-		azdClient:         azdClient,
-		reportProvisioned: report,
-		modelPolicyCheck:  CheckProjectModelDeploymentsPolicy,
+		azdClient:        azdClient,
+		modelPolicyCheck: CheckProjectModelDeploymentsPolicy,
 	}
 }
 
@@ -1655,9 +1652,6 @@ func (p *FoundryProvisioningProvider) Deploy(
 	}
 	if err := p.verifyDeployedACRAccess(ctx, src); err != nil {
 		return nil, err
-	}
-	if p.reportProvisioned != nil && p.preflightReport.Len() > 0 {
-		p.reportProvisioned(p.preflightReport.String())
 	}
 	progress("Foundry deployment complete")
 	return &azdext.ProvisioningDeployResult{

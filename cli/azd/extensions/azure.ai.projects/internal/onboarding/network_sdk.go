@@ -15,7 +15,7 @@ import (
 func (c *sdkResourceChecker) readNetworkSubnet(ctx context.Context, raw, checkID string) (*armnetwork.Subnet, Report) {
 	id, err := existingResourceID(raw, "Microsoft.Network/virtualNetworks/subnets")
 	if err != nil {
-		check := resourceResult(resourceCheck(checkID, raw, "complete subnet resource ID"), Fail, "invalid subnet ID")
+		check := resourceResult(resourceCheck(checkID, raw, networkResourceType), Fail, "Subnet resource ID is invalid")
 		check.Cause = err
 		return nil, Report{check}
 	}
@@ -24,15 +24,16 @@ func (c *sdkResourceChecker) readNetworkSubnet(ctx context.Context, raw, checkID
 			return armnetwork.NewSubnetsClient(id.SubscriptionID, c.credential, c.options)
 		})
 	if err != nil {
-		return nil, Report{readFailure(checkID, raw, "Microsoft.Network/virtualNetworks/subnets/read", err)}
+		return nil, Report{readFailure(checkID, raw, networkResourceType, "Subnet", err)}
 	}
 	response, err := client.Get(ctx, id.ResourceGroupName, id.Parent.Name, id.Name, nil)
 	if err != nil {
-		return nil, Report{readFailure(checkID, raw, "Microsoft.Network/virtualNetworks/subnets/read", err)}
+		return nil, Report{readFailure(checkID, raw, networkResourceType, "Subnet", err)}
 	}
 	returnedID := resourceValue(response.ID)
-	check := resourceKnown(resourceCheck(checkID, raw, "returned subnet resource ID matches"),
-		returnedID != "", strings.EqualFold(raw, returnedID), "returned subnet resource ID="+returnedID)
+	check := resourceKnown(resourceCheck(checkID, raw, networkResourceType,
+		"Returned subnet resource identity could not be verified"),
+		returnedID != "", strings.EqualFold(raw, returnedID), "Returned subnet does not match the selected resource")
 	if check.Status != Pass {
 		return nil, Report{check}
 	}
@@ -49,17 +50,19 @@ func (c *sdkResourceChecker) readParentNetwork(ctx context.Context, raw string) 
 			return armnetwork.NewVirtualNetworksClient(id.SubscriptionID, c.credential, c.options)
 		})
 	if err != nil {
-		return nil, Report{readFailure("agent-subnet", id.Parent.String(), "Microsoft.Network/virtualNetworks/read", err)}
+		return nil, Report{readFailure("agent-subnet", id.Parent.String(),
+			networkResourceType, "Parent virtual network", err)}
 	}
 	response, err := client.Get(ctx, id.ResourceGroupName, id.Parent.Name, nil)
 	if err != nil {
-		return nil, Report{readFailure("agent-subnet", id.Parent.String(), "Microsoft.Network/virtualNetworks/read", err)}
+		return nil, Report{readFailure("agent-subnet", id.Parent.String(),
+			networkResourceType, "Parent virtual network", err)}
 	}
 	state := ""
 	if response.Properties != nil {
 		state = resourceValue(response.Properties.ProvisioningState)
 	}
-	check := resourceReadiness(id.Parent.String(), resourceValue(response.ID), state, "ARM network configuration")
+	check := resourceReadiness(id.Parent.String(), resourceValue(response.ID), state, networkResourceType)
 	check.ID = "agent-subnet"
 	return &response.VirtualNetwork, Report{check}
 }

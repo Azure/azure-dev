@@ -72,6 +72,7 @@ words:
   - sslmode
   - sslrootcert
   - temurin
+  - testutil
   - typname
   - typnamespace
   - typowner

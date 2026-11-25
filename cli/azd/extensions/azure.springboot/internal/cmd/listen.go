@@ -6,7 +6,10 @@ package cmd
 import (
 	"context"
 
-	"azurespringboot/internal/spring"
+	"azurespringboot/internal/build"
+	"azurespringboot/internal/deploy"
+	"azurespringboot/internal/lifecycle"
+	"azurespringboot/internal/springmodel"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -16,14 +19,14 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 }
 
 func configureExtensionHostWithNoPrompt(host *azdext.ExtensionHost, noPrompt bool) {
-	runtime := spring.NewRuntime(host.Client(), noPrompt)
+	runtime := lifecycle.NewRuntime(host.Client(), noPrompt)
 
 	host.
 		WithFrameworkService("java", func() azdext.FrameworkServiceProvider {
-			return spring.NewJavaFrameworkService(host.Client())
+			return build.NewJavaFrameworkService(host.Client())
 		}).
-		WithServiceTarget(spring.SpringHost, func() azdext.ServiceTargetProvider {
-			return spring.NewServiceTarget(host.Client(), runtime)
+		WithServiceTarget(springmodel.SpringHost, func() azdext.ServiceTargetProvider {
+			return deploy.NewServiceTarget(host.Client(), runtime, runtime.EnvironmentStore())
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return runtime.PreProvision(ctx, args)
@@ -33,8 +36,8 @@ func configureExtensionHostWithNoPrompt(host *azdext.ExtensionHost, noPrompt boo
 		}).
 		WithServiceEventHandler("prebuild", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return runtime.PreBuild(ctx, args)
-		}, &azdext.ServiceEventOptions{Host: spring.SpringHost}).
+		}, &azdext.ServiceEventOptions{Host: springmodel.SpringHost}).
 		WithServiceEventHandler("predeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return runtime.PreDeploy(ctx, args)
-		}, &azdext.ServiceEventOptions{Host: spring.SpringHost})
+		}, &azdext.ServiceEventOptions{Host: springmodel.SpringHost})
 }

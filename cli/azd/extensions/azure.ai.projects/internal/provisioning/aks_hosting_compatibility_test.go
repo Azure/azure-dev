@@ -421,4 +421,32 @@ func TestBYORejectsSynthesizedHostingWhenOnDiskTemplateLacksAgentHosting(t *test
 			assert.Len(t, p.acrPromptedEnv, 2)
 		})
 	}
+
+	t.Run("property loop copy is preserved when active and rejected when zero", func(t *testing.T) {
+		for _, count := range []float64{1, 0} {
+			p, _ := offlineBYOProvider(t)
+			p.armTemplate["resources"] = map[string]any{"foundryAccount": map[string]any{
+				"type": "Microsoft.CognitiveServices/accounts", "name": "aks-cog",
+				"properties": map[string]any{"copy": []any{map[string]any{
+					"name":  "agentHostingConfigurations",
+					"count": count,
+					"input": map[string]any{"hostingType": "ManagedCluster", "clusterResourceId": offlineClusterID},
+				}}},
+			}}
+			src := &templateSource{
+				mode: templateModeBicep, armTemplate: p.armTemplate,
+				parameters: map[string]any{
+					"agentHosting": map[string]any{
+						"value": map[string]any{"enabled": true, "clusterResourceId": offlineClusterID},
+					},
+				},
+			}
+			err := p.validateBYOHostingTemplate(src)
+			if count > 0 {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, "does not support the agentHosting configuration")
+			}
+		}
+	})
 }

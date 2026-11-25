@@ -590,6 +590,9 @@ func (p *FoundryProvisioningProvider) templateSupportsBYOHosting(source *templat
 		}
 		if obj, ok := props.(map[string]any); ok {
 			for name, val := range obj {
+				if strings.EqualFold(name, "copy") && hasPropertyCopyHosting(val) {
+					return true
+				}
 				if !strings.EqualFold(name, "agentHostingConfigurations") || val == nil {
 					continue
 				}
@@ -603,6 +606,19 @@ func (p *FoundryProvisioningProvider) templateSupportsBYOHosting(source *templat
 		}
 	}
 	return false
+}
+
+func hasPropertyCopyHosting(copyVal any) bool {
+	copies, ok := copyVal.([]any)
+	return ok && slices.ContainsFunc(copies, func(item any) bool {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			return false
+		}
+		name, _ := planField(entry, "name").(string)
+		count, isNum := planField(entry, "count").(float64)
+		return strings.EqualFold(name, "agentHostingConfigurations") && (!isNum || count > 0)
+	})
 }
 
 func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(

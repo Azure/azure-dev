@@ -24,7 +24,7 @@ import (
 )
 
 // ExtensionActivator starts installed extensions on demand so the capabilities they provide
-// (currently provisioning providers) become resolvable in commands that do not run the full
+// (provisioning and infrastructure generation providers) become resolvable in commands that do not run the full
 // ExtensionsMiddleware, such as `azd env refresh`. Unlike the middleware, it starts only the
 // extensions declaring a requested capability, and only when that capability is not already
 // resolvable (for example when a parent command's middleware already started every extension).
@@ -67,6 +67,25 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 	providerNames []string,
 	environmentName string,
 ) (cleanup func(), err error) {
+	return a.ensureProviders(ctx, providerNames, environmentName, extensions.ProvisioningProviderCapability)
+}
+
+// EnsureInfraGenerationProviders starts only installed extensions declaring the requested generators.
+// The returned cleanup stops listeners started by this call after generation finishes.
+func (a *ExtensionActivator) EnsureInfraGenerationProviders(
+	ctx context.Context,
+	providerNames []string,
+	environmentName string,
+) (func(), error) {
+	return a.ensureProviders(ctx, providerNames, environmentName, extensions.InfraGenerationProviderCapability)
+}
+
+func (a *ExtensionActivator) ensureProviders(
+	ctx context.Context,
+	providerNames []string,
+	environmentName string,
+	capability extensions.CapabilityType,
+) (cleanup func(), err error) {
 	noop := func() {}
 
 	names := distinctProviderNames(providerNames)
@@ -79,13 +98,13 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 		return noop, err
 	}
 
-	toStart := extensionsForProviders(installed, names)
+	toStart := extensionsForCapabilityProviders(installed, names, capability)
 
 	// Drop extensions whose requested providers are all already resolvable (host already running).
 	toStart = slices.DeleteFunc(toStart, func(ext *extensions.Extension) bool {
 		return !slices.ContainsFunc(names, func(name string) bool {
-			return providerFromExtension(ext, name, extensions.ProvisioningProviderCapability) &&
-				!a.providerResolvable(name)
+			return providerFromExtension(ext, name, capability) &&
+				!a.providerResolvable(name, capability)
 		})
 	})
 
@@ -155,8 +174,9 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 
 		cleanup()
 		return noop, &internal.ErrorWithSuggestion{
-			Err: fmt.Errorf("extension '%s', which provides provisioning provider '%s', failed to start: %w",
-				ext.Id, strings.Join(declaredProviders(ext, names), "', '"), startErr),
+			Err: fmt.Errorf("extension '%s', which provides %s '%s', failed to start: %w",
+				ext.Id, strings.ReplaceAll(string(capability), "-", " "),
+				strings.Join(declaredProviders(ext, names, capability), "', '"), startErr),
 			Suggestion: fmt.Sprintf(
 				"Run with %s for details, or check for an update with %s",
 				output.WithHighLightFormat("--debug"),
@@ -297,9 +317,13 @@ func (a *ExtensionActivator) SuggestExtensionForProvider(ctx context.Context, pr
 	return matches[0].Id, nil
 }
 
-// providerResolvable reports whether the named provisioning provider already resolves from the
+// providerResolvable reports whether the named provider already resolves from the
 // IoC container, meaning the extension registering it is already running.
-func (a *ExtensionActivator) providerResolvable(providerName string) bool {
+func (a *ExtensionActivator) providerResolvable(providerName string, capability extensions.CapabilityType) bool {
+	if capability == extensions.InfraGenerationProviderCapability {
+		var generator project.InfrastructureGenerator
+		return a.serviceLocator.ResolveNamed(project.InfraGenerationProviderKey(providerName), &generator) == nil
+	}
 	var provider provisioning.Provider
 	return a.serviceLocator.ResolveNamed(providerName, &provider) == nil
 }
@@ -366,10 +390,12 @@ func extensionsForCapabilityProviders(
 }
 
 // declaredProviders returns the subset of the requested provider names that the extension declares.
-func declaredProviders(ext *extensions.Extension, providerNames []string) []string {
+func declaredProviders(
+	ext *extensions.Extension, providerNames []string, capability extensions.CapabilityType,
+) []string {
 	declared := make([]string, 0, len(providerNames))
 	for _, name := range providerNames {
-		if providerFromExtension(ext, name, extensions.ProvisioningProviderCapability) {
+		if providerFromExtension(ext, name, capability) {
 			declared = append(declared, name)
 		}
 	}

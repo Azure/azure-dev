@@ -40,6 +40,13 @@ func BuiltInProviderKinds() []ProviderKind {
 	return builtInProviderKinds
 }
 
+func IsBuiltInProvider(kind ProviderKind) bool {
+	// provisioning.NotSpecified gets lumped in here because (in other parts
+	// of azd) we just assume it's the bicep provider.
+	return kind == NotSpecified ||
+		slices.Contains(BuiltInProviderKinds(), kind)
+}
+
 type Mode string
 
 const (

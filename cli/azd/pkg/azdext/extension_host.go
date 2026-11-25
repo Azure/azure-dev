@@ -122,6 +122,7 @@ type ExtensionHost struct {
 	serviceResponses      []serviceEventResponseRegistration
 	betaServiceHandlers   []betaServiceEventRegistration
 	provisioningProviders []ProvisioningProviderRegistration
+	infraGenerators       []BetaInfraGenerationProviderRegistration
 	validationChecks      []ValidationCheckRegistration
 
 	serviceTargetManager            serviceTargetRegistrar
@@ -131,6 +132,7 @@ type ExtensionHost struct {
 	eventManager                    extensionEventManager
 	betaServiceEventManager         betaServiceEventRegistrar
 	provisioningManager             provisioningRegistrar
+	infraGenerationManager          infraGenerationRegistrar
 	validationManager               *ValidationManager
 }
 
@@ -166,6 +168,17 @@ func (er *ExtensionHost) ProvisioningProviders() []ProvisioningProviderRegistrat
 	return slices.Clone(er.provisioningProviders)
 }
 
+// BetaInfraGenerationProviders returns the registered beta infrastructure generators.
+func (er *ExtensionHost) BetaInfraGenerationProviders() []BetaInfraGenerationProviderRegistration {
+	return slices.Clone(er.infraGenerators)
+}
+
+// WithBetaInfraGenerationProvider registers a beta source generator that writes its own files.
+func (er *ExtensionHost) WithBetaInfraGenerationProvider(name string, provider BetaInfraGenerationProvider) *ExtensionHost {
+	er.infraGenerators = append(er.infraGenerators, BetaInfraGenerationProviderRegistration{Name: name, Provider: provider})
+	return er
+}
+
 func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logger) {
 	if er.serviceTargetManager == nil {
 		er.serviceTargetManager = NewServiceTargetManager(extensionId, er.client, brokerLogger)
@@ -191,6 +204,9 @@ func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logg
 	}
 	if er.provisioningManager == nil {
 		er.provisioningManager = NewProvisioningManager(extensionId, er.client, brokerLogger)
+	}
+	if er.infraGenerationManager == nil {
+		er.infraGenerationManager = newInfraGenerationManager(extensionId, er.client, brokerLogger)
 	}
 	if er.validationManager == nil {
 		er.validationManager = NewValidationManager(extensionId, er.client, brokerLogger)
@@ -360,6 +376,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	hasEventHandlers := len(er.projectHandlers) > 0 || len(er.serviceHandlers) > 0 || len(er.serviceResponses) > 0
 	hasBetaServiceEventHandlers := len(er.betaServiceHandlers) > 0
 	hasProvisioningProviders := len(er.provisioningProviders) > 0
+	hasInfraGenerators := len(er.infraGenerators) > 0
 	hasValidationChecks := len(er.validationChecks) > 0
 
 	// Set up defer for cleanup
@@ -384,6 +401,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		}
 		if hasProvisioningProviders {
 			_ = er.provisioningManager.Close()
+		}
+		if hasInfraGenerators {
+			_ = er.infraGenerationManager.Close()
 		}
 		if hasValidationChecks {
 			_ = er.validationManager.Close()
@@ -413,6 +433,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	}
 	if hasProvisioningProviders {
 		receivers = append(receivers, er.provisioningManager)
+	}
+	if hasInfraGenerators {
+		receivers = append(receivers, er.infraGenerationManager)
 	}
 	if hasValidationChecks {
 		receivers = append(receivers, er.validationManager)
@@ -452,7 +475,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	var registrationsWaitGroup sync.WaitGroup
 	totalCount := len(er.serviceTargets) + len(er.frameworkServices) +
 		len(er.projectHandlers) + len(er.serviceHandlers) + len(er.serviceResponses) + len(er.betaServiceHandlers) +
-		len(er.provisioningProviders) + len(er.validationChecks)
+		len(er.provisioningProviders) + len(er.validationChecks) + len(er.infraGenerators)
 	registrationErrChan := make(chan error, totalCount)
 
 	// Register service targets in parallel
@@ -573,6 +596,15 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 				registrationErrChan <- fmt.Errorf(
 					"failed to register provisioning provider '%s': %w", r.Name, err,
 				)
+			}
+		})
+	}
+
+	for _, reg := range er.infraGenerators {
+		r := reg
+		registrationsWaitGroup.Go(func() {
+			if err := er.infraGenerationManager.Register(ctx, r.Name, r.Provider); err != nil {
+				registrationErrChan <- fmt.Errorf("registering infrastructure generator %q: %w", r.Name, err)
 			}
 		})
 	}

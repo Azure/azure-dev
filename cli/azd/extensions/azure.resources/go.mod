@@ -113,5 +113,6 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261012220534-4341edf3f941 // indirect
 )
 
-// Use the new environment/constants package until it is included in an SDK release.
+// Use the local azd SDK until a published release includes both the
+// environment/constants package and the beta infrastructure generation API.
 replace github.com/azure/azure-dev/cli/azd => ../..

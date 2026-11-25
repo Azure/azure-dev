@@ -135,7 +135,7 @@ func (d *azureModuleDeployer) Deploy(
 		return nil, fmt.Errorf("compiling service Bicep module: %w", nonDisclosureError(err))
 	}
 	var template map[string]any
-	if err := json.Unmarshal([]byte(packaging.Compiled), &template); err != nil {
+	if err := json.Unmarshal([]byte(build.Compiled), &template); err != nil {
 		return nil, fmt.Errorf("decoding compiled service Bicep module: %w", err)
 	}
 

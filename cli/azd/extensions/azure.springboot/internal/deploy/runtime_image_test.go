@@ -165,7 +165,9 @@ type failedRuntimeBuilder struct {
 	directory string
 }
 
-func (b *failedRuntimeBuilder) Build(_ context.Context, context *packaging.StagedContainerContext) (*azdext.Artifact, error) {
+func (b *failedRuntimeBuilder) Build(
+	_ context.Context, context *packaging.StagedContainerContext,
+) (*azdext.Artifact, error) {
 	b.directory = context.Directory()
 	return nil, errors.New("failed to retrieve https://registry-user:registry-password@" +
 		"registry.example/image?sig=token#fragment")

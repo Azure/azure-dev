@@ -52,7 +52,7 @@ services:
 
 This will package everything under the `src/logicapp` folder in a .zip file. Because `function` is used as the host, the exclusions in `.funcignore` are respected and only the relevant files are packaged.
 
-The extension also supports Logic App Standard projects with a .NET 8 or .NET Framework custom code project. For example, if your template has a Logic App Standard project with custom code project following this structure:
+The extension also supports Logic App Standard projects with a .NET 10 or .NET Framework custom code project. For example, if your template has a Logic App Standard project with custom code project following this structure:
 
 ```
 └── src
@@ -85,7 +85,7 @@ services:
 This will first build the custom code project and then package the Logic App Standard artifacts.
 
 > [!NOTE]
-> When using `customCodeProject`, make sure the required build toolchain is installed: .NET 8 SDK for .NET 8 projects, or .NET Framework/MSBuild tools for .NET Framework projects.
+> When using `customCodeProject`, make sure the required build toolchain is installed: .NET 10 SDK for .NET 10 projects, or .NET Framework/MSBuild tools for .NET Framework projects.
 
 - The `project` property contains the root folder of the Logic App Standard project.
 - The `dist` property is the relative path to the folder with the Logic App Standard files that will be packaged.

@@ -16428,6 +16428,74 @@
         "ai",
         "content-understanding"
       ]
+    },
+    {
+      "id": "azure.logicappsstandard",
+      "namespace": "logicappsstandard",
+      "displayName": "Azure Logic Apps Standard",
+      "description": "Extension for packaging Logic Apps Standard projects, including support for custom code projects",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "requiredAzdVersion": ">= 1.28.1",
+          "capabilities": [
+            "framework-service-provider",
+            "metadata"
+          ],
+          "usage": "Use logicappsstandard as language in your service configuration. If your Logic App has a custom code project, configure that path to the .csproj file using the customCodeProject property.",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "91adc3913d3f3bf9b8ea137c1e6ff065f679b25842b76882a08f8855bc172a3d"
+              },
+              "entryPoint": "azure-logicappsstandard-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-logicappsstandard_0.1.0/azure-logicappsstandard-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "73c83924812c15a21f309d1f10b6c6a0c9950ff9c291324eab9e5355f4be6b83"
+              },
+              "entryPoint": "azure-logicappsstandard-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-logicappsstandard_0.1.0/azure-logicappsstandard-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "a919a5b039608b559b250acd543057e2ed07284123d2f681d7ba1cab9be16e0c"
+              },
+              "entryPoint": "azure-logicappsstandard-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-logicappsstandard_0.1.0/azure-logicappsstandard-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "356a5d9f24d08a0731665591d6b9ff678839949e186f4fbc5bd444c2acbd5439"
+              },
+              "entryPoint": "azure-logicappsstandard-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-logicappsstandard_0.1.0/azure-logicappsstandard-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "af90257a488b8c3a2d177b55643b84c49d7e511df6f6b4d2d3a1a1e1a619fba6"
+              },
+              "entryPoint": "azure-logicappsstandard-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-logicappsstandard_0.1.0/azure-logicappsstandard-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "0d92db16b38c4b9fac44cdc0456c526b148c0b58f37cf51bcc11ed8d3f597592"
+              },
+              "entryPoint": "azure-logicappsstandard-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-logicappsstandard_0.1.0/azure-logicappsstandard-windows-arm64.zip"
+            }
+          }
+        }
+      ]
     }
   ]
 }

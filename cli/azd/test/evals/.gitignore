@@ -8,3 +8,6 @@ skills/.external/
 # output from vally_report.go
 eval-experiments-*.md
 eval-results-*.md
+
+# binary produced by go build in this module
+/evals

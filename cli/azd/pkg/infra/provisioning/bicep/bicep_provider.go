@@ -25,8 +25,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v3"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/drone/envsubst"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -1180,7 +1180,7 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 }
 
 // convertPropertyChanges converts Azure SDK's WhatIfPropertyChange to our DeploymentPreviewPropertyChange
-func convertPropertyChanges(changes []*armresources.WhatIfPropertyChange) []provisioning.DeploymentPreviewPropertyChange {
+func convertPropertyChanges(changes []*armdeployments.WhatIfPropertyChange) []provisioning.DeploymentPreviewPropertyChange {
 	if changes == nil {
 		return nil
 	}

@@ -124,10 +124,19 @@ func (s *PromptAgentSettings) Validate() error {
 		missing = append(missing, "projectEndpoint")
 	}
 	if len(missing) > 0 {
+		message := fmt.Sprintf("prompt agent config is missing required fields: %s", strings.Join(missing, ", "))
+		suggestion := "run `azd up` or `azd provision` to populate the Foundry project environment values"
+		if strings.TrimSpace(s.ProjectEndpoint) == "" {
+			return exterrors.Dependency(
+				exterrors.CodeMissingAiProjectEndpoint,
+				message,
+				suggestion,
+			)
+		}
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("prompt agent config is missing required fields: %s", strings.Join(missing, ", ")),
-			"run `azd up` to populate the Foundry project environment values",
+			message,
+			suggestion,
 		)
 	}
 	if err := validateAuthenticatedPromptEndpoint(s.ProjectEndpoint); err != nil {
@@ -186,8 +195,8 @@ func NewPromptAgentClient(
 
 	projectEndpoint := strings.TrimRight(strings.TrimSpace(settings.ProjectEndpoint), "/")
 	if projectEndpoint == "" {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingAiProjectEndpoint,
 			"a Foundry project endpoint is required for prompt agent operations",
 			"run `azd up` to provision a Foundry project",
 		)

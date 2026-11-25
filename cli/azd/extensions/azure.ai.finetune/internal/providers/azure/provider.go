@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"azure.ai.finetune/pkg/models"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v3"
 )
 
 // AzureProvider implements the provider interface for Azure APIs

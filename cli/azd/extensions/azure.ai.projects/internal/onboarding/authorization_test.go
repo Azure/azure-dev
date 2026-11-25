@@ -83,8 +83,12 @@ func TestSuppliedGrantChecksRequireAllSuppliedSelections(t *testing.T) {
 				} else {
 					check := checkWithID(t, report, id)
 					assert.Equal(t, Fail, check.Status)
-					assert.NotEmpty(t, check.Remediation)
-					assert.Contains(t, check.Remediation, "does not repair")
+					role := "Managed Identity Federated Identity Credential Contributor"
+					if id == "workload-blob" {
+						role = "Storage Blob Data Contributor"
+					}
+					assert.Equal(t, []string{"Required " + role + " permission is missing or conditional"},
+						check.FailureReasons)
 				}
 			})
 		}
@@ -95,9 +99,10 @@ func TestIdentityEvidenceHonorsInheritanceConditionsAndPaging(t *testing.T) {
 	grant := grantRequests(suppliedPlan(t), Identity{}, suppliedFacts().WorkloadIdentity)[3]
 	for _, state := range []string{
 		"inherited", "management group", "unrelated", "conditional", "missing", "incomplete", "paged",
-		"null final page", "paged null final page",
+		"null final page", "paged null final page", "invalid target",
 	} {
 		t.Run(state, func(t *testing.T) {
+			current := grant
 			fake := authorizationFake()
 			scope := testGroup
 			if state == "management group" {
@@ -120,22 +125,28 @@ func TestIdentityEvidenceHonorsInheritanceConditionsAndPaging(t *testing.T) {
 			case "paged", "paged null final page":
 				fake.replies["/next-role-page"] = readReply{200, page}
 				page = map[string]any{"value": []any{}, "nextLink": "https://management.azure.com/next-role-page"}
+			case "invalid target":
+				current.scope = "invalid"
 			}
 			fake.replies[strings.ToLower(testStorage+assignmentSuffix)] = readReply{200, page}
 			authorizer := NewAuthorizationEvidence(testCredential{}, fake.options())
-			status, _, err := authorizer.identityGrantAllows(t.Context(), grant)
-			assert.Equal(t, state == "incomplete", err != nil)
-			if err != nil {
+			check := authorizer.identityGrantCheck(t.Context(), current)
+			assert.Equal(t, state == "incomplete" || state == "invalid target", check.Cause != nil)
+			if state == "incomplete" {
+				require.Error(t, check.Cause)
 				report := authorizer.suppliedIdentityChecks(t.Context(), suppliedPlan(t), suppliedFacts())
-				assert.ErrorIs(t, checkWithID(t, report, "workload-blob").Cause, err)
+				assert.ErrorIs(t, checkWithID(t, report, "workload-blob").Cause, check.Cause)
+				assert.Contains(t, report.Err().Error(), "\n\nDetails:\n- "+check.Cause.Error())
+			} else if check.blocks() {
+				assert.NotContains(t, Report{check}.Err().Error(), "\n\nDetails:")
 			}
 			switch state {
 			case "inherited", "management group", "paged", "unrelated", "null final page", "paged null final page":
-				assert.Equal(t, Pass, status)
-			case "incomplete":
-				assert.Equal(t, Unverified, status)
+				assert.Equal(t, Pass, check.Status)
+			case "incomplete", "invalid target":
+				assert.Equal(t, Unverified, check.Status)
 			case "missing", "conditional":
-				assert.Equal(t, Fail, status)
+				assert.Equal(t, Fail, check.Status)
 			}
 		})
 	}
@@ -166,10 +177,15 @@ func TestRoleAssignmentPaginationValidation(t *testing.T) {
 				"value": []any{last}, "nextLink": tt.nextLink,
 			}}
 			evidence := NewAuthorizationEvidence(testCredential{}, fake.options())
-			assignments, err := evidence.readAssignments(t.Context(), testStorage, false)
+			assignments, err := evidence.roleAssignments(t.Context(), testStorage, false)
 			if tt.wantError != "" {
 				require.ErrorContains(t, err, tt.wantError)
 				assert.Nil(t, assignments, "invalid pagination must not expose partial authorization evidence")
+				grant := grantRequests(suppliedPlan(t), Identity{}, suppliedFacts().WorkloadIdentity)[3]
+				check := evidence.identityGrantCheck(t.Context(), grant)
+				require.ErrorIs(t, check.Cause, err)
+				assert.Equal(t, Unverified, check.Status)
+				assert.Contains(t, Report{check}.Err().Error(), "\n\nDetails:\n- "+err.Error())
 			} else {
 				require.NoError(t, err)
 				require.Len(t, assignments, 2)
@@ -190,8 +206,7 @@ func TestAuthorizationReadsAreCachedOnlyWithinOnePass(t *testing.T) {
 		require.NoError(t, report.Err())
 		for _, check := range report {
 			assert.Equal(t, Pass, check.Status)
-			assert.Empty(t, check.Missing)
-			assert.Empty(t, check.Remediation)
+			assert.Empty(t, check.FailureReasons)
 			assert.NoError(t, check.Cause)
 		}
 		assert.Equal(t, pass, fake.count(testCluster+assignmentSuffix),
@@ -202,6 +217,7 @@ func TestAuthorizationReadsAreCachedOnlyWithinOnePass(t *testing.T) {
 }
 
 func TestExistingRoleAssignmentKeysDistinguishConditions(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
 	for _, state := range []string{
 		"missing", "unconditional", "conditional", "unrelated principal", "unrelated role", "inherited scope",
 		"conditional then unconditional", "unconditional then conditional", "paged", "new principal",
@@ -262,18 +278,20 @@ func TestExistingRoleAssignmentKeysDistinguishConditions(t *testing.T) {
 				require.Error(t, err)
 				require.Len(t, report, 1)
 				assert.Equal(t, Fail, report[0].Status)
+				assert.EqualError(t, err, "Workload managed identity does not meet requirements. Review the requirements ("+
+					prerequisitesURL+") and edit your configuration before proceeding.\n"+
+					"- Required Storage Blob Data Contributor role assignment has a condition")
 				for _, detail := range []string{
-					assignmentID, testWorkload, grant.principalID, grant.scope, grant.roleName,
+					assignmentID, testWorkload, grant.principalID, grant.scope,
 					roleID, "container name equals allowed", "2.0", "remove its condition", "different ID conflicts",
 				} {
-					assert.Contains(t, err.Error(), detail)
+					assert.NotContains(t, err.Error(), detail)
 				}
 			case "missing ID":
 				require.ErrorContains(t, err, "conditional role assignment ID is missing")
 			case "credential URL":
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), "https://example.test/path")
-				for _, secret := range []string{"user:password", "sig=secret", "#fragment"} {
+				for _, secret := range []string{"example.test", "user:password", "sig=secret", "#fragment"} {
 					assert.NotContains(t, err.Error(), secret)
 				}
 			default:
@@ -310,17 +328,28 @@ func (s accessStub) Check(context.Context, Plan, Facts) (Report, error) {
 func TestPipelineCollectsMandatoryFailuresAndPreservesServiceErrors(t *testing.T) {
 	cause := errors.New("original resource read error")
 	called := false
+	var stages []string
 	pipeline := Pipeline{
 		Resources: resourceStub{report: Report{{ID: "storage-type", Status: Fail, Mandatory: true, Cause: cause}}},
 		Access:    accessStub{called: &called},
+		BeforeResourceCheck: func() {
+			stages = append(stages, "resources")
+		},
+		BeforeAccessCheck: func() {
+			assert.False(t, called, "permission progress must precede permission checks")
+			stages = append(stages, "permissions")
+		},
 	}
 	_, report, err := pipeline.Preflight(t.Context(), suppliedPlan(t))
 	require.ErrorIs(t, err, cause)
 	assert.True(t, called)
 	assert.Len(t, report, 2)
+	assert.Equal(t, []string{"resources", "permissions"}, stages)
 	called = false
+	stages = nil
 	pipeline.Resources = resourceStub{err: context.Canceled}
 	_, _, err = pipeline.Preflight(t.Context(), suppliedPlan(t))
 	require.ErrorIs(t, err, context.Canceled)
 	assert.False(t, called)
+	assert.Equal(t, []string{"resources"}, stages)
 }

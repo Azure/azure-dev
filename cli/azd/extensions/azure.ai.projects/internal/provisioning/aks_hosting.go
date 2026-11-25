@@ -11,7 +11,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -35,8 +37,6 @@ type byoHostingParameters struct {
 func (p *FoundryProvisioningProvider) prepareBYO(
 	ctx context.Context, source *templateSource, progress grpcbroker.ProgressFunc,
 ) (prepareErr error) {
-	p.preflightReport.Reset()
-	defer func() { prepareErr = p.preflightFailure(prepareErr) }()
 	hosting, err := byoHostingParameter(source)
 	if err != nil {
 		return err
@@ -44,6 +44,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	if !hosting.Enabled {
 		return nil
 	}
+	defer func() { prepareErr = redactBYOPreparationError(prepareErr) }()
 	if include, _ := parameterValue(source, "includeAcr").(bool); include &&
 		!templateDeclaresParameter(source, "acrPullPrincipalId") {
 		return errors.New("the ejected Bicep registry access contract is outdated; " +
@@ -143,14 +144,28 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		}
 		identity.id = resource.ID
 	}
-	pipeline := onboarding.Pipeline{
-		Resources: onboarding.NewResourceChecker(p.credential, p.armClientOptions, evidence),
-		Access:    evidence,
+	resourceProgress := func(detail string) {
+		message := "Checking AKS and supporting resources"
+		if detail != "" {
+			message += ": " + detail
+		}
+		progress(message + "...")
 	}
-	facts, report, preflightErr := pipeline.Preflight(ctx, plan)
-	if err := p.writeBYOPreflight(report, preflightErr, progress); err != nil {
+	pipeline := onboarding.Pipeline{
+		Resources: onboarding.NewResourceChecker(p.credential, p.armClientOptions, evidence, resourceProgress),
+		Access:    evidence,
+		BeforeResourceCheck: func() {
+			resourceProgress("")
+		},
+		BeforeAccessCheck: func() {
+			progress("Checking required permissions...")
+		},
+	}
+	facts, _, err := pipeline.Preflight(ctx, plan)
+	if err != nil {
 		return err
 	}
+	progress("Resolving deployment identity and role bindings...")
 	_, needsKubelet := hostBindings["kubeletObjectId"]
 	if facts.KubeletObjectID == "" && (plan.Cluster.Missing == "" || needsKubelet || includeAcr) {
 		return fmt.Errorf("BYO AKS requires a kubelet principal object ID from preflight")
@@ -213,8 +228,11 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 				*principal = value
 			}
 		}
-		keys, checks, err := evidence.ExistingRoleAssignmentKeys(ctx, plan, grantFacts, federationRoleID)
-		if err := p.writeBYOPreflight(checks, err, progress); err != nil {
+		keys, _, err := evidence.ExistingRoleAssignmentKeys(ctx, plan, grantFacts, federationRoleID)
+		if err != nil {
+			if _, blocked := errors.AsType[*onboarding.BlockedError](err); blocked {
+				return err
+			}
 			return fmt.Errorf("resolve existing BYO AKS role assignments: %w", err)
 		}
 		resolvedBindings["byoAksExistingRoleAssignmentKeys"] = keys
@@ -226,57 +244,58 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	return nil
 }
 
-func (p *FoundryProvisioningProvider) writeBYOPreflight(
-	report onboarding.Report, preflightErr error, progress grpcbroker.ProgressFunc,
-) error {
-	var output strings.Builder
-	if err := report.Write(&output); err != nil {
-		return errors.Join(preflightErr, err)
-	}
-	if output.Len() > 0 {
-		p.preflightReport.WriteString(output.String())
-		if preflightErr != nil {
-			progress("BYO AKS preflight checks failed")
-		} else {
-			progress("BYO AKS preflight checks completed")
+// Terminal controls delimit URLs in OSC8 hyperlinks and must not be consumed by URL parsing.
+var byoErrorURLPattern = regexp.MustCompile(`(?i)https?://[^\s<>"\x00-\x1f\x7f-\x9f]+`)
+
+func redactBYOErrorMessage(message string) string {
+	return byoErrorURLPattern.ReplaceAllStringFunc(message, func(raw string) string {
+		endpoint, err := url.Parse(raw)
+		if err != nil {
+			return "[redacted URL]"
 		}
-	}
-	return preflightErr
+		endpoint.User, endpoint.RawQuery, endpoint.Fragment = nil, "", ""
+		endpoint.ForceQuery = false
+		return endpoint.String()
+	})
 }
 
-func (p *FoundryProvisioningProvider) preflightFailure(err error) error {
-	if err == nil || p.preflightReport.Len() == 0 {
+func redactBYOPreparationError(err error) error {
+	if err == nil {
+		return nil
+	}
+	message := redactBYOErrorMessage(err.Error())
+	wire := azdext.WrapError(err)
+	if message == err.Error() && wire.GetMessage() == message {
 		return err
 	}
-	message := onboarding.RedactDiagnostic(err.Error()) +
-		"\n\nBYO-AKS preflight report:\n" + p.preflightReport.String()
-	wire := azdext.WrapError(err)
+	// The SDK prefers structured messages over outer Error() text; redact a classified copy, not the shared cause.
+	wire.Message = message
 	var classified error
 	if wire.GetOrigin() != azdext.ErrorOrigin_ERROR_ORIGIN_UNSPECIFIED {
 		classified = azdext.UnwrapError(wire)
 	}
-	if value, ok := errors.AsType[*azdext.ServiceError](classified); ok {
+	if original, ok := errors.AsType[*azdext.ToolError](err); ok &&
+		wire.GetOrigin() == azdext.ErrorOrigin_ERROR_ORIGIN_TOOL {
+		value := new(*original)
 		value.Message = message
-	} else if value, ok := errors.AsType[*azdext.LocalError](classified); ok {
-		value.Message = message
-	} else if value, ok := errors.AsType[*azdext.ToolError](classified); ok {
-		if original, ok := errors.AsType[*azdext.ToolError](err); ok {
-			value = new(*original)
-			classified = value
-		}
-		value.Message = message
+		classified = value
 	}
-	return &byoPreflightError{cause: err, classified: classified, message: message}
+	return &byoPreparationError{cause: err, classified: classified, message: message}
 }
 
-type byoPreflightError struct {
+type byoPreparationError struct {
 	cause, classified error
 	message           string
 }
 
-func (e *byoPreflightError) Error() string { return e.message }
+func (e *byoPreparationError) Error() string { return e.message }
 
-func (e *byoPreflightError) Unwrap() []error { return []error{e.classified, e.cause} }
+func (e *byoPreparationError) Unwrap() []error {
+	if e.classified == nil {
+		return []error{e.cause}
+	}
+	return []error{e.classified, e.cause}
+}
 
 func byoARMOptions(options *arm.ClientOptions) *arm.ClientOptions {
 	var result arm.ClientOptions

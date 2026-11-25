@@ -90,7 +90,7 @@ func testGeneratedProjectPostprovision(t *testing.T, selection string) {
 		if request.URL.Host == "management.azure.com" {
 			assert.True(t, strings.HasPrefix(request.URL.Path,
 				"/subscriptions/sub/resourceGroups/group/providers/Microsoft.CognitiveServices/accounts/foundry/"))
-			assert.Equal(t, "2025-06-01", request.URL.Query().Get("api-version"))
+			assert.Equal(t, "2025-09-01", request.URL.Query().Get("api-version"))
 			switch {
 			case strings.HasSuffix(request.URL.Path, "/models"):
 				rows := []any{}

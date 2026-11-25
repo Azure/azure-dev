@@ -5,10 +5,13 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // deploymentResolver checks for and creates a model deployment. The seam keeps
@@ -58,6 +61,9 @@ func deploymentNode(
 				return nil
 			}
 			if err := resolver.Create(ctx, model); err != nil {
+				if _, ok := errors.AsType[*azdext.LocalError](err); ok {
+					return err
+				}
 				return fmt.Errorf("creating model deployment %q: %w", model, err)
 			}
 			return nil
@@ -68,22 +74,36 @@ func deploymentNode(
 // provisionedDeploymentResolver is the live deploymentResolver. Model
 // deployments for prompt agents are provisioned by azd infra (recorded at init
 // and applied during `azd provision`), so at deploy time the deployment must
-// already exist. This resolver therefore reports every model as existing and
-// never issues a data-plane create, but keeps the seam so the graph can enforce
-// the create-if-missing contract in tests and future live wiring.
-type provisionedDeploymentResolver struct{}
+// already exist. This resolver checks for pending model deployment state
+// and never issues a data-plane create, while keeping the seam so the graph can
+// enforce the create-if-missing contract in tests and future live wiring.
+type provisionedDeploymentResolver struct {
+	graph *promptGraph
+}
 
-func (provisionedDeploymentResolver) Exists(context.Context, string) (bool, error) {
+func (r provisionedDeploymentResolver) Exists(_ context.Context, _ string) (bool, error) {
+	if r.graph != nil && r.graph.env != nil {
+		if hasPendingModelOrProjectProvision(r.graph.env["AI_AGENT_PENDING_PROVISION"]) {
+			return false, nil
+		}
+	}
 	return true, nil
 }
 
+func hasPendingModelOrProjectProvision(raw string) bool {
+	for part := range strings.SplitSeq(raw, ",") {
+		switch strings.TrimSpace(part) {
+		case "model_deployment", "project":
+			return true
+		}
+	}
+	return false
+}
+
 func (provisionedDeploymentResolver) Create(_ context.Context, modelName string) error {
-	// Unreachable while Exists reports true, but returning nil here would let
-	// the deploy graph continue as though the deployment had been created and
-	// wire the agent to a model that does not exist. Fail fast instead.
-	return exterrors.Validation(
-		exterrors.CodeInvalidAgentManifest,
-		fmt.Sprintf("model deployment %q was not found", modelName),
-		"run `azd provision` to create it (model deployments are declared in azure.yaml)",
+	return exterrors.Dependency(
+		exterrors.CodeModelDeploymentNotFound,
+		fmt.Sprintf("model deployment %q has not been provisioned yet", modelName),
+		"run `azd provision` or `azd up` to create the model deployment before deploying the agent",
 	)
 }

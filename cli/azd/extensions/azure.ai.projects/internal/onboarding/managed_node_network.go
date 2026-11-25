@@ -13,7 +13,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 )
 
 // Managed-VNet pools may omit vnetSubnetID. Resolve their subnet through the
@@ -25,15 +25,12 @@ func (c *sdkResourceChecker) nodeSubnetIDs(
 	if pool != nil && pool.Properties != nil && resourceValue(pool.Properties.VnetSubnetID) != "" {
 		return []string{resourceValue(pool.Properties.VnetSubnetID)}, nil
 	}
-	check := resourceCheck("agent-subnet", plan.Cluster.ID,
-		"selected AKS pool Node subnet from cluster-owned node resource group and ARM VMSS network configuration")
-	check.Missing = "cluster nodeResourceGroup, exact managedBy cluster binding, selected pool VMSS and subnet IDs"
-	check.Remediation = "allow resourceGroups/read and virtualMachineScaleSets/read on the AKS node resource group, " +
-		"and virtualNetworks/subnets/read on its node subnet; retain fail-closed validation if evidence is unavailable"
+	check := resourceCheck("agent-subnet", plan.Cluster.ID, networkResourceType,
+		"The selected AKS node pool's node subnet could not be verified")
 	clusterID, err := existingResourceID(plan.Cluster.ID, "Microsoft.ContainerService/managedClusters")
 	if err != nil || cluster == nil || cluster.Properties == nil ||
 		!strings.EqualFold(resourceValue(cluster.ID), plan.Cluster.ID) || pool == nil || pool.Properties == nil {
-		check.Observed = "selected cluster or pool metadata is unavailable or mismatched"
+		check.FailureReasons = []string{"Selected cluster or node pool metadata is unavailable or mismatched"}
 		return nil, Report{check}
 	}
 	poolName := resourceValue(pool.Name)
@@ -41,37 +38,39 @@ func (c *sdkResourceChecker) nodeSubnetIDs(
 	if poolName == "" || strings.ContainsAny(poolName, "/\\?#%{} \t\r\n") ||
 		!strings.EqualFold(resourceValue(pool.ID), plan.Cluster.ID+"/agentPools/"+poolName) ||
 		nodeRG == "" || strings.ContainsAny(nodeRG, "/\\?#%{} \t\r\n") {
-		check.Observed = "selected pool resource ID or cluster nodeResourceGroup is absent or invalid"
+		check.FailureReasons = []string{"Selected node pool identity or cluster node resource group could not be verified"}
 		return nil, Report{check}
 	}
 	scope := "/subscriptions/" + clusterID.SubscriptionID + "/resourceGroups/" + nodeRG
 	groups, err := armresources.NewResourceGroupsClient(clusterID.SubscriptionID, c.credential, c.options)
 	if err != nil {
 		check.Cause = err
+		check.ShowCause = true
 		return nil, Report{check}
 	}
 	group, err := groups.Get(ctx, nodeRG, nil)
 	if err != nil {
-		return nil, Report{managedNodeReadFailure(scope, "Microsoft.Resources/subscriptions/resourceGroups/read", err)}
+		return nil, Report{managedNodeReadFailure(scope, "AKS node resource group", err)}
 	}
 	check.Scope = scope
 	if !strings.EqualFold(resourceValue(group.ID), scope) ||
 		!strings.EqualFold(resourceValue(group.ManagedBy), plan.Cluster.ID) {
-		check.Observed = "node resource group ID/managedBy does not prove association with the selected AKS cluster"
+		check.FailureReasons = []string{"Node resource group ownership by the selected AKS cluster could not be verified"}
 		return nil, Report{check}
 	}
 	sets, err := armcompute.NewVirtualMachineScaleSetsClient(clusterID.SubscriptionID, c.credential, c.options)
 	if err != nil {
 		check.Cause = err
+		check.ShowCause = true
 		return nil, Report{check}
 	}
 	var subnetIDs []string
-	matches := 0
+	matched := false
 	pager := sets.NewListPager(nodeRG, nil)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, Report{managedNodeReadFailure(scope, "Microsoft.Compute/virtualMachineScaleSets/read", err)}
+			return nil, Report{managedNodeReadFailure(scope, "AKS node virtual machine scale set configuration", err)}
 		}
 		for _, set := range page.Value {
 			if set == nil || !strings.EqualFold(resourceValue(set.Tags["aks-managed-poolName"]), poolName) {
@@ -79,29 +78,31 @@ func (c *sdkResourceChecker) nodeSubnetIDs(
 			}
 			ids, err := managedPoolSubnetIDs(set, scope)
 			if err != nil {
-				check.Observed = "selected pool VMSS subnet evidence is incomplete or inconsistent"
+				check.FailureReasons = []string{
+					"Selected node pool's virtual machine scale set subnet configuration is incomplete",
+				}
 				check.Cause = err
+				check.ShowCause = true
 				return nil, Report{check}
 			}
-			matches++
+			matched = true
 			subnetIDs = append(subnetIDs, ids...)
 		}
 	}
-	if matches == 0 {
-		check.Observed = "no VMSS in the cluster-owned node resource group identifies the selected pool"
+	if !matched {
+		check.FailureReasons = []string{"No virtual machine scale set could be associated with the selected AKS node pool"}
 		return nil, Report{check}
 	}
 	slices.Sort(subnetIDs)
 	subnetIDs = slices.Compact(subnetIDs)
-	check = resourceResult(check, Pass, fmt.Sprintf(
-		"node resource group managedBy matches selected cluster; %d selected-pool VMSS network profiles; subnet IDs=%s",
-		matches, strings.Join(subnetIDs, ", ")))
+	check = resourceResult(check, Pass)
 	return subnetIDs, Report{check}
 }
 
-func managedNodeReadFailure(scope, action string, err error) Check {
-	check := readFailure("agent-subnet", scope, action, err)
+func managedNodeReadFailure(scope, operation string, err error) Check {
+	check := readFailure("agent-subnet", scope, networkResourceType, operation, err)
 	check.Status = Unverified
+	check.ShowCause = true
 	return check
 }
 

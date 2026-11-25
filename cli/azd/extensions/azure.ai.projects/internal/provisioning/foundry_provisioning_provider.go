@@ -1741,6 +1741,9 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 	if err != nil {
 		return nil, err
 	}
+	if err := p.validateBYOHostingTemplate(src); err != nil {
+		return nil, err
+	}
 	if err := p.validateACRTemplate(src); err != nil {
 		return nil, err
 	}

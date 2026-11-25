@@ -371,6 +371,29 @@ func byoHostingParameter(source *templateSource) (byoHostingParameters, error) {
 	return hosting, nil
 }
 
+func (p *FoundryProvisioningProvider) validateBYOHostingTemplate(source *templateSource) error {
+	if source.mode == templateModeEmbedded || p.brownfieldEndpoint != "" ||
+		p.synthResult == nil || p.synthResult.Hosting == nil {
+		return nil
+	}
+	if templateDeclaresParameter(source, "agentHosting") {
+		hosting, err := byoHostingParameter(source)
+		if err != nil || !hosting.Enabled || p.templateSupportsBYOHosting(source) {
+			return err
+		}
+	}
+	label := "on-disk Bicep template"
+	if strings.TrimSpace(source.sourcePath) != "" {
+		label = fmt.Sprintf("on-disk Bicep template %s", source.sourcePath)
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidServiceConfig,
+		fmt.Sprintf("%s does not support the agentHosting configuration in azure.yaml", label),
+		"regenerate or update the exported Foundry Bicep templates with AKS hosting support, "+
+			"preserving any custom edits",
+	)
+}
+
 func byoParameterValue(source *templateSource, key string) any {
 	// Malformed explicit envelopes must not enable template-default bindings before ARM validation.
 	for name, parameter := range source.parameters {

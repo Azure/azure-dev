@@ -67,7 +67,9 @@ steps:
       azureSubscription: azconnection
       scriptType: bash
       scriptLocation: inlineScript
+{{- if .FedCredLogIn }}
       keepAzSessionActive: true
+{{- end }}
       inlineScript: |
         azd provision --no-prompt
     env:
@@ -85,7 +87,9 @@ steps:
       azureSubscription: azconnection
       scriptType: bash
       scriptLocation: inlineScript
+{{- if .FedCredLogIn }}
       keepAzSessionActive: true
+{{- end }}
       inlineScript: |
         azd deploy --no-prompt
     env:

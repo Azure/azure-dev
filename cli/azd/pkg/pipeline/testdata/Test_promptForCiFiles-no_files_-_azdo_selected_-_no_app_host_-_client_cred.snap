@@ -30,7 +30,6 @@ steps:
       azureSubscription: azconnection
       scriptType: bash
       scriptLocation: inlineScript
-      keepAzSessionActive: true
       inlineScript: |
         azd provision --no-prompt
     env:
@@ -42,7 +41,6 @@ steps:
       azureSubscription: azconnection
       scriptType: bash
       scriptLocation: inlineScript
-      keepAzSessionActive: true
       inlineScript: |
         azd deploy --no-prompt
     env:

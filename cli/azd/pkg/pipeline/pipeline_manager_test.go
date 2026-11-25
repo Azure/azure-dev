@@ -1501,6 +1501,105 @@ func TestPipelineConfig_FailedMsiSetupClearsSavedMethod(t *testing.T) {
 	assert.False(t, hasAuthType)
 }
 
+// Azure DevOps Configure runs use mock providers so the tests don't depend on the Azure DevOps SDK.
+func TestPipelineConfig_AzdoClientCredentials(t *testing.T) {
+	t.Setenv("AZD_GH_TOOL_PATH", "gh")
+	const reminder = "Remove `keepAzSessionActive: true`"
+	const authPrompt = "Select the authentication method for this Azure DevOps pipeline:"
+	for _, tc := range []struct {
+		name             string
+		flag             string
+		env              map[string]string
+		existingPipeline bool
+		wantPrompts      int
+		wantReminder     bool
+	}{
+		{
+			// Two runs: the legacy prompt picks client credentials, then the unflagged rerun reuses it.
+			name: "legacy prompt then unflagged rerun", existingPipeline: true, wantPrompts: 1,
+		},
+		{
+			name:             "switch from federated with existing pipeline",
+			flag:             string(AuthTypeClientCredentials),
+			env:              map[string]string{AzurePipelineAuthTypeEnvVarName: string(AuthTypeFederated)},
+			existingPipeline: true,
+			wantReminder:     true,
+		},
+		{
+			name: "switch from federated with new pipeline",
+			flag: string(AuthTypeClientCredentials),
+			env:  map[string]string{AzurePipelineAuthTypeEnvVarName: string(AuthTypeFederated)},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			resetAzureYaml(t, filepath.Join(dir, "azure.yaml"))
+			if tc.existingPipeline {
+				createPipelineFiles(t, dir, ciProviderAzureDevOps, 0)
+			}
+			mc := resetContext(dir, t.Context())
+			appName := mockExistingPipelineApp(mc, "new-test-value")
+			mockgraphsdk.RegisterServicePrincipalListMock(mc, http.StatusOK, []graphsdk.ServicePrincipal{
+				{AppId: "app-id", DisplayName: appName, AppOwnerOrganizationId: new("tenant-id")},
+			})
+			mc.CommandRunner.When(func(_ exec.RunArgs, cmd string) bool {
+				return strings.Contains(cmd, "remote get-url origin")
+			}).Respond(exec.NewRunResult(0, "https://dev.azure.com/org/project/_git/repo", ""))
+			prompts := 0
+			mc.Console.WhenSelect(func(o input.ConsoleOptions) bool {
+				return o.Message == authPrompt
+			}).RespondFn(func(o input.ConsoleOptions) (any, error) {
+				prompts++
+				return slices.Index(o.Options, "Client Credentials (SP + Secret)"), nil
+			})
+			mc.Console.WhenConfirm(func(o input.ConsoleOptions) bool {
+				return o.Message == "Add the default azure-dev.yml file?"
+			}).Respond(true)
+			mc.Console.WhenConfirm(func(o input.ConsoleOptions) bool {
+				return strings.Contains(o.Message, "Commit and push")
+			}).Respond(false)
+			env := environment.NewWithValues("test", tc.env)
+			pm, err := createPipelineManager(mc, azdcontext.NewAzdContextWithDirectory(dir), env, &PipelineManagerArgs{
+				PipelineServicePrincipalName: appName,
+				PipelineProvider:             gitHubCode,
+				PipelineRemoteName:           "origin",
+				PipelineAuthTypeName:         tc.flag,
+			})
+			require.NoError(t, err)
+			var secrets []string
+			pm.ciProviderType = ciProviderAzureDevOps
+			pm.scmProvider = &mockScmProvider{}
+			pm.ciProvider = &mockCiProvider{
+				credentialOptionsFn: func(_ context.Context, _ *gitRepositoryDetails, _ provisioning.Options,
+					authType PipelineAuthType, _ *entraid.AzureCredentials) (*CredentialOptions, error) {
+					return &CredentialOptions{EnableClientCredentials: authType == AuthTypeClientCredentials}, nil
+				},
+				configureConnectionFn: func(_ context.Context, _ *gitRepositoryDetails, _ provisioning.Options,
+					authConfig *authConfiguration, _ *CredentialOptions) error {
+					secrets = append(secrets, authConfig.ClientSecret)
+					return nil
+				},
+			}
+
+			runs := 1
+			if tc.wantPrompts > 0 {
+				runs = 2
+			}
+			for range runs {
+				_, err = pm.Configure(t.Context(), "test", &project.Infra{})
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tc.wantPrompts, prompts)
+			require.Len(t, secrets, runs)
+			for _, secret := range secrets {
+				assert.NotEmpty(t, secret)
+			}
+			assert.Equal(t, string(AuthTypeClientCredentials), env.Getenv(AzurePipelineAuthTypeEnvVarName))
+			assert.Equal(t, tc.wantReminder, strings.Contains(strings.Join(mc.Console.Output(), "\n"), reminder))
+		})
+	}
+}
+
 func TestPipelineConfig_NestedProjectWithUnpublishedWorkflow(t *testing.T) {
 	t.Setenv("AZD_GH_TOOL_PATH", "gh")
 	root := t.TempDir()

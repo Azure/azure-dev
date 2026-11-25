@@ -670,10 +670,15 @@ func (pm *PipelineManager) Configure(
 			}
 		}
 
-		// azd doesn't rewrite an existing GitHub workflow. Azure DevOps uses the service connection instead.
-		if previousAuthType != "" && previousAuthType != authType &&
-			pm.ciProviderType == ciProviderGitHubActions && pm.configOptions.pipelineFileExisted {
-			pm.console.Message(ctx, gitHubWorkflowAuthReminder(authType, usesTerraform(infra.Options)))
+		// azd doesn't rewrite an existing pipeline definition. GitHub workflows need a different Azure login step.
+		// Azure DevOps signs in through the service connection, but keepAzSessionActive only works with federation.
+		if previousAuthType != "" && previousAuthType != authType && pm.configOptions.pipelineFileExisted {
+			switch {
+			case pm.ciProviderType == ciProviderGitHubActions:
+				pm.console.Message(ctx, gitHubWorkflowAuthReminder(authType, usesTerraform(infra.Options)))
+			case pm.ciProviderType == ciProviderAzureDevOps && authType == AuthTypeClientCredentials:
+				pm.console.Message(ctx, output.WithWarningFormat(azdoClientCredentialsReminder))
+			}
 		}
 	}
 

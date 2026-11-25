@@ -1985,6 +1985,9 @@ func (p *FoundryProvisioningProvider) Preview(
 //     account, project, and any ACR). Deployments must go first: Azure refuses
 //     to delete an account that still has them, which would roll the RG delete
 //     back. Idempotent: a missing RG is a no-op success.
+//   - A BYO AKS account whose hosting-management identity is in the target
+//     resource group has its projects and account deleted explicitly, with
+//     completion polling, before resource-group deletion removes the identity.
 //   - Purge == true: in addition to deleting the RG, purge each soft-deleted
 //     Cognitive Services account that was inside it. Without --purge the
 //     account stays soft-deleted and Azure refuses to re-create one with the
@@ -2168,6 +2171,10 @@ func (p *FoundryProvisioningProvider) Destroy(
 	var toPurge []purgeableAccount
 	if options.GetPurge() {
 		toPurge = collectPurgeableAccounts(accounts)
+	}
+
+	if err := p.deleteAccountsBeforeHostingIdentities(ctx, progress, accounts, factory.NewClient()); err != nil {
+		return nil, err
 	}
 
 	progress(fmt.Sprintf("Deleting resource group %s...", p.rgName))
@@ -2479,6 +2486,156 @@ func (p *FoundryProvisioningProvider) deleteModelDeployments(
 					return exterrors.ServiceFromAzure(err, exterrors.OpCognitiveDeploymentDelete)
 				}
 			}
+		}
+	}
+	return nil
+}
+
+func (p *FoundryProvisioningProvider) deleteAccountsBeforeHostingIdentities(
+	ctx context.Context,
+	progress grpcbroker.ProgressFunc,
+	accounts []*armcognitiveservices.Account,
+	resourceClient *resources.Client,
+) error {
+	if p.brownfieldEndpoint != "" {
+		return nil
+	}
+	const (
+		apiVersion   = "2026-07-15-preview"
+		identityType = "Microsoft.ManagedIdentity/userAssignedIdentities"
+	)
+	type hostingConfiguration struct {
+		HostingType                         string `json:"hostingType"`
+		HostingManagementIdentityResourceID string `json:"hostingManagementIdentityResourceId"`
+	}
+	for _, account := range accounts {
+		if account == nil || account.Kind == nil || !strings.EqualFold(*account.Kind, "AIServices") ||
+			account.Identity == nil {
+			continue
+		}
+		// The hosting identity must be assigned to the account. Use the live
+		// identity IDs to avoid preview reads for accounts without a same-group identity.
+		sameGroupIdentity := false
+		for resourceID := range account.Identity.UserAssignedIdentities {
+			id, err := arm.ParseResourceID(resourceID)
+			if err == nil && strings.EqualFold(id.ResourceType.String(), identityType) &&
+				strings.EqualFold(id.SubscriptionID, p.subID) && strings.EqualFold(id.ResourceGroupName, p.rgName) {
+				sameGroupIdentity = true
+				break
+			}
+		}
+		if !sameGroupIdentity {
+			continue
+		}
+		if account.ID == nil {
+			return exterrors.Internal(exterrors.CodeInvalidServiceConfig,
+				"listed Foundry account is missing its resource ID")
+		}
+		accountID, err := arm.ParseResourceID(*account.ID)
+		if err != nil || !strings.EqualFold(accountID.ResourceType.String(), "Microsoft.CognitiveServices/accounts") ||
+			!strings.EqualFold(accountID.SubscriptionID, p.subID) ||
+			!strings.EqualFold(accountID.ResourceGroupName, p.rgName) || accountID.Name == "" {
+			return exterrors.Internal(exterrors.CodeInvalidServiceConfig,
+				"listed Foundry account does not identify an account in the target resource group")
+		}
+		// The typed Cognitive Services SDK does not expose agentHostingConfigurations.
+		response, err := resourceClient.GetByID(ctx, accountID.String(), apiVersion, nil)
+		if err != nil {
+			if isNotFound(err) {
+				continue
+			}
+			return exterrors.ServiceFromAzure(err, exterrors.OpCognitiveAccountGet)
+		}
+		if response.Properties == nil {
+			return exterrors.Internal(exterrors.OpCognitiveAccountGet,
+				"Foundry account properties are missing; cannot inspect AKS hosting")
+		}
+		data, err := json.Marshal(response.Properties)
+		if err != nil {
+			return exterrors.Internal(exterrors.OpCognitiveAccountGet,
+				fmt.Sprintf("encode Foundry account properties: %s", err))
+		}
+		var properties struct {
+			AgentHostingConfigurations []hostingConfiguration `json:"agentHostingConfigurations"`
+		}
+		if err := json.Unmarshal(data, &properties); err != nil {
+			return exterrors.Internal(exterrors.OpCognitiveAccountGet,
+				fmt.Sprintf("decode Foundry account hosting: %s", err))
+		}
+		sameGroupHosting := false
+		for _, config := range properties.AgentHostingConfigurations {
+			if !strings.EqualFold(config.HostingType, "ManagedCluster") {
+				continue
+			}
+			id, err := arm.ParseResourceID(config.HostingManagementIdentityResourceID)
+			if err != nil || !strings.EqualFold(id.ResourceType.String(), identityType) ||
+				id.SubscriptionID == "" || id.ResourceGroupName == "" || id.Name == "" {
+				return exterrors.Internal(exterrors.OpCognitiveAccountGet,
+					"Foundry AKS hosting configuration is missing a valid hosting-management identity resource ID")
+			}
+			sameGroupHosting = sameGroupHosting ||
+				strings.EqualFold(id.SubscriptionID, p.subID) && strings.EqualFold(id.ResourceGroupName, p.rgName)
+		}
+		if !sameGroupHosting {
+			continue
+		}
+
+		projectsClient, err := armcognitiveservices.NewProjectsClient(p.subID, p.credential, p.armClientOptions)
+		if err != nil {
+			return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("create Foundry projects client: %s", err))
+		}
+		var projects []*armcognitiveservices.Project
+		pager := projectsClient.NewListPager(p.rgName, accountID.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				if isNotFound(err) {
+					break
+				}
+				return exterrors.ServiceFromAzure(err, exterrors.OpCognitiveProjectList)
+			}
+			projects = append(projects, page.Value...)
+		}
+		// Enumerate all pages before deleting children, then wait for each project
+		// rather than relying on account deletion to cascade through them.
+		for _, project := range projects {
+			if project == nil || project.ID == nil {
+				return exterrors.Internal(exterrors.CodeInvalidServiceConfig,
+					"listed Foundry project is missing its resource ID")
+			}
+			projectID, err := arm.ParseResourceID(*project.ID)
+			if err != nil || projectID.Parent == nil ||
+				!strings.EqualFold(projectID.ResourceType.String(), "Microsoft.CognitiveServices/accounts/projects") ||
+				!strings.EqualFold(projectID.Parent.String(), accountID.String()) || projectID.Name == "" {
+				return exterrors.Internal(exterrors.CodeInvalidServiceConfig,
+					"listed Foundry project does not belong to the account being deleted")
+			}
+			progress(fmt.Sprintf("Deleting Foundry project %s on %s...", projectID.Name, accountID.Name))
+			poller, err := resourceClient.BeginDeleteByID(ctx, projectID.String(), apiVersion, nil)
+			if err != nil {
+				if isNotFound(err) {
+					continue
+				}
+				return exterrors.ServiceFromAzure(err, exterrors.OpCognitiveProjectDelete)
+			}
+			if _, err := pollWithProgress(ctx, poller, progress,
+				fmt.Sprintf("Deleting Foundry project %s (this can take several minutes)", projectID.Name),
+			); err != nil {
+				return exterrors.ServiceFromAzure(err, exterrors.OpCognitiveProjectDelete)
+			}
+		}
+		progress(fmt.Sprintf("Deleting Foundry account %s before its hosting identity...", accountID.Name))
+		poller, err := resourceClient.BeginDeleteByID(ctx, accountID.String(), apiVersion, nil)
+		if err != nil {
+			if isNotFound(err) {
+				continue
+			}
+			return exterrors.ServiceFromAzure(err, exterrors.OpCognitiveAccountDelete)
+		}
+		if _, err := pollWithProgress(ctx, poller, progress,
+			fmt.Sprintf("Deleting Foundry account %s (this can take several minutes)", accountID.Name),
+		); err != nil {
+			return exterrors.ServiceFromAzure(err, exterrors.OpCognitiveAccountDelete)
 		}
 	}
 	return nil

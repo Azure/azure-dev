@@ -1292,9 +1292,39 @@ func mockExistingPipelineApp(mc *mocks.MockContext, newSecret string) string {
 
 func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 	t.Setenv("AZD_GH_TOOL_PATH", "gh")
-	for _, tc := range []struct{ name, flag string }{
-		{"interactive", ""},
-		{"explicit flag", string(AuthTypeClientCredentials)},
+	const reminder = "azd didn't change your existing workflow"
+	msiEnv := map[string]string{AzurePipelineMsiResourceId: "msi-id"}
+	for _, tc := range []struct {
+		name, flag       string
+		env              map[string]string
+		prompt           bool
+		existingSp       bool
+		existingWorkflow bool
+		failUpload       bool
+		wantReminder     bool
+	}{
+		{name: "interactive", prompt: true},
+		{name: "explicit flag", flag: string(AuthTypeClientCredentials)},
+		{
+			name:             "rerun keeps saved method",
+			env:              map[string]string{AzurePipelineAuthTypeEnvVarName: string(AuthTypeClientCredentials)},
+			existingSp:       true,
+			existingWorkflow: true,
+		},
+		{name: "switch from managed identity", flag: string(AuthTypeClientCredentials), env: msiEnv},
+		{
+			name:             "switch from managed identity with existing workflow",
+			flag:             string(AuthTypeClientCredentials),
+			env:              msiEnv,
+			existingWorkflow: true,
+			wantReminder:     true,
+		},
+		{
+			name:       "failed switch keeps managed identity",
+			flag:       string(AuthTypeClientCredentials),
+			env:        msiEnv,
+			failUpload: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -1302,6 +1332,14 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 			mc := resetContext(dir, t.Context())
 			const newSecret = "new-test-value"
 			appName := mockExistingPipelineApp(mc, newSecret)
+			if tc.existingSp {
+				mockgraphsdk.RegisterServicePrincipalListMock(mc, http.StatusOK, []graphsdk.ServicePrincipal{
+					{AppId: "app-id", DisplayName: appName, AppOwnerOrganizationId: new("tenant-id")},
+				})
+			}
+			if tc.existingWorkflow {
+				createPipelineFiles(t, dir, ciProviderGitHubActions, 0)
+			}
 			mc.CommandRunner.When(func(_ exec.RunArgs, cmd string) bool {
 				return strings.Contains(cmd, "remote get-url origin")
 			}).Respond(exec.NewRunResult(0, "https://github.com/test-owner/test-repo.git", ""))
@@ -1312,6 +1350,9 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 			mc.CommandRunner.When(func(_ exec.RunArgs, cmd string) bool {
 				return strings.Contains(cmd, "secret set")
 			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				if tc.failUpload {
+					return exec.NewRunResult(1, "", "HTTP 403"), errors.New("exit status 1")
+				}
 				name := args.Args[len(args.Args)-1]
 				secrets = append(secrets, name)
 				if name == "ARM_CLIENT_SECRET" {
@@ -1321,7 +1362,7 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 				}
 				return exec.NewRunResult(0, "", ""), nil
 			})
-			if tc.flag == "" {
+			if tc.prompt {
 				mc.Console.WhenSelect(func(o input.ConsoleOptions) bool {
 					return slices.Contains(o.Options, "Client Credentials (SP + Secret)")
 				}).RespondFn(func(o input.ConsoleOptions) (any, error) {
@@ -1341,6 +1382,9 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 				"RS_STORAGE_ACCOUNT":            "storage",
 				"RS_CONTAINER_NAME":             "state",
 			})
+			for k, v := range tc.env {
+				env.DotenvSet(k, v)
+			}
 			pm, err := createPipelineManager(mc, azdcontext.NewAzdContextWithDirectory(dir), env, &PipelineManagerArgs{
 				PipelineServicePrincipalName: appName,
 				PipelineProvider:             gitHubCode,
@@ -1351,10 +1395,22 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 			_, err = pm.Configure(t.Context(), "test", &project.Infra{
 				Options: provisioning.Options{Provider: provisioning.Terraform},
 			})
+			if tc.failUpload {
+				require.Error(t, err)
+				assert.Equal(t, "msi-id", env.Getenv(AzurePipelineMsiResourceId))
+				assert.Empty(t, env.Getenv(AzurePipelineAuthTypeEnvVarName))
+				return
+			}
 			require.NoError(t, err)
 			require.ElementsMatch(t, []string{"AZURE_CREDENTIALS", "ARM_CLIENT_SECRET"}, secrets)
-			assert.Contains(t, strings.Join(mc.Console.Output(), "\n"),
-				"https://github.com/test-owner/test-repo/settings/secrets/actions")
+			assert.Equal(t, string(AuthTypeClientCredentials), env.Getenv(AzurePipelineAuthTypeEnvVarName))
+			assert.Empty(t, env.Getenv(AzurePipelineMsiResourceId))
+			out := strings.Join(mc.Console.Output(), "\n")
+			assert.Contains(t, out, "https://github.com/test-owner/test-repo/settings/secrets/actions")
+			assert.Equal(t, tc.wantReminder, strings.Contains(out, reminder))
+			if tc.existingWorkflow {
+				return
+			}
 			yaml, err := os.ReadFile(filepath.Join(dir, ".github", "workflows", "azure-dev.yml"))
 			require.NoError(t, err)
 			assert.Contains(t, string(yaml), "AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}")
@@ -1423,6 +1479,7 @@ func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {
 	tests := []struct {
 		name                 string
 		authTypeArg          string
+		savedAuthType        string
 		usingMsi             bool
 		usingAppRegistration bool
 		selectOption         string
@@ -1479,10 +1536,29 @@ func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {
 			},
 		},
 		{
-			name:        "explicit client-credentials with existing MSI returns error",
-			authTypeArg: string(AuthTypeClientCredentials),
-			usingMsi:    true,
-			wantErr:     "--auth-type client-credentials is not supported with managed identity authentication",
+			name:                 "existing service principal keeps saved client-credentials",
+			savedAuthType:        string(AuthTypeClientCredentials),
+			usingAppRegistration: true,
+			want: pipelineAuthSelection{
+				usingAppRegistration: true,
+				authType:             AuthTypeClientCredentials,
+			},
+		},
+		{
+			name:                 "explicit auth type overrides saved method",
+			authTypeArg:          string(AuthTypeFederated),
+			savedAuthType:        string(AuthTypeClientCredentials),
+			usingAppRegistration: true,
+			want: pipelineAuthSelection{
+				usingAppRegistration: true,
+				authType:             AuthTypeFederated,
+			},
+		},
+		{
+			name:                 "invalid saved auth type returns error",
+			savedAuthType:        "secret",
+			usingAppRegistration: true,
+			wantErr:              `invalid AZURE_PIPELINE_AUTH_TYPE value "secret"`,
 		},
 		{
 			name:            "explicit federated omits client credentials option",
@@ -1526,7 +1602,9 @@ func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {
 			pm := &PipelineManager{
 				args:    &PipelineManagerArgs{PipelineAuthTypeName: tt.authTypeArg},
 				console: mockContext.Console,
-				env:     environment.NewWithValues("dev", map[string]string{AzurePipelineMsiResourceId: "msi-id"}),
+				env: environment.NewWithValues("dev", map[string]string{
+					AzurePipelineAuthTypeEnvVarName: tt.savedAuthType,
+				}),
 			}
 
 			got, err := pm.resolvePipelineAuth(t.Context(), tt.usingMsi, tt.usingAppRegistration)
@@ -1541,63 +1619,6 @@ func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tt.wantPrompted, prompted)
 			require.Equal(t, tt.want, got)
-		})
-	}
-}
-
-func Test_PipelineManager_msiToClientCredentialsSuggestion(t *testing.T) {
-	tests := []struct {
-		name         string
-		dotenv       map[string]string
-		shellValue   string
-		wantContains []string
-		wantMissing  []string
-	}{
-		{
-			name:   "value in selected environment",
-			dotenv: map[string]string{AzurePipelineMsiResourceId: "msi-id"},
-			wantContains: []string{
-				"run `azd env unset AZURE_PIPELINE_MSI_CLIENT_ID -e \"staging (eu)\"`, then rerun " +
-					"`azd pipeline config -e \"staging (eu)\" --auth-type client-credentials`",
-			},
-			wantMissing: []string{"shell or CI"},
-		},
-		{
-			name:       "value inherited from shell",
-			dotenv:     map[string]string{},
-			shellValue: "msi-id",
-			wantContains: []string{
-				"remove AZURE_PIPELINE_MSI_CLIENT_ID from your shell or CI environment, then rerun " +
-					"`azd pipeline config -e \"staging (eu)\" --auth-type client-credentials`",
-			},
-			wantMissing: []string{"azd env unset"},
-		},
-		{
-			name:       "value in both",
-			dotenv:     map[string]string{AzurePipelineMsiResourceId: "msi-id"},
-			shellValue: "msi-id",
-			wantContains: []string{
-				"run `azd env unset AZURE_PIPELINE_MSI_CLIENT_ID -e \"staging (eu)\"` and " +
-					"remove AZURE_PIPELINE_MSI_CLIENT_ID from your shell or CI environment",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(AzurePipelineMsiResourceId, tt.shellValue)
-			if tt.shellValue == "" {
-				require.NoError(t, os.Unsetenv(AzurePipelineMsiResourceId))
-			}
-
-			pm := &PipelineManager{env: environment.NewWithValues("staging (eu)", tt.dotenv)}
-			got := pm.msiToClientCredentialsSuggestion()
-			for _, want := range tt.wantContains {
-				require.Contains(t, got, want)
-			}
-			for _, notWant := range tt.wantMissing {
-				require.NotContains(t, got, notWant)
-			}
 		})
 	}
 }

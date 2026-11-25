@@ -157,17 +157,20 @@ type planScope struct {
 }
 
 type planEnvironment struct {
-	template   map[string]any
-	parameters map[string]func() any
-	scope      planScope
-	path       string
-	deployment any
-	resources  map[string]*planResource
-	variables  map[string]any
-	active     map[string]bool
-	copyIndex  int
-	function   func(string, []string) any
-	walked     bool
+	template       map[string]any
+	parameters     map[string]func() any
+	scope          planScope
+	path           string
+	deployment     any
+	resources      map[string]*planResource
+	variables      map[string]any
+	outputs        map[string]any
+	outputsTracked bool
+	active         map[string]bool
+	copyIndex      int
+	function       func(string, []string) any
+	resolver       *templatePlanResolver
+	walked         bool
 }
 
 func planField(value any, key string) any {
@@ -239,12 +242,20 @@ func (e *planEnvironment) value(raw any) any {
 		return e.evaluate(expression, 0)
 	case map[string]any:
 		result := make(map[string]any, len(value))
+		var keyMissing string
 		for _, key := range slices.Sorted(maps.Keys(value)) {
 			name, missing := planString(e.value(key))
 			if missing != "" {
-				return planUnknown{"object key cannot be resolved: " + missing}
+				if keyMissing == "" {
+					keyMissing = missing
+				}
+				e.value(value[key])
+				continue
 			}
 			result[name] = e.value(value[key])
+		}
+		if keyMissing != "" {
+			return planUnknown{"object key cannot be resolved: " + keyMissing}
 		}
 		return result
 	case []any:
@@ -378,6 +389,10 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 	if name == "if" && len(expression.args) == 3 {
 		condition, missing := planBool(eval(expression.args[0]))
 		if missing != "" {
+			if e.resolver != nil && e.resolver.trackingParameters {
+				eval(expression.args[1])
+				eval(expression.args[2])
+			}
 			return planUnknown{"if condition cannot be resolved: " + missing}
 		}
 		if condition {

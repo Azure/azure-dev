@@ -10,9 +10,7 @@ package onboarding
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/url"
-	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -29,16 +27,15 @@ const (
 
 // Check records a single requirement and its actionable evidence.
 type Check struct {
-	ID          string
-	Scope       string
-	Status      Status
-	Expected    string
-	Observed    string
-	Missing     string
-	Remediation string
-	Warning     string
-	Mandatory   bool
-	Cause       error
+	ID             string
+	Scope          string
+	ResourceType   string
+	Status         Status
+	FailureReasons []string
+	Mandatory      bool
+	Cause          error
+	// ShowCause includes diagnostics when execution or evidence collection could not finish.
+	ShowCause bool
 }
 
 func (c Check) blocks() bool {
@@ -62,43 +59,62 @@ func (r Report) Err() error {
 	return nil
 }
 
-// Write renders evidence to the caller's writer.
-func (r Report) Write(w io.Writer) error {
-	for _, c := range r {
-		if _, err := fmt.Fprintf(w, "%s %s [%s]\n  Expected: %s\n  Observed: %s\n"+
-			"  Missing evidence/permission: %s\n  Remediation: %s\n",
-			c.ID, c.Status, RedactDiagnostic(c.Scope), RedactDiagnostic(c.Expected), RedactDiagnostic(c.Observed),
-			RedactDiagnostic(c.Missing), RedactDiagnostic(c.Remediation)); err != nil {
-			return err
-		}
-		if c.Cause != nil {
-			if _, err := fmt.Fprintf(w, "  Cause: %s\n", RedactDiagnostic(c.Cause.Error())); err != nil {
-				return err
-			}
-		}
-	}
-	for _, c := range r {
-		if c.Warning != "" {
-			if _, err := fmt.Fprintf(w, "WARNING: %s [%s]: %s\n",
-				c.ID, RedactDiagnostic(c.Scope), RedactDiagnostic(c.Warning)); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 // BlockedError identifies the exact checks that prevent Azure writes.
 type BlockedError struct {
 	Checks []Check
 }
 
 func (e *BlockedError) Error() string {
-	var message strings.Builder
-	message.WriteString("BYO-AKS preflight blocked")
+	groups := map[string][]string{}
+	var resourceTypes []string
+	var details []string
 	for _, c := range e.Checks {
-		message.WriteString(fmt.Sprintf("; %s %s [%s]: %s (%s)",
-			c.ID, c.Status, RedactDiagnostic(c.Scope), RedactDiagnostic(c.Observed), RedactDiagnostic(c.Remediation)))
+		if !c.blocks() {
+			continue
+		}
+		resourceType := strings.TrimSpace(c.ResourceType)
+		if resourceType == "" {
+			resourceType = "Resource configuration"
+		}
+		if _, exists := groups[resourceType]; !exists {
+			resourceTypes = append(resourceTypes, resourceType)
+		}
+		reasons := c.FailureReasons
+		if !slices.ContainsFunc(reasons, func(reason string) bool { return strings.TrimSpace(reason) != "" }) {
+			reasons = []string{"A mandatory prerequisite could not be verified"}
+		}
+		for _, reason := range reasons {
+			reason = strings.TrimSpace(reason)
+			if reason == "" {
+				continue
+			}
+			if !slices.Contains(groups[resourceType], reason) {
+				groups[resourceType] = append(groups[resourceType], reason)
+			}
+		}
+		if c.ShowCause && c.Cause != nil {
+			detail := c.Cause.Error()
+			if !slices.Contains(details, detail) {
+				details = append(details, detail)
+			}
+		}
+	}
+	var message strings.Builder
+	for i, resourceType := range resourceTypes {
+		if i > 0 {
+			message.WriteString("\n\n")
+		}
+		fmt.Fprintf(&message, "%s does not meet requirements. Review the %s and edit your configuration before proceeding.",
+			resourceType, prerequisitesLink())
+		for _, reason := range groups[resourceType] {
+			message.WriteString("\n- " + reason)
+		}
+	}
+	if len(details) > 0 {
+		message.WriteString("\n\nDetails:")
+		for _, detail := range details {
+			message.WriteString("\n- " + detail)
+		}
 	}
 	return message.String()
 }
@@ -114,18 +130,10 @@ func (e *BlockedError) Unwrap() []error {
 	return causes
 }
 
-var diagnosticURLPattern = regexp.MustCompile(`(?i)https?://[^\s<>"]+`)
+const prerequisitesURL = "https://aka.ms/byo-aks-onboarding-prerequisites"
 
-// RedactDiagnostic removes URL credentials without discarding service error codes or safe endpoint paths.
-func RedactDiagnostic(message string) string {
-	return diagnosticURLPattern.ReplaceAllStringFunc(message, func(raw string) string {
-		endpoint, err := url.Parse(raw)
-		if err != nil {
-			return "[redacted URL]"
-		}
-		endpoint.User, endpoint.RawQuery, endpoint.Fragment = nil, "", ""
-		return endpoint.String()
-	})
+func prerequisitesLink() string {
+	return "requirements (" + prerequisitesURL + ")"
 }
 
 // Resource records a selected ARM resource's lifecycle and metadata requirements.
@@ -140,12 +148,10 @@ type Resource struct {
 	PrincipalRequired bool
 }
 
-// SkippedCheck reports an unresolved template-plan dependency, not successful evidence.
-func SkippedCheck(id, scope, requirement, reason string) Check {
+// SkippedCheck records an unresolved template-plan dependency, not successful evidence.
+func SkippedCheck(id, scope, resourceType string) Check {
 	return Check{
-		ID: id, Scope: scope, Status: Skipped, Expected: requirement,
-		Observed: "check skipped: " + reason, Missing: reason,
-		Warning: "skipped " + requirement + ": " + reason,
+		ID: id, Scope: scope, ResourceType: resourceType, Status: Skipped,
 	}
 }
 

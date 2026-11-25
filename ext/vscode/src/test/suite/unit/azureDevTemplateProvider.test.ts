@@ -24,14 +24,21 @@ suite('AzureDevTemplateProvider', () => {
         }
     });
 
-    test('getAITemplates returns only AI-tagged templates', async () => {
+    test('getAITemplates returns AI application templates included in the AI category', async () => {
         const aiTemplates = await provider.getAITemplates();
+        const aiCategoryTemplates = await provider.getTemplatesByCategory('ai');
+        const aiCategoryTemplateIds = new Set(aiCategoryTemplates.map(template => template.id));
 
         expect(aiTemplates, 'Should return an array').to.be.an('array');
+        expect(aiTemplates.length, 'Should return AI templates').to.be.greaterThan(0);
         aiTemplates.forEach(template => {
             expect(
-                template.tags?.includes('aicollection'),
-                `Template "${template.title}" should have aicollection tag`
+                template.tags?.includes('aiapplication'),
+                `Template "${template.title}" should have aiapplication tag`
+            ).to.be.true;
+            expect(
+                aiCategoryTemplateIds.has(template.id),
+                `Template "${template.title}" should be included in the AI category`
             ).to.be.true;
         });
     });

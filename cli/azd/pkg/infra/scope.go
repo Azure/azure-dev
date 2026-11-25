@@ -10,7 +10,7 @@ import (
 	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -64,12 +64,12 @@ type Deployment interface {
 		ctx context.Context,
 		template azure.RawArmTemplate,
 		parameters azure.ArmParameters,
-	) (*armresources.WhatIfOperationResult, error)
+	) (*armdeployments.WhatIfOperationResult, error)
 	// Deployment fetches information about this deployment.
 	Get(ctx context.Context) (*azapi.ResourceDeployment, error)
 	// Operations returns all the operations for this deployment.
-	Operations(ctx context.Context) ([]*armresources.DeploymentOperation, error)
-	Resources(ctx context.Context) ([]*armresources.ResourceReference, error)
+	Operations(ctx context.Context) ([]*armdeployments.DeploymentOperation, error)
+	Resources(ctx context.Context) ([]*armdeployments.ResourceReference, error)
 }
 
 type ResourceGroupDeployment struct {
@@ -128,7 +128,7 @@ func (s *ResourceGroupDeployment) Cancel(ctx context.Context) error {
 func (s *ResourceGroupDeployment) DeployPreview(
 	ctx context.Context,
 	template azure.RawArmTemplate,
-	parameters azure.ArmParameters) (*armresources.WhatIfOperationResult, error) {
+	parameters azure.ArmParameters) (*armdeployments.WhatIfOperationResult, error) {
 	return s.deploymentService.WhatIfDeployToResourceGroup(
 		ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters)
 }
@@ -139,7 +139,7 @@ func (s *ResourceGroupDeployment) Get(ctx context.Context) (*azapi.ResourceDeplo
 }
 
 // Gets the resource deployment operations for the current scope
-func (s *ResourceGroupDeployment) Operations(ctx context.Context) ([]*armresources.DeploymentOperation, error) {
+func (s *ResourceGroupDeployment) Operations(ctx context.Context) ([]*armdeployments.DeploymentOperation, error) {
 	return s.deploymentService.
 		ListResourceGroupDeploymentOperations(
 			ctx,
@@ -149,7 +149,7 @@ func (s *ResourceGroupDeployment) Operations(ctx context.Context) ([]*armresourc
 		)
 }
 
-func (s *ResourceGroupDeployment) Resources(ctx context.Context) ([]*armresources.ResourceReference, error) {
+func (s *ResourceGroupDeployment) Resources(ctx context.Context) ([]*armdeployments.ResourceReference, error) {
 	return s.deploymentService.ListResourceGroupDeploymentResources(ctx, s.subscriptionId, s.resourceGroupName, s.name)
 }
 
@@ -344,7 +344,7 @@ func (s *SubscriptionDeployment) Cancel(ctx context.Context) error {
 func (s *SubscriptionDeployment) DeployPreview(
 	ctx context.Context,
 	template azure.RawArmTemplate,
-	parameters azure.ArmParameters) (*armresources.WhatIfOperationResult, error) {
+	parameters azure.ArmParameters) (*armdeployments.WhatIfOperationResult, error) {
 	return s.deploymentService.WhatIfDeployToSubscription(
 		ctx, s.subscriptionId, s.location, s.name, template, parameters)
 }
@@ -355,11 +355,11 @@ func (s *SubscriptionDeployment) Get(ctx context.Context) (*azapi.ResourceDeploy
 }
 
 // Gets the resource deployment operations for the current scope
-func (s *SubscriptionDeployment) Operations(ctx context.Context) ([]*armresources.DeploymentOperation, error) {
+func (s *SubscriptionDeployment) Operations(ctx context.Context) ([]*armdeployments.DeploymentOperation, error) {
 	return s.deploymentService.ListSubscriptionDeploymentOperations(ctx, s.subscriptionId, s.name)
 }
 
-func (s *SubscriptionDeployment) Resources(ctx context.Context) ([]*armresources.ResourceReference, error) {
+func (s *SubscriptionDeployment) Resources(ctx context.Context) ([]*armdeployments.ResourceReference, error) {
 	return s.deploymentService.ListSubscriptionDeploymentResources(ctx, s.subscriptionId, s.name)
 }
 

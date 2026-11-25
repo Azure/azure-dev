@@ -146,6 +146,52 @@ func projectLifecycleHandler(
 	return seedProjectModelDeploymentName(ctx, azdClient, envName, values, cfg.Deployments)
 }
 
+func projectPredeployHandler(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	args *azdext.ProjectEventArgs,
+) error {
+	if args == nil || args.Project == nil {
+		return fmt.Errorf("project lifecycle event has no project")
+	}
+
+	cfg, found, err := loadProjectServiceConfig(
+		args.Project.Services,
+		args.Project.Path,
+	)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+
+	envName, values, err := projectLifecycleEnvironment(ctx, azdClient)
+	if err != nil {
+		return err
+	}
+	if err := provisioning.NewACRRemoteBuildCheck(azdClient).ValidateProject(
+		ctx, args.Project, envName, values,
+	); err != nil {
+		return err
+	}
+	if err := synthesis.RequireACRReuseForProject(ctx, azdClient, args.Project); err != nil {
+		return err
+	}
+	onDisk, err := projectOnDiskFoundryTemplatePresent(args.Project)
+	if err != nil || onDisk {
+		return err
+	}
+	deployments, present, err := provisioning.DecodeProjectDeployments(values[projectDeploymentsEnvKey])
+	if err != nil {
+		return err
+	}
+	if !present {
+		deployments = cfg.Deployments
+	}
+	return seedProjectModelDeploymentName(ctx, azdClient, envName, values, deployments)
+}
+
 func validateProjectACRBuilds(ctx context.Context, client *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	if args == nil || args.Project == nil {
 		return fmt.Errorf("project lifecycle event has no project")

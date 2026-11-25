@@ -32,7 +32,7 @@ func TestDeployCommandsCleanPreviewerBeforeFinalOutput(t *testing.T) {
 					_ context.Context,
 					eventName string,
 					args *azdext.ServiceEventArgs,
-				) (*azdext.BetaServiceEventResponse, error) {
+				) (*betaServiceEventResponse, error) {
 					if args.Service.Name != "api" {
 						return nil, nil
 					}

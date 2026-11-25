@@ -1,14 +1,25 @@
 # Release History
 
-## 1.39.0-beta.1 (Unreleased)
+## 1.40.0 (2026-11-25)
 
 ### Features Added
 
-### Breaking Changes
+- [[#10936]](https://github.com/Azure/azure-dev/pull/10936) Add stable v1 extension APIs for structured informational and warning messages from service deployment hooks, while preserving existing beta compatibility.
+
+### Other Changes
+
+- [[#10956]](https://github.com/Azure/azure-dev/pull/10956) Update template selection to show awesome-azd as the single azd template gallery.
+- [[#10895]](https://github.com/Azure/azure-dev/pull/10895) Update Azure management SDKs, including Container Apps v5.0.0 and App Service v6.0.0.
+
+## 1.39.1 (2026-11-18)
 
 ### Bugs Fixed
 
+- [[#10803]](https://github.com/Azure/azure-dev/pull/10803) Fix provisioning output to distinguish Azure AI Hubs and AI Projects from other Machine Learning workspaces. Thanks @huong8373tt-beep for the contribution!
+
 ### Other Changes
+
+- [[#10930]](https://github.com/Azure/azure-dev/pull/10930) Update the bundled Bicep CLI to v0.49.2.
 
 ## 1.38.0 (2026-11-11)
 

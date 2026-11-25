@@ -1,13 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore helpformat BYOAKS
+// cspell:ignore helpformat
 package cmd
 
 import (
 	"context"
-	"os"
-	"strconv"
 
 	"azure.ai.projects/internal/helpformat"
 	"azure.ai.projects/internal/provisioning"
@@ -40,11 +38,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newProjectShowCommand(extCtx))
 	rootCmd.AddCommand(newProjectAddCommand(extCtx))
 	rootCmd.AddCommand(newProjectDeploymentCommand(extCtx))
-	listenCommand := azdext.NewListenCommand(configureExtensionHost)
-	if enabled, err := strconv.ParseBool(os.Getenv(synthesis.BYOAKSEnvVar)); err == nil && enabled {
-		listenCommand = newListenCommand(configureExtensionHostWithReport)
-	}
-	rootCmd.AddCommand(listenCommand)
+	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
 
 	rootCmd.Example = `  # Configure a Foundry project in the current azd project
   azd ai project add
@@ -63,10 +57,6 @@ func NewRootCommand() *cobra.Command {
 
 // configureExtensionHost registers project lifecycle providers.
 func configureExtensionHost(host *azdext.ExtensionHost) {
-	configureExtensionHostWithReport(host, nil)
-}
-
-func configureExtensionHostWithReport(host *azdext.ExtensionHost, report func(string)) {
 	azdClient := host.Client()
 	host.
 		WithServiceTargetPreview(
@@ -78,10 +68,7 @@ func configureExtensionHostWithReport(host *azdext.ExtensionHost, report func(st
 		WithProvisioningProvider(
 			provisioning.FoundryProviderName,
 			func() azdext.ProvisioningProvider {
-				return provisioning.NewFoundryProvisioningProvider(
-					azdClient,
-					report,
-				)
+				return provisioning.NewFoundryProvisioningProvider(azdClient)
 			},
 		).
 		WithValidationCheck(azdext.ValidationCheckRegistration{
@@ -121,7 +108,7 @@ func configureExtensionHostWithReport(host *azdext.ExtensionHost, report func(st
 				ctx context.Context,
 				args *azdext.ProjectEventArgs,
 			) error {
-				return projectLifecycleHandler(ctx, azdClient, args)
+				return projectPredeployHandler(ctx, azdClient, args)
 			},
 		).
 		WithProjectEventHandler("predown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {

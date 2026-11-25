@@ -20,23 +20,17 @@ import (
 )
 
 func newAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
-	var layerName string
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Add a resource or service to a resources infrastructure layer.",
 		Long: "Interactively configure a resource or service and save changes to azure.yaml.\n" +
+			"An existing resources layer is reused; otherwise, you are prompted for a layer name.\n" +
 			"Resources are stored in the selected infra.layers entry's config, never top-level resources.\n" +
 			"A summary is displayed after saving.\n" +
 			"Existing layers require confirmation before they are updated or replaced.\n" +
-			"Only one resources infrastructure entry is supported.\n" +
-			"The layer prompt defaults to " + defaultResourcesLayer + ".",
+			"Only one resources infrastructure entry is supported.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if cmd.Flags().Changed("layer") {
-				if err := resources.ValidateEntryName(layerName); err != nil || layerName == "" {
-					return errors.New("--layer requires a nonempty infrastructure name starting with a lowercase letter")
-				}
-			}
 			if extCtx.NoPrompt {
 				return errors.New("azd resources add requires interactive input; run without --no-prompt")
 			}
@@ -54,17 +48,16 @@ func newAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Reject incompatible project shapes before asking for input or Azure context.
-			initialLayer := defaultResourcesLayer
-			if cmd.Flags().Changed("layer") {
-				initialLayer = layerName
-			}
-			if _, err := parseProject(current, initialLayer); err != nil {
+
+			// Validate the existing project before prompting for a layer name.
+			initialProject, err := parseProject(current, defaultResourcesLayer)
+			if err != nil {
 				return err
 			}
-			if !cmd.Flags().Changed("layer") {
+			layerName := initialProject.resourcesLayer
+			if layerName == "" {
 				answer, err := client.Prompt().Prompt(ctx, &azdext.PromptRequest{Options: &azdext.PromptOptions{
-					Message: "Enter the infrastructure layer name", DefaultValue: defaultResourcesLayer, Required: true,
+					Message: "Enter the Azure Resources layer name", DefaultValue: defaultResourcesLayer, Required: true,
 				}})
 				if err != nil {
 					return fmt.Errorf("selecting infrastructure layer: %w", err)
@@ -138,8 +131,6 @@ func newAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			return followUpAdd(ctx, client, result.HasService, layerName, envName, cmd.OutOrStdout())
 		},
 	}
-	cmd.Flags().StringVar(&layerName, "layer", "",
-		"Infrastructure layer name (prompt default: "+defaultResourcesLayer+")")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{Name: "output", AllowedValues: []string{"default"}})
 	return cmd
 }

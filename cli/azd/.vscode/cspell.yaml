@@ -185,6 +185,12 @@ overrides:
     words:
       - rivo
       - uniseg
+  - filename: "{pkg/containerregistry/remote_build.go,pkg/project/container_helper.go,test/recording/sanitize.go}"
+    words:
+      - armcontainerregistrytasks
+  - filename: "{pkg/azapi,pkg/infra,test/azurecleanup,test/recording,test/mocks/mockarmresources,extensions/azure.ai.projects/internal/provisioning,extensions/azure.ai.projects/internal/exterrors,extensions/azure.resources/internal/bicep}/**/*.go"
+    words:
+      - armdeployments
   - filename: "{docs/extensions/contract-versioning.md,grpc/README.md}"
     words:
       - generateprojectclient
@@ -210,7 +216,7 @@ overrides:
   - filename: internal/commandresult/*.go
     words:
       - commandresult
-  - filename: internal/grpcserver/{beta_event_service,beta_event_service_test,event_service_test}.go
+  - filename: internal/grpcserver/{beta_event_service,beta_event_service_test,event_service_test,service_event_messages,service_event_messages_test}.go
     words:
       - commandresult
   - filename: internal/cmd/{deploy,service_event_messages,up_graph}.go

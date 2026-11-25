@@ -404,6 +404,9 @@ func predeployHandler(
 			Message: notice,
 		})
 	}
+	messages = append(messages, project.CheckCodePackageSecrets(
+		ctx, svc, args.Project.GetPath(), args.ServiceContext.GetPackage(),
+	)...)
 	response := &azdext.BetaServiceEventResponse{Messages: messages}
 	fail := func(err error) (*azdext.BetaServiceEventResponse, error) {
 		return response, err
@@ -419,14 +422,6 @@ func predeployHandler(
 		warnDuplicateAgentNames(args.Project)
 	})
 
-	if err := updateLegacyProjectDeployments(
-		ctx,
-		azdClient,
-		args.Project.Services,
-		args.Project.Path,
-	); err != nil {
-		return fail(err)
-	}
 	// Prompt (kind=prompt) agents have no container settings — the harness owns
 	// the runtime. Without this guard SetAgentContainerSettings writes default
 	// memory/cpu onto the service and persists them into azure.yaml for an agent

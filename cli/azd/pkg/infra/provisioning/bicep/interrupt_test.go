@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -105,7 +105,7 @@ type fakeDeployment struct {
 	operationsCalls atomic.Int32
 	// operationsFn lets tests inject descendant deployments; nil means
 	// "no descendants".
-	operationsFn func(ctx context.Context) ([]*armresources.DeploymentOperation, error)
+	operationsFn func(ctx context.Context) ([]*armdeployments.DeploymentOperation, error)
 }
 
 func (f *fakeDeployment) Cancel(ctx context.Context) error {
@@ -155,17 +155,17 @@ func (f *fakeDeployment) Delete(
 }
 func (f *fakeDeployment) DeployPreview(
 	context.Context, azure.RawArmTemplate, azure.ArmParameters,
-) (*armresources.WhatIfOperationResult, error) {
+) (*armdeployments.WhatIfOperationResult, error) {
 	panic("unused")
 }
-func (f *fakeDeployment) Operations(ctx context.Context) ([]*armresources.DeploymentOperation, error) {
+func (f *fakeDeployment) Operations(ctx context.Context) ([]*armdeployments.DeploymentOperation, error) {
 	f.operationsCalls.Add(1)
 	if f.operationsFn == nil {
 		return nil, nil
 	}
 	return f.operationsFn(ctx)
 }
-func (f *fakeDeployment) Resources(context.Context) ([]*armresources.ResourceReference, error) {
+func (f *fakeDeployment) Resources(context.Context) ([]*armdeployments.ResourceReference, error) {
 	panic("unused")
 }
 
@@ -459,14 +459,14 @@ func TestInstallDeploymentInterruptHandler_InterruptWinsRace(t *testing.T) {
 // makeNestedDeploymentOp builds a fake DeploymentOperation referring to a
 // child Microsoft.Resources/deployments resource. Used by the descendant-
 // discovery tests below.
-func makeNestedDeploymentOp(targetID string) *armresources.DeploymentOperation {
+func makeNestedDeploymentOp(targetID string) *armdeployments.DeploymentOperation {
 	resourceType := string(azapi.AzureResourceTypeDeployment)
-	provisioningOp := armresources.ProvisioningOperationCreate
+	provisioningOp := armdeployments.ProvisioningOperationCreate
 	id := targetID
-	return &armresources.DeploymentOperation{
-		Properties: &armresources.DeploymentOperationProperties{
+	return &armdeployments.DeploymentOperation{
+		Properties: &armdeployments.DeploymentOperationProperties{
 			ProvisioningOperation: &provisioningOp,
-			TargetResource: &armresources.TargetResource{
+			TargetResource: &armdeployments.TargetResource{
 				ID:           &id,
 				ResourceType: &resourceType,
 			},
@@ -476,14 +476,14 @@ func makeNestedDeploymentOp(targetID string) *armresources.DeploymentOperation {
 
 // makeNonNestedOp builds a fake DeploymentOperation for a regular
 // (non-deployment) resource, e.g. Microsoft.Storage/storageAccounts.
-func makeNonNestedOp(targetID, resourceType string) *armresources.DeploymentOperation {
-	provisioningOp := armresources.ProvisioningOperationCreate
+func makeNonNestedOp(targetID, resourceType string) *armdeployments.DeploymentOperation {
+	provisioningOp := armdeployments.ProvisioningOperationCreate
 	id := targetID
 	rt := resourceType
-	return &armresources.DeploymentOperation{
-		Properties: &armresources.DeploymentOperationProperties{
+	return &armdeployments.DeploymentOperation{
+		Properties: &armdeployments.DeploymentOperationProperties{
 			ProvisioningOperation: &provisioningOp,
-			TargetResource: &armresources.TargetResource{
+			TargetResource: &armdeployments.TargetResource{
 				ID:           &id,
 				ResourceType: &rt,
 			},
@@ -496,8 +496,8 @@ func TestDiscoverDescendantDeployments_FlatTree(t *testing.T) {
 	provider := newTestProvider(mockContext)
 
 	parent := &fakeDeployment{
-		operationsFn: func(ctx context.Context) ([]*armresources.DeploymentOperation, error) {
-			return []*armresources.DeploymentOperation{
+		operationsFn: func(ctx context.Context) ([]*armdeployments.DeploymentOperation, error) {
+			return []*armdeployments.DeploymentOperation{
 				makeNonNestedOp(
 					"/subscriptions/SUB/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/sa",
 					"Microsoft.Storage/storageAccounts"),
@@ -530,9 +530,9 @@ func TestDiscoverDescendantDeployments_RecursesAndDedupes(t *testing.T) {
 	const grandID = "/subscriptions/SUB/resourceGroups/rg/providers/Microsoft.Resources/deployments/grand1"
 
 	parent := &fakeDeployment{
-		operationsFn: func(ctx context.Context) ([]*armresources.DeploymentOperation, error) {
+		operationsFn: func(ctx context.Context) ([]*armdeployments.DeploymentOperation, error) {
 			// Reference child1 twice — should be deduped.
-			return []*armresources.DeploymentOperation{
+			return []*armdeployments.DeploymentOperation{
 				makeNestedDeploymentOp(childID),
 				makeNestedDeploymentOp(childID),
 			}, nil
@@ -540,8 +540,8 @@ func TestDiscoverDescendantDeployments_RecursesAndDedupes(t *testing.T) {
 	}
 
 	child := &fakeDeployment{
-		operationsFn: func(ctx context.Context) ([]*armresources.DeploymentOperation, error) {
-			return []*armresources.DeploymentOperation{
+		operationsFn: func(ctx context.Context) ([]*armdeployments.DeploymentOperation, error) {
+			return []*armdeployments.DeploymentOperation{
 				makeNestedDeploymentOp(grandID),
 			}, nil
 		},
@@ -570,7 +570,7 @@ func TestDiscoverDescendantDeployments_OperationsErrorPropagates(t *testing.T) {
 	provider := newTestProvider(mockContext)
 
 	parent := &fakeDeployment{
-		operationsFn: func(ctx context.Context) ([]*armresources.DeploymentOperation, error) {
+		operationsFn: func(ctx context.Context) ([]*armdeployments.DeploymentOperation, error) {
 			return nil, errors.New("ARM unavailable")
 		},
 	}
@@ -602,7 +602,7 @@ func TestCancelAndAwaitNested_OperationsError_ReturnsEmpty(t *testing.T) {
 	provider := newTestProvider(mockContext)
 
 	parent := &fakeDeployment{
-		operationsFn: func(ctx context.Context) ([]*armresources.DeploymentOperation, error) {
+		operationsFn: func(ctx context.Context) ([]*armdeployments.DeploymentOperation, error) {
 			return nil, errors.New("transient ARM error")
 		},
 	}
@@ -640,8 +640,8 @@ func TestCancelAndAwaitTerminal_NestedStuck_ReturnsTimeoutWithNestedTelemetry(t 
 	// factory to inject the stuck child.
 
 	parent := &fakeDeployment{
-		operationsFn: func(ctx context.Context) ([]*armresources.DeploymentOperation, error) {
-			return []*armresources.DeploymentOperation{makeNestedDeploymentOp(childID)}, nil
+		operationsFn: func(ctx context.Context) ([]*armdeployments.DeploymentOperation, error) {
+			return []*armdeployments.DeploymentOperation{makeNestedDeploymentOp(childID)}, nil
 		},
 	}
 

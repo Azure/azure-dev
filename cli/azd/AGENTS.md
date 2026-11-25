@@ -278,6 +278,10 @@ variable `azd` reads. When adding or modifying an `os.Getenv` / `os.LookupEnv` c
 2. Include a one-line description that explains what it controls and its default if non-obvious.
 3. Place debug/internal variables under **Debug Variables** with the unsupported warning.
 
+Use the `AZD_` prefix for new azd-owned controls. Keep names required by external platforms, tools, and
+established project or integration contracts. See the
+[azd style guide](docs/style-guidelines/azd-style-guide.md#environment-variable-naming).
+
 #### Adding or Changing Telemetry (Events & Fields)
 
 `azd` telemetry coverage is tracked by an ongoing metrics audit whose authoritative spec lives in

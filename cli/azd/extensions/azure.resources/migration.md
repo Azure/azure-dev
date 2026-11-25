@@ -12,8 +12,8 @@ Resource-to-resource `uses` references must stay within the same entry.
 Core service `uses` references do not resolve extension-owned resources; review
 those dependencies and use infrastructure layer dependencies where appropriate.
 Core `azd add` and `azd infra gen` do not support the extension's configuration.
-After migrating, use `azd resources add --layer <name>` to add resources to the
-selected entry interactively.
+After migrating, use `azd resources add` to add resources interactively.
+The migrated resources layer is selected automatically, with confirmation before updating it.
 
 Before:
 

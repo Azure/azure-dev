@@ -28,7 +28,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -162,7 +162,7 @@ func GenericQuotaSuggestion() string {
 }
 
 // QuotaSuggestionForARMError returns guidance for an ARM quota error.
-func QuotaSuggestionForARMError(err *armresources.ErrorResponse) string {
+func QuotaSuggestionForARMError(err *armdeployments.ErrorResponse) string {
 	if !armErrorResponseContainsCode(err, insufficientQuotaCode) {
 		return ""
 	}
@@ -194,7 +194,7 @@ func PolicySuggestion() string {
 }
 
 // PolicySuggestionForARMError returns guidance for an ARM policy violation error.
-func PolicySuggestionForARMError(err *armresources.ErrorResponse) string {
+func PolicySuggestionForARMError(err *armdeployments.ErrorResponse) string {
 	if !armErrorResponseContainsCode(err, requestDisallowedByPolicyCode) &&
 		!armErrorResponseContainsCode(err, policyViolationCode) {
 		return ""
@@ -226,7 +226,7 @@ func policySuggestionForResponse(responseErr *azcore.ResponseError) string {
 	return ""
 }
 
-func extractPolicyAssignmentsFromARMError(err *armresources.ErrorResponse) []string {
+func extractPolicyAssignmentsFromARMError(err *armdeployments.ErrorResponse) []string {
 	var assignments []string
 	addMatch := func(raw string) {
 		for _, match := range armPolicyAssignmentIDPattern.FindAllString(raw, -1) {
@@ -241,8 +241,8 @@ func extractPolicyAssignmentsFromARMError(err *armresources.ErrorResponse) []str
 			}
 		}
 	}
-	var walk func(node *armresources.ErrorResponse)
-	walk = func(node *armresources.ErrorResponse) {
+	var walk func(node *armdeployments.ErrorResponse)
+	walk = func(node *armdeployments.ErrorResponse) {
 		if node == nil {
 			return
 		}
@@ -265,7 +265,7 @@ func extractPolicyAssignmentsFromARMError(err *armresources.ErrorResponse) []str
 	return assignments
 }
 
-func responseErrorPayload(responseErr *azcore.ResponseError) *armresources.ErrorResponse {
+func responseErrorPayload(responseErr *azcore.ResponseError) *armdeployments.ErrorResponse {
 	if responseErr.RawResponse == nil || responseErr.RawResponse.Body == nil {
 		return nil
 	}
@@ -279,9 +279,9 @@ func responseErrorPayload(responseErr *azcore.ResponseError) *armresources.Error
 	}
 
 	var envelope struct {
-		Error      *armresources.ErrorResponse `json:"error"`
+		Error      *armdeployments.ErrorResponse `json:"error"`
 		Properties *struct {
-			Error *armresources.ErrorResponse `json:"error"`
+			Error *armdeployments.ErrorResponse `json:"error"`
 		} `json:"properties"`
 	}
 	if json.Unmarshal(body, &envelope) == nil {
@@ -293,7 +293,7 @@ func responseErrorPayload(responseErr *azcore.ResponseError) *armresources.Error
 		}
 	}
 
-	var payload armresources.ErrorResponse
+	var payload armdeployments.ErrorResponse
 	if json.Unmarshal(body, &payload) == nil && payload.Code != nil {
 		return &payload
 	}
@@ -301,7 +301,7 @@ func responseErrorPayload(responseErr *azcore.ResponseError) *armresources.Error
 	return nil
 }
 
-func armErrorResponseContainsCode(err *armresources.ErrorResponse, code string) bool {
+func armErrorResponseContainsCode(err *armdeployments.ErrorResponse, code string) bool {
 	if err == nil {
 		return false
 	}
@@ -317,7 +317,7 @@ func armErrorResponseContainsCode(err *armresources.ErrorResponse, code string) 
 }
 
 func armErrorResponseContainsCognitiveServicesQuota(
-	err *armresources.ErrorResponse,
+	err *armdeployments.ErrorResponse,
 	inheritedTarget string,
 ) bool {
 	if err == nil {

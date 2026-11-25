@@ -46,7 +46,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
@@ -3884,18 +3884,13 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serv
 	// Check runtime and dependency resolution for dotnet bundled mode
 	if agentDef, isHosted, err := p.loadContainerAgentDefinition(); err == nil && isHosted &&
 		agentDef.CodeConfiguration != nil {
-		isDotnet := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "dotnet_")
-		isBundled := false // default is remote_build (matches promptCodeConfig and deployHostedCodeAgent defaults)
-		if agentDef.CodeConfiguration.DependencyResolution != nil {
-			isBundled = *agentDef.CodeConfiguration.DependencyResolution == "bundled"
-		}
-		if isDotnet && isBundled {
+		if isDotnetBundled(agentDef.CodeConfiguration) {
 			return p.packageDotnetBundled(srcDir)
 		}
 
 		// Python bundled: validate that dependencies are installed in srcDir
 		isPython := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "python_")
-		if isPython && isBundled {
+		if isPython && isBundled(agentDef.CodeConfiguration) {
 			if err := validatePythonBundledDeps(srcDir); err != nil {
 				return "", "", err
 			}
@@ -3903,6 +3898,18 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serv
 	}
 
 	return zipSourceDir(ctx, srcDir)
+}
+
+// isBundled reports whether code deploy ships dependencies installed locally. The
+// default is remote_build (matches promptCodeConfig and deployHostedCodeAgent defaults).
+func isBundled(codeConfig *agent_yaml.CodeConfiguration) bool {
+	return codeConfig.DependencyResolution != nil && *codeConfig.DependencyResolution == "bundled"
+}
+
+// isDotnetBundled reports whether code deploy packages `dotnet publish` output instead
+// of the service directory, in which case .agentignore does not apply.
+func isDotnetBundled(codeConfig *agent_yaml.CodeConfiguration) bool {
+	return strings.HasPrefix(codeConfig.Runtime, "dotnet_") && isBundled(codeConfig)
 }
 
 // zipSourceDir creates a ZIP archive of srcDir honoring .agentignore, writes it to a
@@ -3939,48 +3946,7 @@ func zipSourceDir(ctx context.Context, srcDir string) (string, string, error) {
 	multiWriter := io.MultiWriter(tmpFile, hasher)
 	zipWriter := zip.NewWriter(multiWriter)
 
-	err = filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Get relative path
-		relPath, err := filepath.Rel(srcDir, path)
-		if err != nil {
-			return err
-		}
-
-		// Skip root
-		if relPath == "." {
-			return nil
-		}
-
-		// Normalize to forward slashes for ZIP
-		relPath = filepath.ToSlash(relPath)
-
-		// Skip symlinked directories to avoid traversing outside the project root
-		if d.IsDir() && d.Type()&fs.ModeSymlink != 0 {
-			return filepath.SkipDir
-		}
-
-		// Check directory exclusions
-		if d.IsDir() {
-			if ignoreMatcher.ShouldExclude(relPath, true) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Skip symlinks to avoid including files outside the agent directory
-		if d.Type()&fs.ModeSymlink != 0 {
-			return nil
-		}
-
-		// Check file exclusions
-		if ignoreMatcher.ShouldExclude(relPath, false) {
-			return nil
-		}
-
+	err = walkCodePackageFiles(srcDir, ignoreMatcher, func(path, relPath string) error {
 		// Add file to ZIP
 		fileData, err := os.ReadFile(path) //nolint:gosec // path is constructed from filepath.WalkDir within the service directory
 		if err != nil {

@@ -13,20 +13,23 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/constants"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-type parameterResolverFunc func(context.Context, string, map[string]string, *[]string) (any, bool, error)
+type parameterResolverFunc func(
+	context.Context, *azdext.AzureContext, string, map[string]string, *[]string,
+) (any, bool, error)
 
 func (f parameterResolverFunc) ResolveParameter(
-	ctx context.Context, name string, values map[string]string, mapping *[]string,
+	ctx context.Context, azureContext *azdext.AzureContext, name string, values map[string]string, mapping *[]string,
 ) (any, bool, error) {
-	return f(ctx, name, values, mapping)
+	return f(ctx, azureContext, name, values, mapping)
 }
 
 func TestParametersRefreshAfterEnsureEnv(t *testing.T) {
@@ -37,13 +40,14 @@ func TestParametersRefreshAfterEnsureEnv(t *testing.T) {
 			env := &environmentServer{values: map[string]string{
 				"AZURE_SUBSCRIPTION_ID": "sub", "AZURE_LOCATION": "eastus",
 				"TOKEN": initial, "UPSTREAM": "old-output", "REMOVED": "old-value", "VIRTUAL": "saved-value",
-				principalIDPlaceholder: "authored-id", principalTypePlaceholder: "User",
+				constants.PrincipalIdEnvVarName: "authored-id", constants.PrincipalTypeEnvVarName: "User",
 			}}
 			prompts, account := &promptServer{}, &accountServer{}
 			p := New(newHostClientWithIdentity(t, env, prompts, account, &projectServer{}), nil)
 			require.NoError(t, p.Initialize(t.Context(), ".", &azdext.ProvisioningOptions{
 				Path: t.TempDir(), Name: "app", VirtualEnv: map[string]string{
-					"VIRTUAL": "virtual-value", principalIDPlaceholder: "virtual-id", principalTypePlaceholder: "User",
+					"VIRTUAL":                       "virtual-value",
+					constants.PrincipalIdEnvVarName: "virtual-id", constants.PrincipalTypeEnvVarName: "User",
 				},
 			}))
 			p.compile = func(context.Context, string) ([]byte, error) {
@@ -132,6 +136,7 @@ func TestPreviewAndDeployPreserveResourceExistsAfterEnsureEnv(t *testing.T) {
 		deployment: deployedFixture(), groupErr: &azcore.ResponseError{StatusCode: 404},
 		changes: []*armresources.WhatIfChange{{ResourceID: new(groupID), ChangeType: new(armresources.ChangeTypeCreate)}},
 	}
+
 	p.azure = backend
 	require.NoError(t, p.EnsureEnv(t.Context()))
 	require.Len(t, env.writes, 2, "serial scope setup must persist subscription and location")
@@ -140,9 +145,11 @@ func TestPreviewAndDeployPreserveResourceExistsAfterEnsureEnv(t *testing.T) {
 	_, err := p.Preview(t.Context(), nil)
 	require.NoError(t, err)
 	request := backend.previewInput
-	parameters, ok := request.Properties.Parameters.(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, map[string]any{"value": true}, parameters["serviceExists"],
+	parameters := request.Properties.Parameters
+	require.Contains(t, parameters, "serviceExists")
+	encoded, err := json.Marshal(parameters["serviceExists"])
+	require.NoError(t, err)
+	require.JSONEq(t, `{"value":true}`, string(encoded),
 		"the generated Container App template must preserve the deployed image instead of selecting hello-world")
 	require.Equal(t, backend, p.azure)
 	require.Equal(t, "eastus", *request.Location)
@@ -158,6 +165,35 @@ func TestPreviewAndDeployPreserveResourceExistsAfterEnsureEnv(t *testing.T) {
 		"preview and deployment must use the same prepared inputs")
 	require.Equal(t, "true", result.Deployment.Parameters["serviceExists"].Value)
 	require.Len(t, env.reads, 2)
+}
+
+func TestDeploymentParametersPreserveWireValues(t *testing.T) {
+	parameters, err := deploymentParameters(map[string]any{
+		"empty": map[string]any{"value": nil},
+		"large": map[string]any{"value": json.Number("9007199254740993")},
+		"secret": map[string]any{"reference": map[string]any{
+			"keyVault": map[string]any{
+				"id": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/vault",
+			},
+			"secretName": "password", "secretVersion": "version",
+		}},
+	})
+	require.NoError(t, err)
+	encoded, err := json.Marshal(parameters)
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+		"empty":{"value":null},
+		"large":{"value":9007199254740993},
+		"secret":{"reference":{
+			"keyVault":{"id":"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/vault"},
+			"secretName":"password","secretVersion":"version"
+		}}
+	}`, string(encoded))
+	require.Contains(t, string(encoded), `"large":{"value":9007199254740993}`)
+	for _, invalid := range []any{nil, map[string]any{"unsupported": true}} {
+		_, err := deploymentParameters(map[string]any{"invalid": invalid})
+		require.Error(t, err)
+	}
 }
 
 func TestParametersEnvironmentRefreshFailureIsRetryable(t *testing.T) {
@@ -203,12 +239,16 @@ func TestParameterResolverValueIsCoercedAndMetadataPreserved(t *testing.T) {
 	p := readyProvider(t, &fakeBackend{})
 	calls := 0
 	p.resolver = parameterResolverFunc(func(
-		ctx context.Context, name string, values map[string]string, mapping *[]string,
+		ctx context.Context, azureContext *azdext.AzureContext, name string, values map[string]string, mapping *[]string,
 	) (any, bool, error) {
 		calls++
 		require.Equal(t, t.Context(), ctx)
 		require.Equal(t, "count", name)
 		require.Equal(t, "sub", values["AZURE_SUBSCRIPTION_ID"])
+		require.Equal(t, "sub", azureContext.GetScope().GetSubscriptionId())
+		require.Equal(t, "user-access-tenant", azureContext.GetScope().GetTenantId())
+		require.Equal(t, "eastus", azureContext.GetScope().GetLocation())
+		require.NotContains(t, values, "AZURE_TENANT_ID")
 		*mapping = append(*mapping, "Z", "A", "Z")
 		return "42", true, nil
 	})
@@ -226,7 +266,9 @@ func TestParameterResolverValueIsCoercedAndMetadataPreserved(t *testing.T) {
 
 func TestParameterResolverFallbackUsesNormalSubstitution(t *testing.T) {
 	p := readyProvider(t, &fakeBackend{})
-	p.resolver = parameterResolverFunc(func(context.Context, string, map[string]string, *[]string) (any, bool, error) {
+	p.resolver = parameterResolverFunc(func(
+		context.Context, *azdext.AzureContext, string, map[string]string, *[]string,
+	) (any, bool, error) {
 		return nil, false, nil
 	})
 
@@ -242,7 +284,9 @@ func TestParameterResolverFallbackUsesNormalSubstitution(t *testing.T) {
 
 func TestParameterResolverFallbackCanUseTemplateDefault(t *testing.T) {
 	p := readyProvider(t, &fakeBackend{})
-	p.resolver = parameterResolverFunc(func(context.Context, string, map[string]string, *[]string) (any, bool, error) {
+	p.resolver = parameterResolverFunc(func(
+		context.Context, *azdext.AzureContext, string, map[string]string, *[]string,
+	) (any, bool, error) {
 		return nil, false, nil
 	})
 	definition := parameterDefinition{Type: "string", DefaultValue: []byte(`"eastus"`)}
@@ -256,7 +300,9 @@ func TestParameterResolverFallbackCanUseTemplateDefault(t *testing.T) {
 func TestParameterResolverFailureDoesNotFallBack(t *testing.T) {
 	p := readyProvider(t, &fakeBackend{})
 	expected := errors.New("location resolution failed")
-	p.resolver = parameterResolverFunc(func(context.Context, string, map[string]string, *[]string) (any, bool, error) {
+	p.resolver = parameterResolverFunc(func(
+		context.Context, *azdext.AzureContext, string, map[string]string, *[]string,
+	) (any, bool, error) {
 		return nil, false, expected
 	})
 
@@ -272,7 +318,9 @@ func TestParameterResolverFailureLeavesPreparationRetryable(t *testing.T) {
 	p := readyProvider(t, &fakeBackend{})
 	expected := errors.New("temporary resolver failure")
 	fail := true
-	p.resolver = parameterResolverFunc(func(context.Context, string, map[string]string, *[]string) (any, bool, error) {
+	p.resolver = parameterResolverFunc(func(
+		context.Context, *azdext.AzureContext, string, map[string]string, *[]string,
+	) (any, bool, error) {
 		if fail {
 			return nil, false, expected
 		}
@@ -294,7 +342,9 @@ func TestParameterResolverFailureLeavesPreparationRetryable(t *testing.T) {
 
 func TestParameterResolverDoesNotHandleKeyVaultReferences(t *testing.T) {
 	p := readyProvider(t, &fakeBackend{})
-	p.resolver = parameterResolverFunc(func(context.Context, string, map[string]string, *[]string) (any, bool, error) {
+	p.resolver = parameterResolverFunc(func(
+		context.Context, *azdext.AzureContext, string, map[string]string, *[]string,
+	) (any, bool, error) {
 		t.Fatal("Key Vault references must not invoke the value resolver")
 		return nil, false, nil
 	})
@@ -322,7 +372,7 @@ func TestParameterResolverFallbackPromptsForMissingValue(t *testing.T) {
 			p := readyProvider(t, &fakeBackend{})
 			p.client = newHostClient(t, &environmentServer{}, prompts)
 			p.resolver = parameterResolverFunc(func(
-				context.Context, string, map[string]string, *[]string,
+				context.Context, *azdext.AzureContext, string, map[string]string, *[]string,
 			) (any, bool, error) {
 				return nil, false, nil
 			})

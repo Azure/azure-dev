@@ -20,7 +20,8 @@ import (
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
+	resources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"google.golang.org/protobuf/proto"
@@ -31,8 +32,11 @@ const ownerTag = "azd-resources-owner"
 // ParameterResolver supplies optional deployment parameter values and whether they required a local prompt,
 // recording their environment mappings. A nil value with no error requests normal Bicep parameter resolution.
 // Calls are serialized by the provider; the resolver may update environment values after persisting them.
+// The resolved Azure context is read-only and independent of authored environment values.
 type ParameterResolver interface {
-	ResolveParameter(ctx context.Context, name string, values map[string]string, mapping *[]string) (any, bool, error)
+	ResolveParameter(
+		ctx context.Context, azureContext *azdext.AzureContext, name string, values map[string]string, mapping *[]string,
+	) (any, bool, error)
 }
 
 // Provider executes generated Bicep without depending on the core provisioning implementation.
@@ -244,7 +248,7 @@ func (p *Provider) loadDeployment(ctx context.Context, hint string) (armresource
 	return deployment, nil
 }
 
-func (p *Provider) ownsGroup(group armresources.ResourceGroup) bool {
+func (p *Provider) ownsGroup(group resources.ResourceGroup) bool {
 	return pointerValue(group.Tags[ownerTag]) == p.name
 }
 

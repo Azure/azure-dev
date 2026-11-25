@@ -4,8 +4,12 @@
 package project
 
 import (
+	"errors"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,13 +22,74 @@ func TestDefaultPromptAgentSettings(t *testing.T) {
 }
 
 func TestPromptAgentSettingsValidateRequiresFoundryProject(t *testing.T) {
-	settings := DefaultPromptAgentSettings()
-	require.ErrorContains(t, settings.Validate(), "projectEndpoint")
+	t.Run("missing projectEndpoint returns dependency error", func(t *testing.T) {
+		settings := DefaultPromptAgentSettings()
+		err := settings.Validate()
+		require.ErrorContains(t, err, "projectEndpoint")
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok)
+		require.Equal(t, exterrors.CodeMissingAiProjectEndpoint, localErr.Code)
+		require.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
+		require.Contains(t, localErr.Suggestion, "azd provision")
+	})
 
-	settings.SubscriptionID = "sub"
-	settings.ResourceGroup = "rg"
-	settings.ProjectEndpoint = "https://acct.services.ai.azure.com/api/projects/project"
-	require.NoError(t, settings.Validate())
+	t.Run("present projectEndpoint with missing fields returns validation error", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			settings    PromptAgentSettings
+			wantMissing string
+			wantAbsent  []string
+		}{
+			{
+				name: "missing subscriptionId and resourceGroup",
+				settings: PromptAgentSettings{
+					ProjectEndpoint: "https://acct.services.ai.azure.com/api/projects/project",
+				},
+				wantMissing: "subscriptionId, resourceGroup",
+				wantAbsent:  []string{"projectEndpoint"},
+			},
+			{
+				name: "missing subscriptionId only",
+				settings: PromptAgentSettings{
+					ResourceGroup:   "rg",
+					ProjectEndpoint: "https://acct.services.ai.azure.com/api/projects/project",
+				},
+				wantMissing: "subscriptionId",
+				wantAbsent:  []string{"resourceGroup", "projectEndpoint"},
+			},
+			{
+				name: "missing resourceGroup only",
+				settings: PromptAgentSettings{
+					SubscriptionID:  "sub",
+					ProjectEndpoint: "https://acct.services.ai.azure.com/api/projects/project",
+				},
+				wantMissing: "resourceGroup",
+				wantAbsent:  []string{"subscriptionId", "projectEndpoint"},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				err := tc.settings.Validate()
+				require.ErrorContains(t, err, tc.wantMissing)
+				for _, field := range tc.wantAbsent {
+					require.NotContains(t, err.Error(), field)
+				}
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+				require.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+				require.Contains(t, localErr.Suggestion, "azd provision")
+			})
+		}
+	})
+
+	t.Run("all required fields valid", func(t *testing.T) {
+		settings := PromptAgentSettings{
+			SubscriptionID:  "sub",
+			ResourceGroup:   "rg",
+			ProjectEndpoint: "https://acct.services.ai.azure.com/api/projects/project",
+		}
+		require.NoError(t, settings.Validate())
+	})
 }
 
 func TestPromptAgentSettingsValidateRejectsAuthenticatedCustomEndpoint(t *testing.T) {

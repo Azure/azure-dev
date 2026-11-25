@@ -1,14 +1,15 @@
 # Release History
 
-## 1.40.0-beta.1 (Unreleased)
+## 1.40.0 (2026-11-25)
 
 ### Features Added
 
-### Breaking Changes
-
-### Bugs Fixed
+- [[#10936]](https://github.com/Azure/azure-dev/pull/10936) Add stable v1 extension APIs for structured informational and warning messages from service deployment hooks, while preserving existing beta compatibility.
 
 ### Other Changes
+
+- [[#10956]](https://github.com/Azure/azure-dev/pull/10956) Update template selection to show awesome-azd as the single azd template gallery.
+- [[#10895]](https://github.com/Azure/azure-dev/pull/10895) Update Azure management SDKs, including Container Apps v5.0.0 and App Service v6.0.0.
 
 ## 1.39.1 (2026-11-18)
 

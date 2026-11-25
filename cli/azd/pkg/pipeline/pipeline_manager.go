@@ -1516,15 +1516,8 @@ func (pm *PipelineManager) resolvePipelineAuth(
 				"--auth-type %s is not supported with managed identity authentication",
 				AuthTypeClientCredentials,
 			),
-			Message: "This environment's pipeline uses a managed identity, which doesn't support client credentials.",
-			Suggestion: fmt.Sprintf(
-				"To switch to client credentials, run `azd env unset %s`, "+
-					"then rerun `azd pipeline config --auth-type %s`. "+
-					"For GitHub Actions, azd doesn't change an existing workflow, "+
-					"so update its Azure login step to use client credentials.",
-				AzurePipelineMsiResourceId,
-				AuthTypeClientCredentials,
-			),
+			Message:    "This environment's pipeline uses a managed identity, which doesn't support client credentials.",
+			Suggestion: pm.msiToClientCredentialsSuggestion(),
 		}
 	}
 
@@ -1607,6 +1600,30 @@ func (pm *PipelineManager) resolvePipelineAuth(
 	default:
 		return pipelineAuthSelection{}, fmt.Errorf("unexpected authentication option: %s", options[selectedOption])
 	}
+}
+
+// msiToClientCredentialsSuggestion explains how to clear the managed identity from the selected environment and,
+// when set, from the process environment, since Environment.Getenv falls back to process values.
+func (pm *PipelineManager) msiToClientCredentialsSuggestion() string {
+	// Environment names can't contain quotes or '$', so double quotes are safe in common shells.
+	envArg := fmt.Sprintf(`-e "%s"`, pm.env.Name())
+
+	var steps []string
+	if _, inDotenv := pm.env.LookupDotenv(AzurePipelineMsiResourceId); inDotenv {
+		steps = append(steps, fmt.Sprintf("run `azd env unset %s %s`", AzurePipelineMsiResourceId, envArg))
+	}
+	if _, inShell := os.LookupEnv(AzurePipelineMsiResourceId); inShell {
+		steps = append(steps, fmt.Sprintf("remove %s from your shell or CI environment", AzurePipelineMsiResourceId))
+	}
+
+	return fmt.Sprintf(
+		"To switch to client credentials, %s, then rerun `azd pipeline config %s --auth-type %s`. "+
+			"For GitHub Actions, azd doesn't change an existing workflow, "+
+			"so update its Azure login step to use client credentials.",
+		strings.Join(steps, " and "),
+		envArg,
+		AuthTypeClientCredentials,
+	)
 }
 
 type promptForServiceTreeIdOptions struct {

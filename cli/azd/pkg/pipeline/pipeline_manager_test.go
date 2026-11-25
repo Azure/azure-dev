@@ -1372,7 +1372,6 @@ func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {
 		wantOptionCount      int
 		want                 pipelineAuthSelection
 		wantErr              string
-		wantSuggestion       string
 	}{
 		{
 			name:            "prompts and selects MSI by default",
@@ -1426,8 +1425,6 @@ func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {
 			authTypeArg: string(AuthTypeClientCredentials),
 			usingMsi:    true,
 			wantErr:     "--auth-type client-credentials is not supported with managed identity authentication",
-			wantSuggestion: "To switch to client credentials, run `azd env unset AZURE_PIPELINE_MSI_CLIENT_ID`, " +
-				"then rerun `azd pipeline config --auth-type client-credentials`.",
 		},
 		{
 			name:            "explicit federated omits client credentials option",
@@ -1471,16 +1468,14 @@ func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {
 			pm := &PipelineManager{
 				args:    &PipelineManagerArgs{PipelineAuthTypeName: tt.authTypeArg},
 				console: mockContext.Console,
+				env:     environment.NewWithValues("dev", map[string]string{AzurePipelineMsiResourceId: "msi-id"}),
 			}
 
 			got, err := pm.resolvePipelineAuth(t.Context(), tt.usingMsi, tt.usingAppRegistration)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
-				if tt.wantSuggestion != "" {
-					suggestionErr, ok := errors.AsType[*errorhandler.ErrorWithSuggestion](err)
-					require.True(t, ok)
-					require.Contains(t, suggestionErr.Suggestion, tt.wantSuggestion)
-				}
+				_, ok := errors.AsType[*errorhandler.ErrorWithSuggestion](err)
+				require.True(t, ok)
 				require.False(t, prompted)
 				return
 			}
@@ -1488,6 +1483,63 @@ func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tt.wantPrompted, prompted)
 			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_PipelineManager_msiToClientCredentialsSuggestion(t *testing.T) {
+	tests := []struct {
+		name         string
+		dotenv       map[string]string
+		shellValue   string
+		wantContains []string
+		wantMissing  []string
+	}{
+		{
+			name:   "value in selected environment",
+			dotenv: map[string]string{AzurePipelineMsiResourceId: "msi-id"},
+			wantContains: []string{
+				"run `azd env unset AZURE_PIPELINE_MSI_CLIENT_ID -e \"staging (eu)\"`, then rerun " +
+					"`azd pipeline config -e \"staging (eu)\" --auth-type client-credentials`",
+			},
+			wantMissing: []string{"shell or CI"},
+		},
+		{
+			name:       "value inherited from shell",
+			dotenv:     map[string]string{},
+			shellValue: "msi-id",
+			wantContains: []string{
+				"remove AZURE_PIPELINE_MSI_CLIENT_ID from your shell or CI environment, then rerun " +
+					"`azd pipeline config -e \"staging (eu)\" --auth-type client-credentials`",
+			},
+			wantMissing: []string{"azd env unset"},
+		},
+		{
+			name:       "value in both",
+			dotenv:     map[string]string{AzurePipelineMsiResourceId: "msi-id"},
+			shellValue: "msi-id",
+			wantContains: []string{
+				"run `azd env unset AZURE_PIPELINE_MSI_CLIENT_ID -e \"staging (eu)\"` and " +
+					"remove AZURE_PIPELINE_MSI_CLIENT_ID from your shell or CI environment",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(AzurePipelineMsiResourceId, tt.shellValue)
+			if tt.shellValue == "" {
+				require.NoError(t, os.Unsetenv(AzurePipelineMsiResourceId))
+			}
+
+			pm := &PipelineManager{env: environment.NewWithValues("staging (eu)", tt.dotenv)}
+			got := pm.msiToClientCredentialsSuggestion()
+			for _, want := range tt.wantContains {
+				require.Contains(t, got, want)
+			}
+			for _, notWant := range tt.wantMissing {
+				require.NotContains(t, got, notWant)
+			}
 		})
 	}
 }

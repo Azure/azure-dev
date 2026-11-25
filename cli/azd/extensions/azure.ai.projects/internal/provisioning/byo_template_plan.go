@@ -218,6 +218,7 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 			}
 			local := *env
 			local.copyIndex = index
+			local.namedCopy = maps.Clone(env.namedCopy)
 			local.variables, local.active = map[string]any{}, map[string]bool{}
 			path := env.path + "/" + entry.symbol
 			if count > 1 {
@@ -630,6 +631,17 @@ func (e *planEnvironment) exprMentionsHosting(expr planExpression, seen map[stri
 		seen[id] = true
 		definitions, _ := e.template["variables"].(map[string]any)
 		for name, def := range definitions {
+			if strings.EqualFold(name, "copy") {
+				if loops, ok := parseCopyLoops(def); ok {
+					for _, loop := range loops {
+						if loopName, missing := planString(e.value(loop["name"])); missing == "" &&
+							strings.EqualFold(loopName, ref) && e.valueMentionsHosting(loop["input"], seen) {
+							return true
+						}
+					}
+					continue
+				}
+			}
 			if strings.EqualFold(name, ref) && e.valueMentionsHosting(def, seen) {
 				return true
 			}
@@ -640,14 +652,14 @@ func (e *planEnvironment) exprMentionsHosting(expr planExpression, seen map[stri
 			return false
 		}
 		seen[id] = true
-		if param, found := e.parameters[strings.ToLower(ref)]; found && e.valueMentionsHosting(param(), seen) {
-			return true
+		if param, found := e.parameters[strings.ToLower(ref)]; found {
+			return e.valueMentionsHosting(param(), seen)
 		}
 		definitions, _ := e.template["parameters"].(map[string]any)
 		for name, def := range definitions {
 			if strings.EqualFold(name, ref) {
-				if defMap, ok := def.(map[string]any); ok && e.valueMentionsHosting(defMap["defaultValue"], seen) {
-					return true
+				if defMap, ok := def.(map[string]any); ok {
+					return e.valueMentionsHosting(defMap["defaultValue"], seen)
 				}
 			}
 		}

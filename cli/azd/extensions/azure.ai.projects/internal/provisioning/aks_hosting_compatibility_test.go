@@ -395,11 +395,21 @@ func customTemplateWithoutAgentHosting(
 func TestBYOCustomTemplateWithoutAgentHosting(t *testing.T) {
 	customClusterID := offlineClusterID + "-custom"
 	for _, preview := range []bool{false, true} {
-		for _, scenario := range []string{"renamed parameter", "disabled agentHosting parameter", "preflight failure"} {
+		for _, scenario := range []string{
+			"renamed parameter", "property loop", "disabled agentHosting parameter", "preflight failure",
+		} {
 			t.Run(fmt.Sprintf("preview=%t/%s", preview, scenario), func(t *testing.T) {
-				p, fake, source := customTemplateWithoutAgentHosting(
-					t, 7, customBYOProperties("[parameters('aksClusterId')]"),
-				)
+				props := any(customBYOProperties("[parameters('aksClusterId')]"))
+				if scenario == "property loop" {
+					props = map[string]any{"copy": []any{map[string]any{
+						"name":  "agentHostingConfigurations",
+						"count": "[length(createArray(parameters('aksClusterId')))]",
+						"input": customBYOProperties(
+							"[createArray(parameters('aksClusterId'))[copyIndex('agentHostingConfigurations')]]",
+						)["agentHostingConfigurations"].([]any)[0],
+					}}}
+				}
+				p, fake, source := customTemplateWithoutAgentHosting(t, 7, props)
 				fake.base.clusterID = customClusterID
 				source.parameters["aksClusterId"] = map[string]any{"value": customClusterID}
 				if scenario == "preflight failure" {
@@ -463,10 +473,14 @@ func TestBYOCustomTemplateGateAndNonAKSIsolation(t *testing.T) {
 		"expected a complete Microsoft.ContainerService/managedClusters resource ID")
 	assert.Empty(t, fake.requests)
 
-	// An inactive BYO account must not taint an active non-AKS account with unresolved runtime properties.
+	// Inactive BYO accounts, overridden BYO parameter defaults, and zero-count copy loops must not trigger BYO.
 	p, fake, source = customTemplateWithoutAgentHosting(t, 0, nil)
 	t.Setenv(synthesis.BYOAKSEnvVar, "false")
 	p.credential = nil
+	p.armTemplate["parameters"].(map[string]any)["customProps"] = map[string]any{
+		"type": "object", "defaultValue": customBYOProperties(offlineClusterID),
+	}
+	source.parameters["customProps"] = map[string]any{"value": map[string]any{"allowProjectManagement": true}}
 	p.armTemplate["variables"] = map[string]any{"baseProps": map[string]any{"allowProjectManagement": true}}
 	p.armTemplate["resources"] = map[string]any{
 		"inactiveBYO": map[string]any{
@@ -477,9 +491,16 @@ func TestBYOCustomTemplateGateAndNonAKSIsolation(t *testing.T) {
 			"type": "Microsoft.CognitiveServices/accounts", "name": "cog",
 			"properties": "[union(variables('baseProps'), reference('runtimeSource').properties)]",
 		},
-		"emptyConfigs": map[string]any{
-			"type": "Microsoft.CognitiveServices/accounts", "name": "cog-empty",
-			"properties": map[string]any{"agentHostingConfigurations": []any{}},
+		"overriddenDefault": map[string]any{
+			"type": "Microsoft.CognitiveServices/accounts", "name": "cog-override",
+			"properties": "[union(parameters('customProps'), reference('runtimeSource').properties)]",
+		},
+		"zeroCopy": map[string]any{
+			"type": "Microsoft.CognitiveServices/accounts", "name": "cog-zero-copy",
+			"properties": map[string]any{"copy": []any{map[string]any{
+				"name": "agentHostingConfigurations", "count": 0.0,
+				"input": customBYOProperties(offlineClusterID)["agentHostingConfigurations"].([]any)[0],
+			}}},
 		},
 	}
 	require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))

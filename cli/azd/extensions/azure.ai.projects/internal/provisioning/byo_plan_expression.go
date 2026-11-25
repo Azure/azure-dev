@@ -166,6 +166,7 @@ type planEnvironment struct {
 	variables  map[string]any
 	active     map[string]bool
 	copyIndex  int
+	namedCopy  map[string]int
 	function   func(string, []string) any
 	walked     bool
 }
@@ -218,6 +219,59 @@ func planScalar(value any) bool {
 	}
 }
 
+func parseCopyLoops(raw any) ([]map[string]any, bool) {
+	items, ok := raw.([]any)
+	if !ok || len(items) == 0 {
+		return nil, false
+	}
+	loops := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		loop, ok := item.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		_, hasName := loop["name"]
+		_, hasCount := loop["count"]
+		_, hasInput := loop["input"]
+		if !hasName || !hasCount || !hasInput {
+			return nil, false
+		}
+		loops = append(loops, loop)
+	}
+	return loops, true
+}
+
+func (e *planEnvironment) evaluateCopyLoop(loop map[string]any) (string, any, string) {
+	name, missing := planString(e.value(loop["name"]))
+	if missing != "" {
+		return "", nil, missing
+	}
+	value := e.value(loop["count"])
+	number, ok := value.(float64)
+	if !ok || number < 0 || number > 128 || number != math.Trunc(number) {
+		return name, planUnknown{"property copy count cannot be resolved within the local plan limit (128)"}, ""
+	}
+	count := int(number)
+	items := make([]any, count)
+	key := strings.ToLower(name)
+	if e.namedCopy == nil {
+		e.namedCopy = map[string]int{}
+	}
+	prev, hadPrev := e.namedCopy[key]
+	defer func() {
+		if hadPrev {
+			e.namedCopy[key] = prev
+		} else {
+			delete(e.namedCopy, key)
+		}
+	}()
+	for index := range count {
+		e.namedCopy[key] = index
+		items[index] = e.value(loop["input"])
+	}
+	return name, items, ""
+}
+
 func (e *planEnvironment) value(raw any) any {
 	switch value := raw.(type) {
 	case string:
@@ -243,6 +297,18 @@ func (e *planEnvironment) value(raw any) any {
 			name, missing := planString(e.value(key))
 			if missing != "" {
 				return planUnknown{"object key cannot be resolved: " + missing}
+			}
+			if strings.EqualFold(name, "copy") {
+				if loops, ok := parseCopyLoops(value[key]); ok {
+					for _, loop := range loops {
+						loopName, expanded, loopMissing := e.evaluateCopyLoop(loop)
+						if loopMissing != "" {
+							return planUnknown{"object copy name cannot be resolved: " + loopMissing}
+						}
+						result[loopName] = expanded
+					}
+					continue
+				}
 			}
 			result[name] = e.value(value[key])
 		}
@@ -270,6 +336,19 @@ func (e *planEnvironment) variable(name string) any {
 	e.active[key] = true
 	defer delete(e.active, key)
 	for variable, raw := range definitions {
+		if strings.EqualFold(variable, "copy") {
+			if loops, ok := parseCopyLoops(raw); ok {
+				for _, loop := range loops {
+					if loopName, missing := planString(e.value(loop["name"])); missing == "" &&
+						strings.EqualFold(loopName, name) {
+						_, expanded, _ := e.evaluateCopyLoop(loop)
+						e.variables[key] = expanded
+						return expanded
+					}
+				}
+				continue
+			}
+		}
 		if strings.EqualFold(variable, name) {
 			result := e.value(raw)
 			e.variables[key] = result
@@ -464,6 +543,18 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 	}
 	if len(args) == 1 {
 		switch name {
+		case "copyindex":
+			switch arg := args[0].(type) {
+			case string:
+				if index, found := e.namedCopy[strings.ToLower(arg)]; found {
+					return float64(index)
+				}
+				return planUnknown{"copyIndex loop " + arg + " is not active"}
+			case float64:
+				if arg == math.Trunc(arg) {
+					return float64(e.copyIndex) + arg
+				}
+			}
 		case "parameters":
 			if key, ok := args[0].(string); ok {
 				return e.parameter(key)
@@ -568,6 +659,15 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 	}
 	if len(args) == 2 {
 		switch name {
+		case "copyindex":
+			loopName, okName := args[0].(string)
+			offset, okOffset := args[1].(float64)
+			if okName && okOffset && offset == math.Trunc(offset) {
+				if index, found := e.namedCopy[strings.ToLower(loopName)]; found {
+					return float64(index) + offset
+				}
+				return planUnknown{"copyIndex loop " + loopName + " is not active"}
+			}
 		case "equals":
 			if !planScalar(args[0]) || !planScalar(args[1]) {
 				return planUnknown{"structured or runtime-symbolic equality is not locally resolved"}

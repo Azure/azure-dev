@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	msi "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -1032,6 +1033,15 @@ func createPipelineManager(
 
 type mockPrompter struct{}
 
+// recordSaves returns the .env values captured each time the pipeline manager saves its environment.
+func recordSaves(pm *PipelineManager) *[]map[string]string {
+	var saves []map[string]string
+	pm.envManager.(*mockenv.MockEnvManager).ExpectedCalls[0].Run(func(args mock.Arguments) {
+		saves = append(saves, args.Get(1).(*environment.Environment).Dotenv())
+	})
+	return &saves
+}
+
 // PromptLocation implements prompt.Prompter.
 func (m *mockPrompter) PromptLocation(
 	ctx context.Context, subId string, msg string,
@@ -1399,13 +1409,18 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 				PipelineAuthTypeName:         tc.flag,
 			})
 			require.NoError(t, err)
+			saves := recordSaves(pm)
 			_, err = pm.Configure(t.Context(), "test", &project.Infra{
 				Options: provisioning.Options{Provider: provisioning.Terraform},
 			})
 			if tc.failUpload {
 				require.Error(t, err)
-				assert.Equal(t, tc.env[AzurePipelineMsiResourceId], env.Getenv(AzurePipelineMsiResourceId))
-				assert.Equal(t, string(AuthTypeClientCredentials), env.Getenv(AzurePipelineAuthTypeEnvVarName))
+				// The last save before the failed upload must already hold the client ID and requested method.
+				require.NotEmpty(t, *saves)
+				saved := (*saves)[len(*saves)-1]
+				assert.Equal(t, "app-id", saved[AzurePipelineClientIdEnvVarName])
+				assert.Equal(t, string(AuthTypeClientCredentials), saved[AzurePipelineAuthTypeEnvVarName])
+				assert.Equal(t, tc.env[AzurePipelineMsiResourceId], saved[AzurePipelineMsiResourceId])
 				fail = false
 				pm.args.PipelineAuthTypeName = ""
 				_, err = pm.Configure(t.Context(), "test", &project.Infra{
@@ -1429,6 +1444,60 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 			assert.NotContains(t, string(yaml), "--federated-credential-provider")
 		})
 	}
+}
+
+// A failed managed identity setup in an environment that previously used client credentials must not leave the
+// managed identity next to a saved client-credentials method, which a retry would treat as an unfinished switch.
+func TestPipelineConfig_FailedMsiSetupClearsSavedMethod(t *testing.T) {
+	t.Setenv("AZD_GH_TOOL_PATH", "gh")
+	dir := t.TempDir()
+	resetAzureYaml(t, filepath.Join(dir, "azure.yaml"))
+	mc := resetContext(dir, t.Context())
+	const msiId = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/msi"
+	mc.CommandRunner.When(func(_ exec.RunArgs, cmd string) bool {
+		return strings.Contains(cmd, "remote get-url origin")
+	}).Respond(exec.NewRunResult(0, "https://github.com/test-owner/test-repo.git", ""))
+	mc.CommandRunner.When(func(_ exec.RunArgs, cmd string) bool {
+		return strings.Contains(cmd, "/actions/oidc/customization/sub")
+	}).Respond(exec.NewRunResult(1, "", "HTTP 500"))
+	mc.HttpClient.When(func(r *http.Request) bool {
+		return r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/userAssignedIdentities")
+	}).RespondFn(func(r *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(r, http.StatusOK, map[string]any{"value": []msi.Identity{{
+			ID:   new(msiId),
+			Name: new("msi"),
+			Properties: &msi.UserAssignedIdentityProperties{
+				PrincipalID: new("principal-id"), ClientID: new("client-id"), TenantID: new("tenant-id"),
+			},
+		}}})
+	})
+	mc.Console.WhenSelect(func(o input.ConsoleOptions) bool {
+		return o.Message == "Select how to authenticate the pipeline to Azure:"
+	}).Respond(0)
+	mc.Console.WhenSelect(func(o input.ConsoleOptions) bool {
+		return strings.HasPrefix(o.Message, "Create a new User Managed Identity")
+	}).Respond(1)
+	mc.Console.WhenSelect(func(o input.ConsoleOptions) bool {
+		return strings.HasPrefix(o.Message, "Select an existing User Managed Identity")
+	}).Respond(0)
+	mc.Console.WhenConfirm(func(o input.ConsoleOptions) bool {
+		return o.Message == "Add the default azure-dev.yml file?"
+	}).Respond(true)
+	env := environment.NewWithValues("test", map[string]string{
+		AzurePipelineAuthTypeEnvVarName:      string(AuthTypeClientCredentials),
+		environment.SubscriptionIdEnvVarName: "sub",
+	})
+	pm, err := createPipelineManager(mc, azdcontext.NewAzdContextWithDirectory(dir), env, &PipelineManagerArgs{
+		PipelineProvider: gitHubCode, PipelineRemoteName: "origin",
+	})
+	require.NoError(t, err)
+	pm.msiService = armmsi.NewArmMsiService(mc.SubscriptionCredentialProvider, mc.ArmClientOptions)
+
+	_, err = pm.Configure(t.Context(), "test", &project.Infra{})
+	require.ErrorContains(t, err, "OIDC")
+	assert.Equal(t, msiId, env.Getenv(AzurePipelineMsiResourceId))
+	_, hasAuthType := env.LookupDotenv(AzurePipelineAuthTypeEnvVarName)
+	assert.False(t, hasAuthType)
 }
 
 func TestPipelineConfig_NestedProjectWithUnpublishedWorkflow(t *testing.T) {

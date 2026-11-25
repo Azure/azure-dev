@@ -295,7 +295,7 @@ func (pm *PipelineManager) Configure(
 	subscriptionId := pm.env.GetSubscriptionId()
 
 	// A managed identity always uses federation, so it is the previous method when one is saved.
-	previousAuthType := PipelineAuthType(pm.env.Getenv(AzurePipelineAuthTypeEnvVarName))
+	previousAuthType := pm.dotenvPipelineAuthType()
 	if usingMsi {
 		previousAuthType = AuthTypeFederated
 	}
@@ -304,7 +304,7 @@ func (pm *PipelineManager) Configure(
 	// A saved client-credentials method alongside a managed identity means an earlier switch didn't finish.
 	authTypeArg := PipelineAuthType(strings.TrimSpace(pm.args.PipelineAuthTypeName))
 	switchingFromMsi := usingMsi && (authTypeArg == AuthTypeClientCredentials ||
-		authTypeArg == "" && pm.env.Getenv(AzurePipelineAuthTypeEnvVarName) == string(AuthTypeClientCredentials))
+		authTypeArg == "" && pm.dotenvPipelineAuthType() == AuthTypeClientCredentials)
 	if switchingFromMsi {
 		usingMsi = false
 		pm.console.Message(ctx, "Switching the pipeline from a managed identity to client credentials.")
@@ -540,8 +540,10 @@ func (pm *PipelineManager) Configure(
 			return result, fmt.Errorf("failed to assign role to User Managed Identity (MSI): %w", err)
 		}
 
-		// Set in .env to be retrieved for any additional runs
+		// Set in .env to be retrieved for any additional runs. Clearing the saved method keeps a failed managed
+		// identity run from looking like an unfinished switch to client credentials.
 		pm.env.DotenvSet(AzurePipelineMsiResourceId, *msIdentity.ID)
+		pm.env.DotenvDelete(AzurePipelineAuthTypeEnvVarName)
 		if err := pm.envManager.Save(ctx, pm.env); err != nil {
 			return result, fmt.Errorf("failed to save environment: %w", err)
 		}
@@ -661,12 +663,8 @@ func (pm *PipelineManager) Configure(
 			return result, err
 		}
 
-		if usingMsi || switchingFromMsi {
-			if usingMsi {
-				pm.env.DotenvDelete(AzurePipelineAuthTypeEnvVarName)
-			} else {
-				pm.env.DotenvDelete(AzurePipelineMsiResourceId)
-			}
+		if switchingFromMsi {
+			pm.env.DotenvDelete(AzurePipelineMsiResourceId)
 			if err := pm.envManager.Save(ctx, pm.env); err != nil {
 				return result, fmt.Errorf("failed to save environment: %w", err)
 			}
@@ -1642,9 +1640,15 @@ func (pm *PipelineManager) resolvePipelineAuth(
 	}
 }
 
+// dotenvPipelineAuthType returns the auth method saved in the selected environment's .env, ignoring process values.
+func (pm *PipelineManager) dotenvPipelineAuthType() PipelineAuthType {
+	saved, _ := pm.env.LookupDotenv(AzurePipelineAuthTypeEnvVarName)
+	return PipelineAuthType(strings.TrimSpace(saved))
+}
+
 // savedPipelineAuthType returns the auth method saved by a previous run, or an empty value when none was saved.
 func (pm *PipelineManager) savedPipelineAuthType() (PipelineAuthType, error) {
-	saved := PipelineAuthType(strings.TrimSpace(pm.env.Getenv(AzurePipelineAuthTypeEnvVarName)))
+	saved := pm.dotenvPipelineAuthType()
 	switch saved {
 	case "", AuthTypeFederated, AuthTypeClientCredentials:
 		return saved, nil

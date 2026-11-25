@@ -153,7 +153,7 @@ func (r *templatePlanResolver) environment(
 ) *planEnvironment {
 	return &planEnvironment{
 		template: template, parameters: parameters, scope: scope, path: path,
-		deployment: deployment, function: r.function,
+		deployment: deployment, function: r.function, resolver: r,
 		variables: map[string]any{}, active: map[string]bool{}, resources: map[string]*planResource{},
 	}
 }

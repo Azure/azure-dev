@@ -133,6 +133,24 @@ func TestBYOPlanConsumedParameters(t *testing.T) {
 			wantWorkloadReq: true,
 		},
 		{
+			name: "property-level unresolved if condition still records branch consumption",
+			parameters: map[string]any{
+				"includeAcr": map[string]any{"value": true},
+			},
+			resources: map[string]any{
+				"conditionalPropertyGrant": map[string]any{
+					"type": "Microsoft.Authorization/roleAssignments",
+					"name": "conditional-property-grant",
+					"properties": map[string]any{
+						"principalId": "[if(not(empty(parameters('forwardedKubeletObjectId'))), " +
+							"parameters('forwardedWorkloadPrincipal'), parameters('forwardedHostingPrincipal'))]",
+					},
+				},
+			},
+			wantHostingReq:  true,
+			wantWorkloadReq: true,
+		},
+		{
 			name: "kubelet guard stays inactive when includeAcr is false",
 			resources: map[string]any{
 				"kubeletGuardedGrant": map[string]any{
@@ -140,7 +158,15 @@ func TestBYOPlanConsumedParameters(t *testing.T) {
 					"type":      "Microsoft.Authorization/roleAssignments",
 					"name":      "kubelet-guarded-grant",
 					"properties": map[string]any{
-						"principalId": "[parameters('forwardedHostingPrincipal')]",
+						"principalId": "[parameters('forwardedWorkloadPrincipal')]",
+					},
+				},
+				"resolvedPropertyIfGrant": map[string]any{
+					"type": "Microsoft.Authorization/roleAssignments",
+					"name": "resolved-property-if-grant",
+					"properties": map[string]any{
+						"principalId": "[if(not(empty(parameters('forwardedKubeletObjectId'))), " +
+							"parameters('forwardedHostingPrincipal'), '11111111-1111-1111-1111-111111111111')]",
 					},
 				},
 			},

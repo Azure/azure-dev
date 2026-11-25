@@ -169,6 +169,7 @@ type planEnvironment struct {
 	active         map[string]bool
 	copyIndex      int
 	function       func(string, []string) any
+	resolver       *templatePlanResolver
 	walked         bool
 }
 
@@ -388,6 +389,10 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 	if name == "if" && len(expression.args) == 3 {
 		condition, missing := planBool(eval(expression.args[0]))
 		if missing != "" {
+			if e.resolver != nil && e.resolver.trackingParameters {
+				eval(expression.args[1])
+				eval(expression.args[2])
+			}
 			return planUnknown{"if condition cannot be resolved: " + missing}
 		}
 		if condition {

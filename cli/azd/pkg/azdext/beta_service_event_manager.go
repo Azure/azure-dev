@@ -24,23 +24,23 @@ const betaServiceEventAckTimeout = 5 * time.Second
 
 // BetaServiceEventMessageKind identifies message presentation.
 //
-// Deprecated: use ServiceEventMessageKind in azd 1.39.0 or later.
+// Deprecated: use ServiceEventMessageKind in azd 1.40.0 or later.
 type BetaServiceEventMessageKind string
 
 const (
 	// BetaServiceEventMessageInfo is informational and non-blocking.
 	//
-	// Deprecated: use ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_INFO in azd 1.39.0 or later.
+	// Deprecated: use ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_INFO in azd 1.40.0 or later.
 	BetaServiceEventMessageInfo BetaServiceEventMessageKind = "info"
 	// BetaServiceEventMessageWarning is a non-blocking warning.
 	//
-	// Deprecated: use ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING in azd 1.39.0 or later.
+	// Deprecated: use ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING in azd 1.40.0 or later.
 	BetaServiceEventMessageWarning BetaServiceEventMessageKind = "warning"
 )
 
 // BetaServiceEventMessage is a non-blocking deploy message.
 //
-// Deprecated: use ServiceEventMessage in azd 1.39.0 or later.
+// Deprecated: use ServiceEventMessage in azd 1.40.0 or later.
 type BetaServiceEventMessage struct {
 	Kind       BetaServiceEventMessageKind
 	Message    string
@@ -50,14 +50,14 @@ type BetaServiceEventMessage struct {
 
 // BetaServiceEventResponse contains messages from a deploy handler.
 //
-// Deprecated: use ServiceEventResponse in azd 1.39.0 or later.
+// Deprecated: use ServiceEventResponse in azd 1.40.0 or later.
 type BetaServiceEventResponse struct {
 	Messages []BetaServiceEventMessage
 }
 
 // BetaServiceEventHandler handles a beta deploy event.
 //
-// Deprecated: use ServiceEventResponseHandler in azd 1.39.0 or later.
+// Deprecated: use ServiceEventResponseHandler in azd 1.40.0 or later.
 type BetaServiceEventHandler func(
 	ctx context.Context,
 	args *ServiceEventArgs,

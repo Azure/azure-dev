@@ -78,7 +78,7 @@ Extensions that resolve local Foundry configuration `$ref` files should use [`fo
 The generated Go scaffold currently pins SDK v1.30.0 and uses the frozen legacy bridge. Before using the stable `v1` APIs described here, upgrade its `github.com/azure/azure-dev/cli/azd` dependency to a published SDK v1.34.1 or later that contains the APIs you need, run `go mod tidy`, and run `azd x build` to rebuild and reinstall. Keep `requiredAzdVersion` at `>=1.34.1` or raise it for APIs that need a newer host. With the updated SDK, `EventManager` uses stable `v1`.
 Go extensions can return structured messages from service
 `predeploy`/`postdeploy` handlers with
-`ExtensionHost.WithServiceEventResponseHandler` (azd 1.39.0 or later). See
+`ExtensionHost.WithServiceEventResponseHandler` (azd 1.40.0 or later). See
 [contract versioning](../../cli/azd/docs/extensions/contract-versioning.md)
 for compatibility and the deprecated beta route.
 

@@ -1,0 +1,43 @@
+# Tier 0: canonical reuse without legacy aliases still gates eject.
+name: "eject-acr-feature-disabled"
+command: "azd ai agent init --infra=bicep --no-prompt"
+cwd: "~/working/azd-agents-acr-eject-off-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+  AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE: "false"
+  AZURE_ENV_NAME: "acr-env"
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-acr-eject-off-{instance}"'
+    cwd: "~/working"
+    name: "reset the dedicated offline directory"
+  - run: >-
+      mkdir -p -- .azure/acr-env &&
+      cp -- "{fixtures_dir}/acr-bound-preview-off/azure.yaml" ./azure.yaml &&
+      cp -- "{fixtures_dir}/acr-bound-preview-off/config.json" .azure/config.json &&
+      cp -- "{fixtures_dir}/acr-bound-preview-off/environment.env" .azure/acr-env/.env &&
+      cp -- "{fixtures_dir}/acr-bound-preview-off/environment.json" .azure/acr-env/config.json
+    name: "seed a canonical reuse binding without legacy mode or registry aliases"
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed. Do not obtain credentials,
+    install extensions, fetch files, contact Azure, or create cloud resources.
+    Use only the literal eject command and read-only inspection afterward.
+  - >-
+    Confirm init exits non-zero with a disabled foundry.acr_reuse compatibility
+    error naming AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true. Missing legacy registry
+    variables must not allow eject. No credential, network, capability, or
+    missing-file error satisfies this goal.
+  - >-
+    Confirm azure.yaml, .azure/config.json, .azure/acr-env/.env, and
+    .azure/acr-env/config.json remain byte-for-byte identical to their named
+    source files in '{fixtures_dir}/acr-bound-preview-off'. Confirm no
+    infrastructure, agent configuration, deployment state, or extra files are
+    created and no authentication or wizard prompt appears.
+  - >-
+    Take a best-effort screenshot of the error. Capture failure does not block
+    the product assertions. Report a finding for a different error, success,
+    prompt, Azure access, or local mutation; do not retry or repair the fixture.

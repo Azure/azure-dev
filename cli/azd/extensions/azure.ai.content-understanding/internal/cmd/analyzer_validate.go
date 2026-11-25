@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,10 +73,18 @@ func newAnalyzerValidateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 			findings = append(findings, result.Warnings...)
 		}
 		if len(findings) != 0 {
+			var locations map[string][]string
+			if json.Valid(data) {
+				locations, err = schema.SourceLocations(data)
+				if err != nil {
+					return exterrors.FromError(commandError("schema_location_failed",
+						"The schema source locations could not be determined.", "Check the schema JSON and retry."))
+				}
+			}
 			var message strings.Builder
 			message.WriteString("Schema validation failed:")
 			for _, finding := range findings {
-				message.WriteString("\n" + finding.DiagnosticPath() + ": " + finding.Message)
+				message.WriteString("\n" + finding.DiagnosticLocation(locations) + ": " + finding.Message)
 			}
 			return exterrors.FromError(commandError("invalid_analyzer_schema", message.String(),
 				"Correct the reported constraints, or omit --strict to allow authoring warnings."))

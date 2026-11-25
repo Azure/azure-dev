@@ -13,6 +13,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"net"
 )
 
 func TestResolveNoPromptCapacity(t *testing.T) {
@@ -82,9 +87,9 @@ func TestResolveNoPromptCapacity(t *testing.T) {
 			name: "enforces step alignment on defaultDeploymentCapacity",
 			candidate: &azdext.AiModelDeployment{
 				Capacity: 0,
-				Sku:      &azdext.AiModelSku{MinCapacity: 10, CapacityStep: 3},
+				Sku:      &azdext.AiModelSku{MinCapacity: 10, CapacityStep: 7},
 			},
-			wantCapacity: 51, // default=50, rounded up to next step of 3
+			wantCapacity: 248, // baseline=10, (250-10)=240, step-aligned down is 10 + 34*7 = 248
 			wantOk:       true,
 		},
 		{
@@ -113,6 +118,56 @@ func TestResolveNoPromptCapacity(t *testing.T) {
 			},
 			wantCapacity: 49, // 50/7=7*7=49
 			wantOk:       true,
+		},
+		{
+			name: "defaultDeploymentCapacity clamped to remaining quota",
+			candidate: &azdext.AiModelDeployment{
+				Capacity:       0,
+				Sku:            &azdext.AiModelSku{MinCapacity: 1, CapacityStep: 1},
+				RemainingQuota: floatPtr(150),
+			},
+			wantCapacity: 150,
+			wantOk:       true,
+		},
+		{
+			name: "defaultDeploymentCapacity clamped and step-aligned down to remaining quota",
+			candidate: &azdext.AiModelDeployment{
+				Capacity:       0,
+				Sku:            &azdext.AiModelSku{MinCapacity: 10, CapacityStep: 10},
+				RemainingQuota: floatPtr(155),
+			},
+			wantCapacity: 150,
+			wantOk:       true,
+		},
+		{
+			name: "defaultDeploymentCapacity clamped relative to non-multiple minCapacity and remaining quota",
+			candidate: &azdext.AiModelDeployment{
+				Capacity:       0,
+				Sku:            &azdext.AiModelSku{MinCapacity: 1, CapacityStep: 10},
+				RemainingQuota: floatPtr(155),
+			},
+			wantCapacity: 151,
+			wantOk:       true,
+		},
+		{
+			name: "defaultDeploymentCapacity clamped by both maxCapacity and remaining quota",
+			candidate: &azdext.AiModelDeployment{
+				Capacity:       0,
+				Sku:            &azdext.AiModelSku{MinCapacity: 1, MaxCapacity: 120, CapacityStep: 10},
+				RemainingQuota: floatPtr(155),
+			},
+			wantCapacity: 111,
+			wantOk:       true,
+		},
+		{
+			name: "defaultDeploymentCapacity remaining quota below minCapacity returns false",
+			candidate: &azdext.AiModelDeployment{
+				Capacity:       0,
+				Sku:            &azdext.AiModelSku{MinCapacity: 20, CapacityStep: 10},
+				RemainingQuota: floatPtr(15),
+			},
+			wantCapacity: 0,
+			wantOk:       false,
 		},
 		{
 			name: "exceeds remaining quota returns false",
@@ -376,5 +431,420 @@ func TestExistingDeploymentError(t *testing.T) {
 
 		err := &existingDeploymentError{Deployment: deployment}
 		assert.False(t, errors.Is(err, errModelSkipped))
+	})
+}
+
+type capacityFallbackTestServer struct {
+	azdext.UnimplementedPromptServiceServer
+	azdext.UnimplementedAiModelServiceServer
+
+	promptRequests  []*azdext.PromptAiDeploymentRequest
+	resolveRequests []*azdext.ResolveModelDeploymentsRequest
+	firstErrReason  string
+	fallbackCap     int32
+	remainingQuota  *float64
+	sku             *azdext.AiModelSku
+	candidates      []*azdext.AiModelDeployment
+}
+
+func newAiReasonError(reason string) error {
+	st, err := status.New(codes.FailedPrecondition, reason).WithDetails(&errdetails.ErrorInfo{
+		Reason: reason,
+		Domain: azdext.AiErrorDomain,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return st.Err()
+}
+
+func (s *capacityFallbackTestServer) PromptAiDeployment(
+	_ context.Context,
+	req *azdext.PromptAiDeploymentRequest,
+) (*azdext.PromptAiDeploymentResponse, error) {
+	s.promptRequests = append(s.promptRequests, req)
+	if len(s.candidates) > 0 {
+		return s.promptFromCandidates(req)
+	}
+	if len(s.promptRequests) == 1 && s.firstErrReason != "" &&
+		req.GetOptions().GetCapacity() == defaultDeploymentCapacity {
+		return nil, newAiReasonError(s.firstErrReason)
+	}
+	capVal := defaultDeploymentCapacity
+	if req.GetOptions().Capacity != nil {
+		capVal = req.GetOptions().GetCapacity()
+	} else if s.fallbackCap > 0 {
+		capVal = s.fallbackCap
+	}
+	return &azdext.PromptAiDeploymentResponse{
+		Deployment: &azdext.AiModelDeployment{
+			ModelName: req.GetModelName(),
+			Format:    "OpenAI",
+			Version:   "2025-04-14",
+			Sku:       &azdext.AiModelSku{Name: "GlobalStandard"},
+			Capacity:  capVal,
+		},
+	}, nil
+}
+
+func (s *capacityFallbackTestServer) promptFromCandidates(
+	req *azdext.PromptAiDeploymentRequest,
+) (*azdext.PromptAiDeploymentResponse, error) {
+	opts := req.GetOptions()
+	var matched []*azdext.AiModelDeployment
+	for _, c := range s.candidates {
+		if len(opts.GetVersions()) > 0 && c.GetVersion() != opts.GetVersions()[0] {
+			continue
+		}
+		if len(opts.GetSkus()) > 0 && c.GetSku().GetName() != opts.GetSkus()[0] {
+			continue
+		}
+		sku := c.GetSku()
+		capVal := sku.GetDefaultCapacity()
+		if opts.Capacity != nil {
+			if capacityValidForSku(sku, opts.GetCapacity()) {
+				capVal = opts.GetCapacity()
+			}
+		}
+		if c.RemainingQuota != nil && float64(capVal) > *c.RemainingQuota {
+			continue
+		}
+		matched = append(matched, cloneDeploymentWithCapacity(c, capVal))
+	}
+	if len(matched) == 0 {
+		return nil, newAiReasonError(azdext.AiErrorReasonNoValidSkus)
+	}
+	// Simulate user selecting the last available SKU when unscoped.
+	return &azdext.PromptAiDeploymentResponse{
+		Deployment: matched[len(matched)-1],
+	}, nil
+}
+
+func (s *capacityFallbackTestServer) ResolveModelDeployments(
+	_ context.Context,
+	req *azdext.ResolveModelDeploymentsRequest,
+) (*azdext.ResolveModelDeploymentsResponse, error) {
+	s.resolveRequests = append(s.resolveRequests, req)
+	if req.GetOptions().Capacity != nil && len(s.resolveRequests) == 1 && s.firstErrReason != "" {
+		return nil, newAiReasonError(s.firstErrReason)
+	}
+	if len(s.candidates) > 0 {
+		return &azdext.ResolveModelDeploymentsResponse{
+			Deployments: s.candidates,
+		}, nil
+	}
+	capVal := defaultDeploymentCapacity
+	if req.GetOptions().Capacity == nil || s.fallbackCap > 0 {
+		if req.GetOptions().Capacity == nil || s.sku != nil {
+			capVal = s.fallbackCap
+		}
+	}
+	sku := s.sku
+	if sku == nil {
+		sku = &azdext.AiModelSku{
+			Name:            "GlobalStandard",
+			MinCapacity:     1,
+			MaxCapacity:     1000,
+			CapacityStep:    1,
+			DefaultCapacity: 10,
+		}
+	}
+	return &azdext.ResolveModelDeploymentsResponse{
+		Deployments: []*azdext.AiModelDeployment{
+			{
+				ModelName:      req.GetModelName(),
+				Format:         "OpenAI",
+				Version:        "2025-04-14",
+				Sku:            sku,
+				Capacity:       capVal,
+				RemainingQuota: s.remainingQuota,
+			},
+		},
+	}, nil
+}
+
+func newCapacityFallbackAzdClient(t *testing.T, srv *capacityFallbackTestServer) *azdext.AzdClient {
+	t.Helper()
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterPromptServiceServer(grpcServer, srv)
+	azdext.RegisterAiModelServiceServer(grpcServer, srv)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+	return client
+}
+
+func TestPromptAiDeploymentWithFallback(t *testing.T) {
+	azureCtx := &azdext.AzureContext{
+		Scope: &azdext.AzureScope{SubscriptionId: "sub", Location: "eastus2"},
+	}
+
+	t.Run("succeeds with defaultDeploymentCapacity on first call", func(t *testing.T) {
+		srv := &capacityFallbackTestServer{}
+		client := newCapacityFallbackAzdClient(t, srv)
+		ms := &modelSelector{azdClient: client, azureContext: azureCtx}
+
+		resp, err := ms.promptAiDeploymentWithFallback(t.Context(), "gpt-5.4-mini", "eastus2")
+		require.NoError(t, err)
+		require.Len(t, srv.promptRequests, 1)
+		require.NotNil(t, srv.promptRequests[0].GetOptions().Capacity)
+		assert.Equal(t, defaultDeploymentCapacity, srv.promptRequests[0].GetOptions().GetCapacity())
+		assert.Equal(t, defaultDeploymentCapacity, resp.GetDeployment().GetCapacity())
+	})
+
+	for _, reason := range []string{
+		azdext.AiErrorReasonNoValidSkus,
+		azdext.AiErrorReasonNoDeploymentMatch,
+	} {
+		t.Run("prompts with clamped quota capacity on "+reason, func(t *testing.T) {
+			srv := &capacityFallbackTestServer{
+				firstErrReason: reason,
+				fallbackCap:    10,
+				remainingQuota: new(float64(120)),
+			}
+			client := newCapacityFallbackAzdClient(t, srv)
+			ms := &modelSelector{azdClient: client, azureContext: azureCtx}
+
+			resp, err := ms.promptAiDeploymentWithFallback(t.Context(), "gpt-5", "eastus2")
+			require.NoError(t, err)
+			require.Len(t, srv.promptRequests, 1)
+			require.NotNil(t, srv.promptRequests[0].GetOptions().Capacity)
+			assert.Equal(t, int32(120), srv.promptRequests[0].GetOptions().GetCapacity())
+			assert.Empty(t, srv.promptRequests[0].GetOptions().GetVersions())
+			assert.Empty(t, srv.promptRequests[0].GetOptions().GetSkus())
+			assert.Equal(t, int32(120), resp.GetDeployment().GetCapacity())
+		})
+
+		t.Run("scopes prompt to selected candidate across differing SKU steps on "+reason, func(t *testing.T) {
+			srv := &capacityFallbackTestServer{
+				firstErrReason: reason,
+				candidates: []*azdext.AiModelDeployment{
+					{
+						ModelName: "gpt-5",
+						Format:    "OpenAI",
+						Version:   "2025-08-07",
+						Sku: &azdext.AiModelSku{
+							Name:            "GlobalStandard",
+							MinCapacity:     1,
+							MaxCapacity:     1000,
+							CapacityStep:    1,
+							DefaultCapacity: 10,
+						},
+						Capacity:       10,
+						RemainingQuota: new(float64(120)),
+					},
+					{
+						ModelName: "gpt-5",
+						Format:    "OpenAI",
+						Version:   "2025-08-07",
+						Sku: &azdext.AiModelSku{
+							Name:            "Standard",
+							MinCapacity:     10,
+							MaxCapacity:     1000,
+							CapacityStep:    20,
+							DefaultCapacity: 10,
+						},
+						Capacity:       10,
+						RemainingQuota: new(float64(100)),
+					},
+				},
+			}
+			client := newCapacityFallbackAzdClient(t, srv)
+			ms := &modelSelector{azdClient: client, azureContext: azureCtx}
+
+			resp, err := ms.promptAiDeploymentWithFallback(t.Context(), "gpt-5", "eastus2")
+			require.NoError(t, err)
+			require.Len(t, srv.promptRequests, 1)
+			assert.Equal(t, []string{"2025-08-07"}, srv.promptRequests[0].GetOptions().GetVersions())
+			assert.Equal(t, []string{"GlobalStandard"}, srv.promptRequests[0].GetOptions().GetSkus())
+			assert.Equal(t, int32(120), srv.promptRequests[0].GetOptions().GetCapacity())
+			assert.Equal(t, "GlobalStandard", resp.GetDeployment().GetSku().GetName())
+			assert.Equal(t, int32(120), resp.GetDeployment().GetCapacity())
+		})
+
+		t.Run("prefers GlobalStandard clamped over DataZoneStandard or GlobalBatch at 250 on "+reason, func(t *testing.T) {
+			srv := &capacityFallbackTestServer{
+				candidates: []*azdext.AiModelDeployment{
+					{
+						ModelName: "gpt-6-luna",
+						Format:    "OpenAI",
+						Version:   "2026-01-01",
+						Sku: &azdext.AiModelSku{
+							Name:            "GlobalBatch",
+							MinCapacity:     1,
+							MaxCapacity:     1000,
+							CapacityStep:    1,
+							DefaultCapacity: 10,
+						},
+						Capacity:       10,
+						RemainingQuota: new(float64(1000)),
+					},
+					{
+						ModelName: "gpt-6-luna",
+						Format:    "OpenAI",
+						Version:   "2026-01-01",
+						Sku: &azdext.AiModelSku{
+							Name:            "DataZoneStandard",
+							MinCapacity:     1,
+							MaxCapacity:     1000,
+							CapacityStep:    1,
+							DefaultCapacity: 10,
+						},
+						Capacity:       10,
+						RemainingQuota: new(float64(233)),
+					},
+					{
+						ModelName: "gpt-6-luna",
+						Format:    "OpenAI",
+						Version:   "2026-01-01",
+						Sku: &azdext.AiModelSku{
+							Name:            "GlobalStandard",
+							MinCapacity:     1,
+							MaxCapacity:     1000,
+							CapacityStep:    1,
+							DefaultCapacity: 10,
+						},
+						Capacity:       10,
+						RemainingQuota: new(float64(125)),
+					},
+				},
+			}
+			client := newCapacityFallbackAzdClient(t, srv)
+			ms := &modelSelector{azdClient: client, azureContext: azureCtx}
+
+			resp, err := ms.promptAiDeploymentWithFallback(t.Context(), "gpt-6-luna", "eastus2")
+			require.NoError(t, err)
+			require.Len(t, srv.promptRequests, 1)
+			assert.Equal(t, []string{"2026-01-01"}, srv.promptRequests[0].GetOptions().GetVersions())
+			assert.Equal(t, []string{"GlobalStandard"}, srv.promptRequests[0].GetOptions().GetSkus())
+			assert.Equal(t, int32(125), srv.promptRequests[0].GetOptions().GetCapacity())
+			assert.Equal(t, "GlobalStandard", resp.GetDeployment().GetSku().GetName())
+			assert.Equal(t, int32(125), resp.GetDeployment().GetCapacity())
+		})
+
+		t.Run("falls back to nil capacity when clamped capacity unavailable on "+reason, func(t *testing.T) {
+			srv := &capacityFallbackTestServer{
+				firstErrReason: reason,
+				fallbackCap:    120,
+			}
+			client := newCapacityFallbackAzdClient(t, srv)
+			ms := &modelSelector{azdClient: client, azureContext: azureCtx}
+
+			resp, err := ms.promptAiDeploymentWithFallback(t.Context(), "gpt-5", "eastus2")
+			require.NoError(t, err)
+			require.Len(t, srv.promptRequests, 2)
+			require.NotNil(t, srv.promptRequests[0].GetOptions().Capacity)
+			assert.Equal(t, defaultDeploymentCapacity, srv.promptRequests[0].GetOptions().GetCapacity())
+			assert.Nil(t, srv.promptRequests[1].GetOptions().Capacity)
+			assert.Equal(t, int32(120), resp.GetDeployment().GetCapacity())
+		})
+	}
+}
+
+func TestResolveModelDeploymentFallbackClampsToRemainingQuota(t *testing.T) {
+	azureCtx := &azdext.AzureContext{
+		Scope: &azdext.AzureScope{SubscriptionId: "sub", Location: "eastus2"},
+	}
+	model := &azdext.AiModel{
+		Name:      "gpt-5",
+		Locations: []string{"eastus2"},
+		Versions: []*azdext.AiModelVersion{
+			{Version: "2025-04-14", IsDefault: true},
+		},
+	}
+
+	srv := &capacityFallbackTestServer{
+		fallbackCap:    10,
+		remainingQuota: new(float64(150)),
+	}
+	client := newCapacityFallbackAzdClient(t, srv)
+
+	deployment, err := resolveModelDeployment(t.Context(), client, azureCtx, model, "eastus2")
+	require.NoError(t, err)
+	require.Len(t, srv.resolveRequests, 1)
+	assert.Nil(t, srv.resolveRequests[0].GetOptions().Capacity)
+	assert.Equal(t, int32(150), deployment.GetCapacity())
+}
+
+func TestResolveModelDeploymentClampsWhenCoreSubstitutesDefaultCapacity(t *testing.T) {
+	azureCtx := &azdext.AzureContext{
+		Scope: &azdext.AzureScope{SubscriptionId: "sub", Location: "eastus2"},
+	}
+	model := &azdext.AiModel{
+		Name:      "gpt-5",
+		Locations: []string{"eastus2"},
+		Versions: []*azdext.AiModelVersion{
+			{Version: "2025-04-14", IsDefault: true},
+		},
+	}
+
+	t.Run("clamps to maxCapacity instead of retaining substituted SKU default 10", func(t *testing.T) {
+		srv := &capacityFallbackTestServer{
+			fallbackCap:    10,
+			remainingQuota: new(float64(150)),
+			sku: &azdext.AiModelSku{
+				Name:            "GlobalStandard",
+				MinCapacity:     1,
+				MaxCapacity:     100,
+				CapacityStep:    1,
+				DefaultCapacity: 10,
+			},
+		}
+		client := newCapacityFallbackAzdClient(t, srv)
+
+		deployment, err := resolveModelDeployment(t.Context(), client, azureCtx, model, "eastus2")
+		require.NoError(t, err)
+		require.Len(t, srv.resolveRequests, 1)
+		assert.Equal(t, int32(100), deployment.GetCapacity())
+	})
+
+	t.Run("clamps to baseline-relative step instead of retaining substituted SKU default 11", func(t *testing.T) {
+		srv := &capacityFallbackTestServer{
+			fallbackCap:    11,
+			remainingQuota: new(float64(155)),
+			sku: &azdext.AiModelSku{
+				Name:            "GlobalStandard",
+				MinCapacity:     1,
+				MaxCapacity:     1000,
+				CapacityStep:    10,
+				DefaultCapacity: 11,
+			},
+		}
+		client := newCapacityFallbackAzdClient(t, srv)
+
+		deployment, err := resolveModelDeployment(t.Context(), client, azureCtx, model, "eastus2")
+		require.NoError(t, err)
+		require.Len(t, srv.resolveRequests, 1)
+		assert.Equal(t, int32(151), deployment.GetCapacity())
+	})
+
+	t.Run("clamps downward to 200 instead of rounding up to 300 when quota is 1000", func(t *testing.T) {
+		srv := &capacityFallbackTestServer{
+			fallbackCap:    100,
+			remainingQuota: new(float64(1000)),
+			sku: &azdext.AiModelSku{
+				Name:            "GlobalStandard",
+				MinCapacity:     100,
+				MaxCapacity:     1000,
+				CapacityStep:    100,
+				DefaultCapacity: 100,
+			},
+		}
+		client := newCapacityFallbackAzdClient(t, srv)
+
+		deployment, err := resolveModelDeployment(t.Context(), client, azureCtx, model, "eastus2")
+		require.NoError(t, err)
+		require.Len(t, srv.resolveRequests, 1)
+		assert.Equal(t, int32(200), deployment.GetCapacity())
 	})
 }

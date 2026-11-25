@@ -1,0 +1,13 @@
+# Tier 0 (offline) - discover trace-driven skill optimization without authentication.
+name: "optimize-skills-help"
+command: "azd ai agent optimize --help"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:optimize", "parallel-safe"]
+goals:
+  - "Confirm the command exits successfully and explains that skill optimization uses --config with type skill_optimization and a trace window."
+  - "Confirm the help says recorded feedback does not require a dataset or a new evaluation run."
+  - "Confirm the help says generated skill versions are not automatically attached or deployed to an agent."
+  - "Confirm download appears among the available optimization subcommands."
+  - "Confirm no credentials, agent selection, or optimization submission are requested."
+  - "Take a screenshot of the help output; screenshot capture failure is only an observation."
+  - "Report a finding if the skill configuration guidance or download command is missing, or help requires authentication."

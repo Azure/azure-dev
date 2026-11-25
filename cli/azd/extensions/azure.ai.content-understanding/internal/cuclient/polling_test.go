@@ -162,9 +162,9 @@ func TestAnalyzerPollingFailuresAndMalformedResponses(t *testing.T) {
 		code string
 		kind ErrorKind
 	}{
-		{`{"status":"Failed","error":{"code":"InvalidRequest","message":"private-token","target":"private-token",
-			"details":[{"code":"InvalidField","message":"private-token","target":"private-token",
-				"details":[{"code":"private token","message":"private-token"}]}]}}`, "InvalidRequest", ErrorService},
+		{`{"status":"Failed","error":{"code":"InvalidRequest","message":"token: private-token","target":"private-token",
+			"details":[{"code":"InvalidField","message":"token: private-token","target":"private-token",
+				"details":[{"code":"private token","message":"token: private-token"}]}]}}`, "InvalidRequest", ErrorService},
 		{`{"status":"Failed","error":{"code":"private token"}}`, "analyzer_operation_failed", ErrorService},
 		{`{"status":"Failed"}`, "analyzer_operation_failed", ErrorService},
 		{`{"status":"Canceled"}`, "analyzer_operation_canceled", ErrorCancelled},

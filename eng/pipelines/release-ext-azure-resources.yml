@@ -1,0 +1,49 @@
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - cli/azd/extensions/azure.resources
+      - cli/azd/extensions/scripts/ci-build.ps1
+      - eng/pipelines/release-ext-azure-resources.yml
+      - /eng/pipelines/templates/stages/release-azd-extension.yml
+      - /eng/pipelines/templates/stages/publish-extension-pr.yml
+      - /eng/scripts/Set-ExtensionVersionVariable.ps1
+      - /eng/pipelines/templates/jobs/build-azd-extension.yml
+      - /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
+      - /eng/pipelines/templates/variables/image.yml
+
+pr:
+  paths:
+    include:
+      - cli/azd/extensions/azure.resources
+      - cli/azd/extensions/scripts/ci-build.ps1
+      - eng/pipelines/release-ext-azure-resources.yml
+      - /eng/pipelines/templates/stages/release-azd-extension.yml
+      - /eng/pipelines/templates/stages/publish-extension-pr.yml
+      - /eng/scripts/Set-ExtensionVersionVariable.ps1
+      - /eng/pipelines/templates/jobs/build-azd-extension.yml
+      - /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
+      - /eng/pipelines/templates/steps/publish-cli.yml
+
+parameters:
+  - name: PublishToRegistry
+    displayName: Publish to registry
+    type: string
+    default: dev
+    values:
+      - stable
+      - dev
+      - nightly
+
+extends:
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      - template: /eng/pipelines/templates/stages/release-azd-extension.yml
+        parameters:
+          AzdExtensionId: azure.resources
+          SanitizedExtensionId: azure-resources
+          AzdExtensionDirectory: cli/azd/extensions/azure.resources
+          PublishToRegistry: ${{ parameters.PublishToRegistry }}

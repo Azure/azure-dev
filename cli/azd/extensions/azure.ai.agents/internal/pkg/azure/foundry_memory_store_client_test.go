@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/pkg/recordproxy"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -188,4 +190,27 @@ func TestEnsureMemoryStore_PropagatesNon404GetErrors(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.Equal(t, []string{http.MethodGet}, methods, "a non-404 GET error must not trigger a create")
+}
+
+func TestNewFoundryMemoryStoreClientUsesRecordProxyTransport(t *testing.T) {
+	var capturedPath string
+	original := recordproxy.Transport
+	recordproxy.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		capturedPath = req.URL.Path
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"id":"ms-proxy","name":"store"}`)),
+			Request:    req,
+		}, nil
+	})
+	t.Cleanup(func() { recordproxy.Transport = original })
+
+	client := NewFoundryMemoryStoreClient(
+		"https://account.services.ai.azure.com/api/projects/proj",
+		toolboxTestCredential{},
+	)
+	store, err := client.GetMemoryStore(t.Context(), "store")
+	require.NoError(t, err)
+	require.Equal(t, "ms-proxy", store.Id)
+	require.Equal(t, "/api/projects/proj/memory_stores/store", capturedPath)
 }

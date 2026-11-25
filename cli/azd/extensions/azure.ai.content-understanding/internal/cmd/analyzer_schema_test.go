@@ -93,8 +93,10 @@ func TestSchemaCreateOfflineTemplatesVersionAndOutput(t *testing.T) {
 }
 
 func TestSchemaCreateSampleMappingAndSafeDiagnostics(t *testing.T) {
+	setHelpColor(t, true)
+	t.Setenv("NO_COLOR", "")
 	for _, empty := range []bool{false, true} {
-		for _, format := range []string{"json", "none"} {
+		for _, format := range []string{"default", "json", "none"} {
 			t.Run(format+map[bool]string{true: "/empty", false: "/fields"}[empty], func(t *testing.T) {
 				f := newAnalyzeFixture(t)
 				sample := filepath.Join(testutil.TempDir(t), "invoice[1].PDF")
@@ -131,6 +133,12 @@ func TestSchemaCreateSampleMappingAndSafeDiagnostics(t *testing.T) {
 				assert.Equal(t, "https://explicit.services.ai.azure.com", f.options.Endpoint)
 				assert.Equal(t, cuclient.PreviewAPIVersion, f.options.APIVersion)
 				assert.Contains(t, stderr, "1 schema-suggestion warning")
+				if format == "default" {
+					assert.Contains(t, stderr, "\x1b[33m")
+				} else {
+					assert.NotContains(t, stderr, "\x1b")
+				}
+				assert.NotContains(t, stdout, "\x1b")
 				assert.NotContains(t, stdout+stderr, "private-service-detail")
 				assert.Equal(t, empty, strings.Contains(stderr, "No suggested fields"))
 				body, err := os.ReadFile(output) // #nosec G304 -- Reads only this test's private temporary output.

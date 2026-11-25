@@ -1,4 +1,4 @@
-# Azure AI Inspector Extension (Preview)
+# Azure AI Inspector Extension
 
 Browser-based inspector UI for locally running Foundry agents, packaged as a standalone
 azd extension.

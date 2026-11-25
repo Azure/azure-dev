@@ -264,7 +264,7 @@ func validateBetaEventMessage(message *v1beta.EventMessage, mode betaEventStream
 			return status.Error(codes.InvalidArgument, "beta protocol fields require a new stream")
 		}
 		if message.GetServiceHandlerStatus() != nil &&
-			len(message.GetServiceHandlerStatus().GetMessages()) > 0 {
+			len(message.GetServiceHandlerStatus().GetMessages()) > 0 { //nolint:staticcheck // legacy beta check.
 			return status.Error(
 				codes.InvalidArgument,
 				"structured service event messages require a new beta event stream",
@@ -283,7 +283,7 @@ func validateBetaEventMessage(message *v1beta.EventMessage, mode betaEventStream
 			}
 		}
 		if message.GetServiceHandlerStatus() != nil &&
-			len(message.GetServiceHandlerStatus().GetMessages()) > 0 &&
+			len(message.GetServiceHandlerStatus().GetMessages()) > 0 && //nolint:staticcheck // legacy beta check.
 			message.RequestId == "" {
 			return status.Error(
 				codes.InvalidArgument,

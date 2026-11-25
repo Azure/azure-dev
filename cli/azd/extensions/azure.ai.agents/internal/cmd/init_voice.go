@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,7 +26,11 @@ func runInitVoice(
 	azdClient *azdext.AzdClient,
 	projectTargetDir string,
 	createdFolderDisplay string,
+	noticeWriter io.Writer,
 ) error {
+	if initACRResourceID(flags) != "" {
+		return initACRConflict("interactive voice initialization", initACRSelectorSource(flags))
+	}
 	defer inittelemetry.Start(ctx, inittelemetry.AgentConfiguration)()
 
 	projectConfig, err := ensureProject(ctx, flags, azdClient, projectTargetDir)
@@ -63,6 +68,7 @@ func runInitVoice(
 		false,
 		false,
 		nil,
+		"",
 	)
 	if err != nil {
 		return err

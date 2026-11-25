@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 
+	"azure.ai.projects/synthesis"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -30,18 +32,13 @@ type FoundryProjectsClient struct {
 
 // NewFoundryProjectsClient creates a new instance of FoundryProjectsClient
 func NewFoundryProjectsClient(
-	accountName string,
-	projectName string,
+	projectEndpoint string,
 	cred azcore.TokenCredential,
 ) (*FoundryProjectsClient, error) {
-	if strings.TrimSpace(accountName) == "" {
-		return nil, fmt.Errorf("accountName must not be empty")
+	baseEndpoint, err := synthesis.ValidateFoundryProjectEndpoint(projectEndpoint)
+	if err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(projectName) == "" {
-		return nil, fmt.Errorf("projectName must not be empty")
-	}
-
-	baseEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", accountName, projectName)
 
 	clientOptions := &policy.ClientOptions{
 		Logging: policy.LogOptions{
@@ -237,13 +234,16 @@ func (c *FoundryProjectsClient) validateNextLinkOrigin(nextLink string) error {
 
 	linkURL, err := url.Parse(nextLink)
 	if err != nil {
-		return fmt.Errorf("invalid nextLink URL: %w", err)
+		return fmt.Errorf("invalid nextLink URL")
 	}
 
 	// Reject scheme-relative URLs (e.g., "//evil.com/path") and URLs without an explicit scheme.
 	// These could bypass origin checks or behave unpredictably.
 	if linkURL.Scheme == "" {
-		return fmt.Errorf("nextLink must have an explicit scheme, got %q", nextLink)
+		return fmt.Errorf("nextLink must have an explicit scheme")
+	}
+	if linkURL.User != nil || linkURL.Fragment != "" {
+		return fmt.Errorf("nextLink must not contain credentials or a fragment")
 	}
 
 	if !strings.EqualFold(linkURL.Scheme, c.baseOriginURL.Scheme) ||

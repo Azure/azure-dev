@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -284,6 +285,49 @@ func TestUpdateLegacyProjectDeploymentsSplitNoOp(t *testing.T) {
 		},
 	}
 	require.NoError(t, updateLegacyProjectDeployments(t.Context(), nil, services, ""))
+}
+
+func TestPredeployDoesNotSeedLegacyProjectDeployments(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "true")
+	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
+	env := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		values:  map[string]map[string]string{"dev": {}},
+	}
+	client := newTestAzdClient(t, env, &testWorkflowServiceServer{})
+	service := &azdext.ServiceConfig{
+		Name: "agent",
+		Host: AiAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind":         "prompt",
+			"name":         "agent",
+			"model":        "chat",
+			"instructions": "Help the user.",
+			"deployments": []any{
+				map[string]any{
+					"name":  "chat",
+					"model": map[string]any{"name": "gpt-4.1-mini", "version": "2025-04-14"},
+					"sku":   map[string]any{"name": "GlobalStandard", "capacity": 10},
+				},
+			},
+		}),
+	}
+	proj := &azdext.ProjectConfig{
+		Path:     t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{"agent": service},
+	}
+
+	_, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+		Project: proj,
+		Service: service,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, env.values["dev"]["AI_PROJECT_DEPLOYMENTS"],
+		"predeploy must not seed AI_PROJECT_DEPLOYMENTS from legacy service declarations")
+
+	require.NoError(t, preprovisionHandler(t.Context(), client, &azdext.ProjectEventArgs{Project: proj}))
+	assert.Contains(t, env.values["dev"]["AI_PROJECT_DEPLOYMENTS"], `\"name\":\"chat\"`,
+		"preprovision continues to seed AI_PROJECT_DEPLOYMENTS from legacy service declarations")
 }
 
 func TestPrepareContainerSettings_AppliesSettingsInMemory(t *testing.T) {
@@ -1040,7 +1084,7 @@ func TestResolveTemplateRef(t *testing.T) {
 }
 
 func TestAgentListenersDoNotProjectSplitConnections(t *testing.T) {
-	t.Setenv(featureflags.Voice.EnvVar, "true")
+	t.Setenv(featureflags.A2A.EnvVar, "true")
 
 	for _, event := range []string{"preprovision", "predeploy"} {
 		t.Run(event, func(t *testing.T) {
@@ -1402,10 +1446,10 @@ func TestPredeployAgentRBACRunsPerService(t *testing.T) {
 }
 
 func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
-	t.Setenv(featureflags.Voice.EnvVar, "true")
 	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
 	for _, kind := range []string{"voice", "prompt-voice"} {
 		t.Run(kind, func(t *testing.T) {
+			t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
 			svc := &azdext.ServiceConfig{
 				Name: "voice-agent",
 				Host: AiAgentHost,
@@ -1432,29 +1476,109 @@ func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
 	}
 }
 
-func TestPredeployRejectsDisabledVoiceBeforeMutation(t *testing.T) {
-	t.Setenv(featureflags.Voice.EnvVar, "")
+func TestPredeployReturnsPreviewFeatureNotice(t *testing.T) {
+	clearPreviewProcess(t)
+	t.Setenv(featureflags.MemorySnapshot.EnvVar, "true")
+	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
+	service := &azdext.ServiceConfig{
+		Name: "snapshot-agent",
+		Host: AiAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind": "hosted", "name": "snapshot-agent", "enableMemorySnapshot": true,
+		}),
+	}
+	project := &azdext.ProjectConfig{
+		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{"snapshot-agent": service},
+	}
+	client := newTestAzdClient(
+		t,
+		&testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}},
+		&testWorkflowServiceServer{},
+	)
+
+	response, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+		Project: project,
+		Service: service,
+	})
+	require.NoError(t, err)
+	require.Len(t, response.Messages, 1)
+	require.Equal(t, azdext.BetaServiceEventMessageWarning, response.Messages[0].Kind)
+	require.Contains(t, response.Messages[0].Message, "Preview feature enabled:")
+	require.Contains(t, response.Messages[0].Message, featureflags.MemorySnapshot.EnvVar+"=true")
+	require.Contains(t, response.Messages[0].Message, "Preview behavior may change.")
+}
+
+func TestPredeployWarnsAboutSecretsInCodePackage(t *testing.T) {
+	clearPreviewProcess(t)
+	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
+	root := t.TempDir()
+	srcDir := filepath.Join(root, "src")
+	require.NoError(t, os.MkdirAll(srcDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, ".agentignore"), []byte("!.env\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, ".env"), []byte("API_KEY=secret\n"), 0o600))
+	service := &azdext.ServiceConfig{
+		Name:         "code-agent",
+		Host:         AiAgentHost,
+		RelativePath: "src",
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind": "hosted", "name": "code-agent",
+			"codeConfiguration": map[string]any{"runtime": "python_3_13", "entryPoint": "main.py"},
+		}),
+	}
+	project := &azdext.ProjectConfig{
+		Path: root, Services: map[string]*azdext.ServiceConfig{"code-agent": service},
+	}
+	packageFile, err := os.CreateTemp(root, "code-*.zip")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Remove(packageFile.Name()) })
+	zipWriter := zip.NewWriter(packageFile)
+	zipEntry, err := zipWriter.Create(".env")
+	require.NoError(t, err)
+	_, err = zipEntry.Write([]byte("API_KEY=secret\n"))
+	require.NoError(t, err)
+	require.NoError(t, zipWriter.Close())
+	require.NoError(t, packageFile.Close())
+
+	client := newTestAzdClient(
+		t,
+		&testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}},
+		&testWorkflowServiceServer{},
+	)
+
+	response, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+		Project: project,
+		Service: service,
+		ServiceContext: &azdext.ServiceContext{Package: []*azdext.Artifact{{
+			Location: packageFile.Name(),
+			Metadata: map[string]string{"type": "code-zip"},
+		}}},
+	})
+	require.NoError(t, err)
+	require.Len(t, response.Messages, 1)
+	require.Equal(t, azdext.BetaServiceEventMessageWarning, response.Messages[0].Kind)
+	require.Contains(t, response.Messages[0].Message, ".agentignore re-includes them: .env")
+}
+
+func TestPredeployRejectsDisabledMemorySnapshotBeforeMutation(t *testing.T) {
+	clearPreviewProcess(t)
 	t.Setenv("AGENT_DEFINITION_PATH", "")
 	svc := &azdext.ServiceConfig{
-		Name: "voice-agent", Host: AiAgentHost,
+		Name: "snapshot-agent", Host: AiAgentHost,
 		AdditionalProperties: mustStruct(t, map[string]any{
-			"kind": "voice", "name": "voice-agent", "modelType": "managed",
-			"model": map[string]any{"id": "gpt-realtime"},
+			"kind": "hosted", "name": "snapshot-agent", "enableMemorySnapshot": true,
 		}),
 	}
 	proj := &azdext.ProjectConfig{
-		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{"voice-agent": svc},
+		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{"snapshot-agent": svc},
 	}
 	before := proto.Clone(proj)
 	envServer := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}}
 	client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
-
 	response, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
 		Project: proj, Service: svc,
 	})
-
 	require.Nil(t, response)
-	require.ErrorContains(t, err, featureflags.Voice.ID)
+	require.ErrorContains(t, err, featureflags.MemorySnapshot.ID)
 	require.True(t, proto.Equal(before, proj))
 	require.Zero(t, envServer.getCurrentCalls)
 	require.Zero(t, envServer.getValuesCalls)
@@ -1613,26 +1737,26 @@ func TestPredownIgnoresPromptDeploymentReadiness(t *testing.T) {
 	}{
 		{"empty instructions", "", false, "non-empty instructions"},
 		{"blank instructions", " \t", false, "non-empty instructions"},
-		{"malformed local skill", "Help.", true, "is missing 'description'"},
+		{"conflicting skill versions", "Help.", true, `conflicting authored versions "1" and "2"`},
 	} {
 		for _, source := range []string{"direct", "root ref"} {
 			t.Run(tt.name+"/"+source, func(t *testing.T) {
 				root := t.TempDir()
-				props := mustStruct(t, map[string]any{
+				propValues := map[string]any{
 					"kind": "prompt", "name": "agent", "model": "gpt-4.1", "instructions": tt.instructions,
-				})
+				}
+				if tt.brokenSkill {
+					propValues["skills"] = []any{
+						map[string]any{"name": "broken", "version": "1"},
+						map[string]any{"name": "broken", "version": "2"},
+					}
+				}
+				props := mustStruct(t, propValues)
 				if source == "root ref" {
 					data, err := json.Marshal(props.AsMap())
 					require.NoError(t, err)
 					require.NoError(t, os.WriteFile(filepath.Join(root, "definition.yaml"), data, 0o600))
 					props = mustStruct(t, map[string]any{"$ref": "./definition.yaml"})
-				}
-				if tt.brokenSkill {
-					skillDir := filepath.Join(root, "skills", "broken")
-					require.NoError(t, os.MkdirAll(skillDir, 0o700))
-					require.NoError(t, os.WriteFile(
-						filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: broken\n---\n"), 0o600,
-					))
 				}
 				proj := &azdext.ProjectConfig{
 					Path: root,

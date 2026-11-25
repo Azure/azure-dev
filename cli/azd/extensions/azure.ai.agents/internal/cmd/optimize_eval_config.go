@@ -14,6 +14,7 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/optconfig"
+	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
@@ -88,14 +89,21 @@ func validateOptimizeCommandFlags(cmd *cobra.Command, flags *optimizeFlags, args
 		if err != nil {
 			return err
 		}
-		if cfg.Request.OptimizationConfiguration.Type == "prompt_optimization" {
+		kind := cfg.Request.OptimizationConfiguration.Type
+		if kind == "prompt_optimization" || kind == optimize_api.SkillOptimizationType {
 			for _, name := range []string{"dataset", "eval-model", "evaluator", "max-candidates"} {
 				if cmd.Flags().Changed(name) {
 					return exterrors.Validation(exterrors.CodeConflictingArguments,
-						fmt.Sprintf("--%s cannot be used with a prompt_optimization --config", name),
-						"use an agent_optimization request for evaluation-driven optimization")
+						fmt.Sprintf("--%s cannot be used with a %s --config", name, kind),
+						"configure any supported evaluation settings in the optimization request file")
 				}
 			}
+		}
+		if kind == optimize_api.SkillOptimizationType && cfg.Request.TargetConfiguration == nil &&
+			(cmd.Flags().Changed("agent") || len(args) > 0) {
+			return exterrors.Validation(exterrors.CodeConflictingArguments,
+				"--agent or an agent argument cannot override an agentless skill_optimization --config",
+				"set target_configuration and omit trace_connection_configuration.agent_name to target a Foundry agent")
 		}
 	}
 	if flags.evalConfigFile != "" {

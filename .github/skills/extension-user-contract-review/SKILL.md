@@ -3,7 +3,7 @@ name: extension-user-contract-review
 description: "**WORKFLOW SKILL** - Inspect every first-party azd extension PR diff for user contract changes before general code review. USE FOR: review extension PR, check extension contract changes, request experiences spec, review extension flags or schemas, audit contract review coverage. DO NOT USE FOR: core-only PRs, implementing extensions, running tests, or protobuf generation outside PR review."
 license: MIT
 metadata:
-  version: "1.2"
+  version: "1.3"
 ---
 
 # Extension user contract review

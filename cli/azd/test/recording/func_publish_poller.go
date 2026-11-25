@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"strings"
 
-	"gopkg.in/dnaeon/go-vcr.v3/cassette"
+	"gopkg.in/dnaeon/go-vcr.v4/pkg/cassette"
 )
 
 // funcPublishPoller handles polling for Azure Functions flex consumption publish operations.

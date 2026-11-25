@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 )
 
@@ -25,7 +25,7 @@ type subscriptionDeploymentsClient interface {
 }
 
 type armSubscriptionDeploymentsClient struct {
-	client *armresources.DeploymentsClient
+	client *armdeployments.DeploymentsClient
 }
 
 // CleanupSubscriptionDeployments requests deletion of subscription-scope ARM deployment records
@@ -36,7 +36,7 @@ func CleanupSubscriptionDeployments(
 	subscriptionID string,
 	environmentName string,
 ) error {
-	client, err := armresources.NewDeploymentsClient(subscriptionID, credential, nil)
+	client, err := armdeployments.NewDeploymentsClient(subscriptionID, credential, nil)
 	if err != nil {
 		return fmt.Errorf("create subscription deployments client: %w", err)
 	}

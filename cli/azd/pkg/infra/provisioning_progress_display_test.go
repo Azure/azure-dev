@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
@@ -24,7 +24,8 @@ import (
 )
 
 type mockResourceManager struct {
-	operations []*armresources.DeploymentOperation
+	operations    []*armdeployments.DeploymentOperation
+	displayNameFn func(context.Context, string, string, azapi.AzureResourceType) (string, error)
 }
 
 func (mock *mockResourceManager) WalkDeploymentOperations(
@@ -47,6 +48,10 @@ func (mock *mockResourceManager) GetResourceTypeDisplayName(
 	resourceId string,
 	resourceType azapi.AzureResourceType,
 ) (string, error) {
+	if mock.displayNameFn != nil {
+		return mock.displayNameFn(ctx, subscriptionId, resourceId, resourceType)
+	}
+
 	return string(resourceType), nil
 }
 
@@ -67,11 +72,11 @@ func (mock *mockResourceManager) FindResourceGroupForEnvironment(
 }
 
 func (mock *mockResourceManager) AddInProgressSubResourceOperation() {
-	mock.operations = append(mock.operations, &armresources.DeploymentOperation{
+	mock.operations = append(mock.operations, &armdeployments.DeploymentOperation{
 		ID: new("website-deploy-id"),
-		Properties: &armresources.DeploymentOperationProperties{
-			ProvisioningOperation: to.Ptr(armresources.ProvisioningOperation("Create")),
-			TargetResource: &armresources.TargetResource{
+		Properties: &armdeployments.DeploymentOperationProperties{
+			ProvisioningOperation: to.Ptr(armdeployments.ProvisioningOperation("Create")),
+			TargetResource: &armdeployments.TargetResource{
 				ResourceType: to.Ptr(string(azapi.AzureResourceTypeWebSite) + "/config"),
 				ID:           new(fmt.Sprintf("website-resource-id-%d", len(mock.operations))),
 				ResourceName: new(fmt.Sprintf("website-resource-name-%d", len(mock.operations))),
@@ -82,11 +87,11 @@ func (mock *mockResourceManager) AddInProgressSubResourceOperation() {
 }
 
 func (mock *mockResourceManager) AddInProgressOperation() {
-	mock.operations = append(mock.operations, &armresources.DeploymentOperation{
+	mock.operations = append(mock.operations, &armdeployments.DeploymentOperation{
 		ID: new("website-deploy-id"),
-		Properties: &armresources.DeploymentOperationProperties{
-			ProvisioningOperation: to.Ptr(armresources.ProvisioningOperation("Create")),
-			TargetResource: &armresources.TargetResource{
+		Properties: &armdeployments.DeploymentOperationProperties{
+			ProvisioningOperation: to.Ptr(armdeployments.ProvisioningOperation("Create")),
+			TargetResource: &armdeployments.TargetResource{
 				ResourceType: to.Ptr(string(azapi.AzureResourceTypeWebSite)),
 				ID:           new(fmt.Sprintf("website-resource-id-%d", len(mock.operations))),
 				ResourceName: new(fmt.Sprintf("website-resource-name-%d", len(mock.operations))),
@@ -97,16 +102,16 @@ func (mock *mockResourceManager) AddInProgressOperation() {
 }
 
 func (mock *mockResourceManager) MarkComplete(i int) {
-	mock.operations[i].Properties.ProvisioningState = to.Ptr(string(armresources.ProvisioningStateSucceeded))
+	mock.operations[i].Properties.ProvisioningState = to.Ptr(string(armdeployments.ProvisioningStateSucceeded))
 	mock.operations[i].Properties.Timestamp = new(time.Now().UTC())
 }
 
 func mockAzDeploymentShow(t *testing.T, m mocks.MockContext) {
-	deployment := armresources.DeploymentExtended{
+	deployment := armdeployments.DeploymentExtended{
 		ID:       new("/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME"),
 		Location: new("eastus2"),
-		Properties: &armresources.DeploymentPropertiesExtended{
-			ProvisioningState: to.Ptr(armresources.ProvisioningStateCreated),
+		Properties: &armdeployments.DeploymentPropertiesExtended{
+			ProvisioningState: to.Ptr(armdeployments.ProvisioningStateCreated),
 			Timestamp:         new(time.Now().UTC()),
 		},
 		Tags: map[string]*string{},
@@ -159,9 +164,60 @@ func TestReportProgress(t *testing.T) {
 	assert.Len(t, mockContext.Console.Output(), outputLength)
 }
 
+func TestReportProgressRetriesResourceTypeLookupAfterTransientError(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.Console.SetTerminal(true)
+	deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
+	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
+	deployment := NewSubscriptionDeployment(scope, "DEPLOYMENT_NAME")
+	mockAzDeploymentShow(t, *mockContext)
+
+	lookupCalls := 0
+	resourceManager := &mockResourceManager{
+		displayNameFn: func(
+			ctx context.Context,
+			subscriptionID string,
+			resourceID string,
+			resourceType azapi.AzureResourceType,
+		) (string, error) {
+			lookupCalls++
+			if lookupCalls == 1 {
+				return "", fmt.Errorf("workspace is not available yet")
+			}
+
+			return "AI Hub", nil
+		},
+		operations: []*armdeployments.DeploymentOperation{{
+			ID: new("workspace-operation-id"),
+			Properties: &armdeployments.DeploymentOperationProperties{
+				ProvisioningOperation: to.Ptr(armdeployments.ProvisioningOperationCreate),
+				ProvisioningState:     to.Ptr(string(armdeployments.ProvisioningStateRunning)),
+				Timestamp:             new(time.Now().UTC()),
+				Duration:              new("PT1S"),
+				TargetResource: &armdeployments.TargetResource{
+					ResourceType: to.Ptr(string(azapi.AzureResourceTypeMachineLearningWorkspace)),
+					ID:           new("workspace-resource-id"),
+					ResourceName: new("workspace"),
+				},
+			},
+		}},
+	}
+	progressDisplay := NewProvisioningProgressDisplay(resourceManager, mockContext.Console, deployment)
+	startTime := time.Now().Add(-time.Minute)
+
+	require.NoError(t, progressDisplay.ReportProgress(*mockContext.Context, &startTime))
+	resourceManager.operations[0].Properties.ProvisioningState =
+		to.Ptr(string(armdeployments.ProvisioningStateSucceeded))
+	resourceManager.operations[0].Properties.Timestamp = new(time.Now().UTC())
+	require.NoError(t, progressDisplay.ReportProgress(*mockContext.Context, &startTime))
+
+	assert.Equal(t, 2, lookupCalls)
+	assert.Equal(t, "AI Hub", progressDisplay.resourceDisplayNames["workspace-resource-id"])
+}
+
 type walkSkipAwareResourceManager struct {
-	nestedOperation *armresources.DeploymentOperation
-	childOperation  *armresources.DeploymentOperation
+	nestedOperation *armdeployments.DeploymentOperation
+	childOperation  *armdeployments.DeploymentOperation
 	childVisits     int
 }
 
@@ -220,12 +276,12 @@ func TestReportProgressSkipsExpansionAfterTwoTerminalPolls(t *testing.T) {
 	mockAzDeploymentShow(t, *mockContext)
 
 	walkRm := &walkSkipAwareResourceManager{
-		nestedOperation: &armresources.DeploymentOperation{
+		nestedOperation: &armdeployments.DeploymentOperation{
 			ID: new("nested-operation-id"),
-			Properties: &armresources.DeploymentOperationProperties{
-				ProvisioningOperation: to.Ptr(armresources.ProvisioningOperationCreate),
-				ProvisioningState:     to.Ptr(string(armresources.ProvisioningStateSucceeded)),
-				TargetResource: &armresources.TargetResource{
+			Properties: &armdeployments.DeploymentOperationProperties{
+				ProvisioningOperation: to.Ptr(armdeployments.ProvisioningOperationCreate),
+				ProvisioningState:     to.Ptr(string(armdeployments.ProvisioningStateSucceeded)),
+				TargetResource: &armdeployments.TargetResource{
 					ResourceType: to.Ptr(string(azapi.AzureResourceTypeDeployment)),
 					ID: new("/subscriptions/SUBSCRIPTION_ID/resourceGroups/resource-group-name/providers/" +
 						"Microsoft.Resources/deployments/nested"),
@@ -234,13 +290,13 @@ func TestReportProgressSkipsExpansionAfterTwoTerminalPolls(t *testing.T) {
 				Timestamp: new(time.Now().UTC()),
 			},
 		},
-		childOperation: &armresources.DeploymentOperation{
+		childOperation: &armdeployments.DeploymentOperation{
 			ID: new("child-operation-id"),
-			Properties: &armresources.DeploymentOperationProperties{
-				ProvisioningOperation: to.Ptr(armresources.ProvisioningOperationCreate),
-				ProvisioningState:     to.Ptr(string(armresources.ProvisioningStateSucceeded)),
+			Properties: &armdeployments.DeploymentOperationProperties{
+				ProvisioningOperation: to.Ptr(armdeployments.ProvisioningOperationCreate),
+				ProvisioningState:     to.Ptr(string(armdeployments.ProvisioningStateSucceeded)),
 				Duration:              new("PT1S"),
-				TargetResource: &armresources.TargetResource{
+				TargetResource: &armdeployments.TargetResource{
 					ResourceType: to.Ptr(string(azapi.AzureResourceTypeWebSite)),
 					ID: new("/subscriptions/SUBSCRIPTION_ID/resourceGroups/resource-group-name/providers/" +
 						"Microsoft.Web/sites/site"),

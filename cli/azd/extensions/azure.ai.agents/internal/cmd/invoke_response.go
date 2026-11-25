@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/useragent"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -84,14 +86,11 @@ func buildResponsesRequestBody(message, sessionID, conversationID string, backgr
 	return body
 }
 
-// responseLifecycleCommand formats guidance for current or explicitly targeted work.
+// responseLifecycleCommand formats guidance targeting the accepted Response.
 func (a *InvokeAction) responseLifecycleCommand(
-	rc *remoteContext, id string, operation invocationOperation, useCurrent bool,
+	rc *remoteContext, id string, operation invocationOperation,
 ) string {
-	command := "azd ai agent invocations " + string(operation)
-	if !useCurrent || a.endpoint != nil {
-		command += fmt.Sprintf(" --id %q", id)
-	}
+	command := fmt.Sprintf("azd ai agent invocations %s --id %q", operation, id)
 	if a.endpoint != nil {
 		endpoint := buildResponsesURL(a.endpoint.ProjectEndpoint, a.endpoint.AgentName, a.endpoint.APIVersion)
 		return command + fmt.Sprintf(" --agent-endpoint %q", endpoint)
@@ -122,7 +121,7 @@ func (a *InvokeAction) runResponseOperation(
 	case invocationFollow:
 		return classifyResponseLifecycleError(
 			a.followResponse(ctx, rc, id, writer), exterrors.OpFollowResponse, "following Response",
-			a.responseLifecycleCommand(rc, id, invocationShow, false),
+			a.responseLifecycleCommand(rc, id, invocationShow),
 		)
 	case invocationCancel:
 		return classifyResponseLifecycleError(
@@ -218,6 +217,7 @@ func (a *InvokeAction) cancelResponse(
 		return fmt.Errorf("create Response cancel request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", useragent.Default())
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 
 	//nolint:gosec // URL is built from a validated Foundry endpoint.
@@ -274,6 +274,7 @@ func (a *InvokeAction) getResponseSnapshot(
 		return responseSnapshotResult{}, fmt.Errorf("create Response show request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", useragent.Default())
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 
 	//nolint:gosec // URL is built from a validated Foundry endpoint.
@@ -381,6 +382,7 @@ func (a *InvokeAction) followResponse(
 		return fmt.Errorf("create Response follow request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", useragent.Default())
 	req.Header.Set("Accept", "text/event-stream")
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 
@@ -415,7 +417,7 @@ func (a *InvokeAction) followResponse(
 			return fmt.Errorf(
 				"%w; rerun `%s` to replay and follow again",
 				err,
-				a.responseLifecycleCommand(rc, responseID, invocationFollow, false),
+				a.responseLifecycleCommand(rc, responseID, invocationFollow),
 			)
 		}
 		return err
@@ -808,6 +810,7 @@ func (s *agentResponseStateStore) Save(ctx context.Context, agentKey string, res
 	}
 	return store.mutate(ctx, agentKey, func(record *agentStateRecord) {
 		record.Response = &response
+		record.CurrentInvocationProtocol = agent_api.AgentProtocolResponses
 	})
 }
 

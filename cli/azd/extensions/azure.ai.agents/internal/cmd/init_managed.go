@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -181,13 +182,13 @@ func runInitManaged(
 		return err
 	}
 
-	// Connections and skills live on sibling services, while project
+	// Connections, skills, and toolboxes live on sibling services, while project
 	// authoring is delegated to the projects extension.
 	var deployments []project.Deployment
 	if deployment != nil && provisionDeployment {
 		deployments = []project.Deployment{*deployment}
 	}
-	resources, err := promptResourceServices(ctx, azdClient, &promptAgent, serviceSourceDir, serviceRelPath)
+	resources, err := promptResourceServices(ctx, azdClient, &promptAgent)
 	if err != nil {
 		return err
 	}
@@ -208,6 +209,7 @@ func runInitManaged(
 			return projectAuthoringCurrent
 		}(),
 		flags.noPrompt,
+		"",
 	); err != nil {
 		return err
 	}
@@ -219,6 +221,11 @@ func runInitManaged(
 		deployments,
 	); err != nil {
 		return err
+	}
+	if err := updatePendingModelDeploymentSignal(
+		ctx, azdClient, env.Name, deployment != nil, provisionDeployment,
+	); err != nil {
+		log.Printf("warning: failed to update model deployment provision signal: %v", err)
 	}
 	if _, err := emitResourceServices(
 		ctx, azdClient, agentName,
@@ -235,7 +242,12 @@ func runInitManaged(
 		}
 	}
 
-	printManagedInitSummary(agentName, model, harness, serviceRelPath, projectTargetDir, existingProject, &settings)
+	warnInitPromptPolicyIfBlocked(ctx, credential, foundryProject, &promptAgent, deployment)
+
+	needsProvision := foundryProject == nil || provisionDeployment
+	printManagedInitSummary(
+		agentName, model, harness, serviceRelPath, projectTargetDir, existingProject, &settings, needsProvision,
+	)
 	return nil
 }
 
@@ -611,6 +623,7 @@ func printManagedInitSummary(
 	agentName, model, harness, serviceRelPath, projectTargetDir string,
 	existingProject bool,
 	settings *project.PromptAgentSettings,
+	needsProvision bool,
 ) {
 	color.Green("\nInitialized prompt agent %q.", agentName)
 
@@ -630,7 +643,7 @@ func printManagedInitSummary(
 	fmt.Println()
 	fmt.Println("Authoring:")
 	fmt.Printf("  %-16s the agent's definition and instructions\n", "azure.yaml")
-	printPromptInitNextSteps(promptInitFolderDisplay(projectTargetDir, existingProject))
+	printPromptInitNextSteps(promptInitFolderDisplay(projectTargetDir, existingProject), needsProvision)
 }
 
 func promptInitFolderDisplay(projectTargetDir string, existingProject bool) string {
@@ -641,7 +654,7 @@ func promptInitFolderDisplay(projectTargetDir string, existingProject bool) stri
 }
 
 // printPromptInitNextSteps prints the shared prompt/managed post-init guidance.
-func printPromptInitNextSteps(folderDisplay string) {
+func printPromptInitNextSteps(folderDisplay string, needsProvision bool) {
 	fmt.Println()
 	fmt.Println("Next steps:")
 	if folderDisplay != "" {
@@ -650,10 +663,13 @@ func printPromptInitNextSteps(folderDisplay string) {
 			fmt.Printf("  # %s\n", suggestion.Description)
 		}
 	}
-	fmt.Println("  # Provision infrastructure and deploy the agent")
-	fmt.Println("  azd up")
-	fmt.Println("  # Or, once provisioned, just (re)deploy the agent")
-	fmt.Println("  azd deploy")
+	if needsProvision {
+		fmt.Println("  # Provision infrastructure and deploy the agent")
+		fmt.Println("  azd up")
+	} else {
+		fmt.Println("  # Deploy the agent")
+		fmt.Println("  azd deploy")
+	}
 	fmt.Println("  # Invoke it")
 	fmt.Println("  azd ai agent invoke \"hello\"")
 }

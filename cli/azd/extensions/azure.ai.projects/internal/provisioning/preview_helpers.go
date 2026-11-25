@@ -9,7 +9,7 @@ import (
 
 	"azure.ai.projects/internal/exterrors"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
@@ -48,13 +48,13 @@ var orderedChangeTypes = []string{
 //
 // Status defaults to "Succeeded" when ARM returned empty. Zero-count rows are
 // omitted; the resource list is truncated at maxPreviewResources.
-func summarizeWhatIf(r armresources.WhatIfOperationResult) string {
+func summarizeWhatIf(r armdeployments.WhatIfOperationResult) string {
 	status := "Succeeded"
 	if r.Status != nil && *r.Status != "" {
 		status = *r.Status
 	}
 
-	var changes []*armresources.WhatIfChange
+	var changes []*armdeployments.WhatIfChange
 	if r.Properties != nil {
 		changes = r.Properties.Changes
 	}
@@ -112,7 +112,7 @@ func summarizeWhatIf(r armresources.WhatIfOperationResult) string {
 // from the After state (Before for deletes), mirroring the built-in bicep
 // provider; entries with no usable state still surface via the resource id.
 // Nil-safe on Properties and individual entries.
-func whatIfChanges(r armresources.WhatIfOperationResult) []*azdext.ProvisioningDeploymentPreviewChange {
+func whatIfChanges(r armdeployments.WhatIfOperationResult) []*azdext.ProvisioningDeploymentPreviewChange {
 	if r.Properties == nil {
 		return nil
 	}
@@ -160,7 +160,7 @@ func shortenResourceID(id string) string {
 // (HTTP 200 with Error set, or Status != "Succeeded"). Returns nil on success.
 // The inline-error path catches preflight failures (quota, template
 // validation) that would otherwise look like "0 changes".
-func whatIfFailure(r armresources.WhatIfOperationResult) error {
+func whatIfFailure(r armdeployments.WhatIfOperationResult) error {
 	if r.Error != nil {
 		suggestion := "fix the underlying ARM error and retry `azd provision --preview`"
 		if quotaSuggestion := exterrors.QuotaSuggestionForARMError(r.Error); quotaSuggestion != "" {
@@ -185,7 +185,7 @@ func whatIfFailure(r armresources.WhatIfOperationResult) error {
 // formatArmErrorResponse flattens an ARM ErrorResponse into a single line,
 // walking Details recursively so the user sees the real nested cause (e.g.
 // "InsufficientQuota") rather than just the generic outer wrapper.
-func formatArmErrorResponse(e *armresources.ErrorResponse) string {
+func formatArmErrorResponse(e *armdeployments.ErrorResponse) string {
 	if e == nil {
 		return "(no error detail)"
 	}

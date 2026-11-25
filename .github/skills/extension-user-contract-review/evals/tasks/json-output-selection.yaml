@@ -1,0 +1,18 @@
+id: json-output-selection
+name: Select the final review object after earlier JSON-like output
+tags: [harness, grader, regression]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Add a list format".
+    Complete changed-file list: cli/azd/extensions/example/internal/cmd/list.go.
+    Before, the list command has no --format flag. After, it adds a working --format flag at RIGHT line 42.
+    All surrounding behavior, tests, and docs are correct. Complete review history is empty.
+    The shared review-shape grader also tests leading diagnostics, trailing logs, nested objects, and escaped strings.
+graders:
+  - type: program
+    name: final-review-json-is-selected
+    config:
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.some(c => c.path === 'cli/azd/extensions/example/internal/cmd/list.go' && c.line === 42 && c.side === 'RIGHT' && c.body.includes('--format') && c.body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.'))"

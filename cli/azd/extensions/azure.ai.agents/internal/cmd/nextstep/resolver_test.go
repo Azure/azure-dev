@@ -593,6 +593,7 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 		protocol string
 	}{
 		{name: "invocations_ws", protocol: ProtocolInvocationsWS},
+		{name: "voice_conversation_engine", protocol: ProtocolVoiceConversationEngine},
 		{name: "activity", protocol: ProtocolActivity},
 		{name: "activity_protocol", protocol: ProtocolActivityLegacy},
 	} {

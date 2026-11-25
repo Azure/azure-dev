@@ -5,10 +5,17 @@ development. Start with the [README](https://github.com/Azure/azure-dev/blob/mai
 For resource creation, permissions, model deployment, and service defaults, use
 the separate [Microsoft Foundry provisioning guide](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/provisioning.md).
 
+## Check the installed extension version
+
+Run `azd ai cu version` to display the installed extension version and name.
+For scripts, use `azd ai cu version --output json`, which returns
+the extension ID as `name` and the installed version as `version`.
+
 ## Connect to Microsoft Foundry and check setup
 
 You need a Microsoft Foundry resource endpoint and an identity with access to
-Content Understanding. LLM-based prebuilt analyzers and custom analyzers also
+Content Understanding, or a resource API key for data-plane commands.
+LLM-based prebuilt analyzers and custom analyzers also
 require supported language and embeddings model deployments plus Content
 Understanding defaults.
 
@@ -27,7 +34,8 @@ Endpoint-only use delegates tenant selection to azd authentication unless you
 configure a tenant or subscription. To select a tenant explicitly, set
 `AZURE_TENANT_ID` (`export AZURE_TENANT_ID="<tenant-id>"` in Bash or
 `$env:AZURE_TENANT_ID = "<tenant-id>"` in PowerShell). An endpoint and tenant ID
-do not replace `azd auth login` or supported noninteractive azd authentication.
+do not replace `azd auth login` or supported noninteractive azd authentication
+when using Entra ID.
 
 To persist a global CU user default without creating an azd project using
 `azd init`:
@@ -71,13 +79,41 @@ Use `azd env new dev` if the project does not yet have that environment.
 Explicit options and process inputs take precedence over saved settings; clear
 process overrides when switching resources.
 
-The extension only supports Microsoft Entra ID authentication through azd.
+Microsoft Entra ID through azd is the default authentication method.
 Use `azd auth login` or supported noninteractive azd authentication.
-API-key authentication and CU profile
-commands are not supported.
 
-`CU_API_KEY` and saved API-key entries are rejected rather than used, even when
-empty. `CU_AUTH_MODE`, if set, must be `login`.
+For testing or automation, CU data-plane commands also accept a resource API
+key from the **process environment only**. Inject `CU_API_KEY` through a CI
+secret, or enter it without putting its value in shell history:
+
+```bash
+export CU_ENDPOINT="https://<resource-name>.services.ai.azure.com/"
+read -r -s -p "CU resource API key: " CU_API_KEY
+printf '\n'
+export CU_API_KEY
+azd ai cu doctor
+# Remove the key to return to azd / Entra authentication.
+unset CU_API_KEY
+```
+
+In PowerShell, inject the secret as `$env:CU_API_KEY`; remove it with
+`Remove-Item Env:CU_API_KEY`. Key mode does not request an Entra token or resolve
+a tenant. It does not require azd sign-in, but commands still run through the
+azd extension host. `doctor` reports the selected authentication method without
+printing the key.
+
+An explicitly present empty `CU_API_KEY`, or one containing whitespace or
+control characters, is an error, not a request to fall back to Entra ID.
+A failed key request does not retry through Entra.
+
+Do not save keys with `azd env set`, `azd config`, or `azd ai cu config`.
+Persisted `CU_API_KEY` and API-key configuration entries are rejected, including
+empty entries. The CU config shortcut still supports only `CU_ENDPOINT`,
+`CU_DEFAULT_ANALYZER`, and `CU_API_VERSION`; there is no `--api-key` flag.
+The key is restricted to the configured CU endpoint. Same-resource analyzer
+copy without resource selectors works with a key; copy resource discovery
+and cross-resource copy require Entra ID. Infrastructure provisioning and
+postprovision setup also continue to use Entra ID, not `CU_API_KEY`.
 
 `doctor` shows human-readable checks for configuration, authentication, service
 access, and model defaults, with effective `CU_*` settings and their sources.
@@ -88,8 +124,7 @@ A readiness warning (`ready: false` in JSON) with missing model requirements can
 successfully: non-generative analyzers may remain usable. Authentication,
 configuration, and service failures return nonzero. Inspect the report rather
 than using the exit code alone as a generative-readiness gate.
-Scripts that previously parsed default `doctor` output should explicitly pass
-`--output json`.
+For scripts that parse `doctor` output, pass `--output json`.
 
 ## Analyze content
 
@@ -100,23 +135,89 @@ not require language or embeddings model deployments:
 curl --fail --location --output invoice.pdf \
   https://raw.githubusercontent.com/Azure-Samples/azure-ai-content-understanding-assets/main/document/invoice.pdf
 
-azd ai cu analyze invoice.pdf --llm-input
+azd ai cu analyze invoice.pdf
 ```
 
 When no analyzer is specified or configured, analysis defaults to
 `prebuilt-layout`. Use `--analyzer` (or `-a`) to override a configured default.
 
 By default, a single analysis displays YAML front matter and Markdown in the
-console. This LLM-input view is enabled by default; `--llm-input` can be omitted.
-Save the same text with `--output-file`:
+console with pretty presentation. `--output default` and `--output markdown`
+select this same content format.
+Save the original Markdown with `--output-file`:
 
 ```bash
 azd ai cu analyze \
   --file invoice.pdf \
   --analyzer prebuilt-layout \
-  --llm-input \
+  --output markdown \
   --output-file invoice.result.md
 ```
+
+### Pretty-print results in the terminal
+
+Pretty presentation is enabled by default for a single terminal result.
+Use `--pretty` (or `-p`) to enable it explicitly:
+
+```bash
+azd ai cu analyze invoice.pdf --pretty
+```
+
+Omitting `--pretty` produces the same presentation.
+
+Pretty-printing formats Markdown for terminal reading. The preview includes
+document metadata with `---` delimiters and page comments, and keeps source line
+breaks. Reference-style links work across tables.
+
+HTML tables display all columns and switch to labeled cards when they are too wide
+for the terminal.
+
+Pretty-printed output uses syntax highlighting when color is enabled. Colors may
+change in future versions.
+
+Analysis previews require one resolved input. Pretty also supports JSON, usage,
+and dry-run plans; JSON uses indentation and optional syntax coloring rather than
+tables.
+
+JSON uses theme-adaptive syntax highlighting. Colors distinguish JSON syntax,
+not success or failure; actual shades depend on the terminal color scheme.
+
+Use `--pretty=false` (or `-p=false`) to display original Markdown and HTML tables
+without pretty presentation:
+
+```bash
+azd ai cu analyze invoice.pdf --pretty=false
+```
+
+Piping or redirecting stdout disables color, but not pretty presentation.
+To save original Markdown and HTML tables through stdout, disable pretty:
+
+```bash
+azd ai cu analyze invoice.pdf --pretty=false > invoice.result.md
+```
+
+Alternatively, use `--output-file` to save original results directly.
+When saving results, including local batches without an output directory, pretty
+is automatically disabled when omitted, and the terminal prints the existing JSON
+execution summary. Saved results retain original Markdown and HTML tables, or the
+complete response for `--output json`; pretty affects only terminal presentation.
+Do not explicitly specify `--pretty` in result-file mode, even as `--pretty=false`:
+both true and false are rejected. `--report-file` remains compatible with terminal
+previews.
+
+Keep these limitations in mind:
+
+- Unsupported tables, such as those with merged cells or complex headers, display
+  an explanatory notice followed by their source HTML.
+- Long values can overflow, and some Unicode text or emoji may not align correctly.
+  Right-to-left text display depends on your terminal. Markdown tables may shorten
+  long links.
+- Pretty-printed terminal output removes terminal control characters. Links and
+  images are not fetched.
+- Piped or redirected previews are uncolored and use an 80-column layout.
+  `NO_COLOR` also disables color, not pretty presentation.
+
+### Complete JSON response
 
 For the complete JSON response envelope, including the result, service warnings,
 and usage when present, use `--output json`. These examples display the JSON
@@ -129,13 +230,39 @@ azd ai cu analyze invoice.pdf --output json
 azd ai cu analyze invoice.pdf --output json --output-file invoice.result.json
 ```
 
-`--output json` disables the LLM-input view for both console and saved results.
-Explicitly combining it with `--llm-input` or `--llm-input=true` is an error.
-`--llm-input=false` also remains available to select the full response.
+`--output json` selects the complete response for both console and saved results.
 The view determines the result content, not the filename extension: naming a
 file `.json` alone does not change its content.
-`--usage` wraps a streamed result and usage metadata in a JSON object.
-Saved LLM input remains plain text.
+In Markdown mode, `--usage` adds operation-level usage to YAML front matter,
+once per analysis result, for both stdout and saved Markdown. It does not add
+a document-body section or wrap the Markdown in JSON. Without the flag, Markdown
+contains no additional CLI usage metadata. JSON stdout with `--usage` retains
+the existing `{result, usage}` wrapper; saved JSON retains the complete service
+response, including any service-provided usage regardless of the flag.
+Execution summaries and requested outcome reports also retain usage when requested.
+
+To extract only the first content's Markdown body, without YAML front matter,
+install `jq` and use:
+
+```bash
+azd ai cu analyze invoice.pdf --output json --pretty=false \
+  | jq -r '.result.contents[0].markdown'
+```
+
+This extracts only the first content, not all segments of a multi-content result.
+
+### Migration from earlier preview versions
+
+`--llm-input` and analyze's `--output none` are removed immediately, without a
+deprecation period. Replace `--llm-input=true` with `--output markdown` and
+`--llm-input=false` with `--output json`. There is no equivalent CLI replacement
+for `none`'s stdout suppression. Use `--pretty=false` when consuming original
+stdout content; omit the pretty flag entirely with result-file destinations.
+`--no-prompt` does not disable pretty.
+
+Local batches without an output directory continue to save original results beside
+their inputs, with pretty automatically disabled. Omit the pretty flag when saving
+batch results, whether beside the inputs or under `--output-dir`.
 
 Analyze an HTTPS or Azure Blob SAS URL without downloading it first:
 
@@ -173,15 +300,37 @@ writes. Analysis dry runs still require resolved endpoint and analyzer
 configuration. Select inputs using one mode: positional inputs, `--file`,
 `--source`, or `--url`.
 
+Analysis failures include safe reasons and guidance for the first failed inputs
+in discovery order, identified by input number without echoing file paths or URLs.
+Long diagnostics are shortened; use `--report-file` on the original run to retain
+all per-input outcomes. Diagnosing a failure does not issue another analysis request.
+Missing-resource errors suggest checking the endpoint and available analyzers;
+creation conflicts suggest inspecting the existing analyzer and choosing an unused ID.
+
+In an interactive terminal, analysis shows an animated `Analyzing <target>...`
+status in the action color (`NO_COLOR` disables color). Concurrent inputs share
+one status line that cycles through active targets. Local targets show the file
+name; URL targets omit credentials, query parameters, and fragments. The status
+clears before results or errors appear and is omitted for redirected or piped
+stdout, JSON output, and dry runs. It is never saved in result or report files.
+
 - Batch concurrency defaults to 4; `--concurrency` accepts 1-32.
 - More than 50 selected inputs require confirmation or explicit `--yes`.
 - Existing results fail by default. Use `--on-existing skip` to keep them or
   `--on-existing reanalyze` to replace them.
-- Without an output directory, local batches write beside their inputs. Batches
-  containing URLs require an output directory.
+- Without an output directory, local batches write beside their inputs with
+  pretty automatically disabled. Batches containing URLs require an output directory.
 - A requested report records successes, failures, and skipped inputs. Partial
   failures or cancellation return nonzero while retaining completed result
   files and the requested report. Reports never overwrite existing files.
+
+```bash
+# Save original results beside each local input.
+azd ai cu analyze first.pdf second.pdf
+
+# Save original results under an explicit directory; omit the pretty flag.
+azd ai cu analyze first.pdf second.pdf --output-dir ./results
+```
 
 ## Create a custom analyzer
 
@@ -222,6 +371,11 @@ azd ai cu analyzer validate \
 ```
 
 Validation is offline and does not require an azd project, endpoint, or sign-in.
+Errors in valid JSON identify the property by its one-based source line and column,
+without displaying authored field names or rejected values. Columns count Unicode
+characters; tabs count as one character. Missing properties point to their
+containing object when available. Ambiguous dotted paths list all matching source
+locations.
 
 Create a new analyzer from the reviewed definition:
 
@@ -317,10 +471,10 @@ mappings. It does not deploy models or provision resources.
 ## Configuration and API versions
 
 The default API version is `2025-11-01`. `--api-version` also accepts
-`2026-06-01-preview` and any valid calendar date in `YYYY-MM-DD-preview` format
-for internal testing or future previews. The selected version is sent unchanged;
-the service determines whether it is available and supports the requested
-operation. Other GA versions, malformed dates, and extra suffixes are rejected.
+`2026-06-01-preview` and any valid calendar date in `YYYY-MM-DD-preview` format.
+The service determines whether the requested preview version is available and
+supports the operation. Other GA versions, malformed dates, and extra suffixes
+are rejected.
 
 Inline analysis requires a preview version and does not fall back to
 asynchronous analysis:
@@ -379,11 +533,12 @@ Invalid effective values fail instead of falling back to a lower-priority source
 Public-cloud resource endpoints must use HTTPS with a resource hostname under
 `services.ai.azure.com` or `cognitiveservices.azure.com`, on the default port or
 explicit port `443`. Arbitrary hosts, IP addresses, and other ports are rejected
-before service authentication to prevent sending access tokens to an untrusted server.
+before service authentication to prevent sending credentials to an untrusted server.
 This applies to endpoints supplied through flags, process variables, azd environments,
 user defaults, and Azure resource discovery.
 Explicitly empty command flags are rejected; empty process/environment values
-are treated as unset. `config set` rejects empty values; use `config unset` to
+are treated as unset, except that an explicitly present empty `CU_API_KEY` is
+rejected. `config set` rejects empty values; use `config unset` to
 remove a user default.
 
 `config get` and `config list` show only stored CU user defaults, not merged
@@ -397,6 +552,7 @@ from resource-level model defaults managed by `azd ai cu defaults`.
 Offline schema templates and validation remain independent of resource settings
 and user defaults; they use their existing explicit/API-version process inputs.
 
+The following tenant rules apply to Entra ID, not API-key authentication.
 When tenant selection is delegated to azd, `azd auth token` uses its normal
 resolution: the current project's subscription, process `AZURE_SUBSCRIPTION_ID`,
 then the signed-in identity's home tenant. Being inside a project can therefore
@@ -417,11 +573,43 @@ For guest or cross-tenant access, the signed-in identity must have access throug
 the appropriate tenant. A tenant ID does not grant resource permissions, and the
 extension does not infer a tenant from the endpoint.
 
-Use `azd ai cu env-var list` to inspect supported process inputs with sensitive
+### Environment-variable reference
+
+Use `azd ai cu env-var` or `azd ai cu env-var --help` to list **all** supported
+process variables, including unset variables, with descriptions, accepted
+values, defaults, scopes, and precedence. This help is offline and never reads
+or prints credential values.
+
+Use `azd ai cu env-var list` to inspect currently set supported process inputs with sensitive
 values redacted. It does not dump saved azd environment settings or unrelated
 variables. `CU_ON_EXISTS` supplies the analysis existing-result policy when
-`--on-existing` is absent. `FOUNDRY_ENDPOINT` remains an infrastructure output,
-not an alias for `CU_ENDPOINT` in service-command configuration.
+`--on-existing` is absent. Legacy `FOUNDRY_ENDPOINT` values are not an alias for
+`CU_ENDPOINT` in service-command configuration. Infrastructure choices are
+generated from flags into Bicep parameters and azd environment config; see
+[provisioning settings](provisioning.md#generated-post-provision-behavior).
+
+The table below covers CU runtime settings and shared azd context inputs.
+Provisioning state and controls are documented separately as
+[deployment outputs](provisioning.md#deployment-outputs),
+the [postprovision-only override](provisioning.md#postprovision-only-override),
+and [compatibility inputs](provisioning.md#compatibility-with-existing-generated-projects).
+`_CU_PROVISIONED_*` values are saved deployment metadata, not runtime process
+inputs. Postprovision setup writes the runtime `CU_ENDPOINT` separately;
+`_CU_PROVISIONED_ENDPOINT` is not an alias for it. Saved provisioned subscription
+and resource-group values supply scope hints without overriding explicit flags
+or process scope inputs.
+
+| Variable | Purpose and default |
+| --- | --- |
+| `CU_ENDPOINT` | CU HTTPS resource endpoint; required unless supplied by another configuration source. |
+| `CU_API_VERSION` | Service API version; defaults to `2025-11-01`. |
+| `CU_DEFAULT_ANALYZER` | Analysis default; `prebuilt-layout` when no override is configured. |
+| `CU_API_KEY` | Optional process-only resource key for CU data-plane requests; unset means Entra ID. Always redacted. |
+| `CU_ON_EXISTS` | Existing-result policy: `error` (default), `skip`, or `reanalyze`; `--on-existing` takes precedence. |
+| `AZD_ENVIRONMENT` | Project-environment selection; `--environment` takes precedence. |
+| `AZURE_TENANT_ID` | Entra user-access tenant; not looked up in API-key mode. |
+| `AZURE_SUBSCRIPTION_ID` | Azure resource scope and Entra tenant lookup. |
+| `AZURE_RESOURCE_GROUP` | Azure resource scope for discovery. |
 
 The azd extension SDK also reads these inherited process inputs. Corresponding
 explicit flags take precedence over the SDK environment defaults:
@@ -449,19 +637,35 @@ explicit flags take precedence over the SDK environment defaults:
 Run `azd ai cu <command> --help` for command-specific options and common-use
 examples with descriptions. Help uses azd-style headings and colors when enabled;
 set `NO_COLOR=1` for plain text.
+Human-readable diagnostics follow azd conventions: warnings are yellow and
+errors are red. This includes provisioning guidance, retry validation, schema
+suggestion warnings, and doctor readiness warnings. Follow-up action lines in
+infrastructure generation and doctor reports use azd's bright-blue highlight.
+Inline comments beside infrastructure next-step commands are gray, not blue.
+Blank lines separate infrastructure prompts, execution summaries, and next steps.
+Command failures and their suggestions are reported by azd.
+Explicit JSON/none modes leave diagnostic text uncolored,
+and structured result fields never contain added color escapes.
 
 ## Usage guidance
 
-- Supported output formats are `default`, `json`, and `none`. Analysis defaults
-  to readable LLM-input text, and `doctor` defaults to readable diagnostics.
+- Analyze supports `default`, `markdown`, and `json`; default and markdown
+  select YAML front matter and Markdown, with pretty presentation enabled.
+  Other commands retain their existing `default`, `json`, and `none` options.
+  `doctor` defaults to readable diagnostics, and
+  `infra generate` defaults to a readable project summary.
   Other commands, analysis summaries, dry runs, and
-  `--usage` wrappers use JSON. Use `--output json` for complete analysis JSON.
-- `--output none` suppresses successful stdout, not service operations, requested
+  JSON-mode `--usage` wrappers use JSON. Use `--output json` for complete analysis JSON.
+- For commands other than analyze, `--output none` suppresses successful stdout, not service operations, requested
   file writes, confirmations, or errors. Always check the exit code before parsing
   output: the azd host can render extension errors on stdout.
 - `--no-prompt` disables interactive confirmation; it does not imply `--yes`.
-  For unattended infrastructure generation, also provide an unambiguous azd
-  default subscription and `--models none`, `recommended`, or explicit
+  For unattended infrastructure generation, pass `--subscription "<name-or-id>"`
+  to select an accessible subscription without changing azd defaults.
+  IDs and names match case-insensitively; duplicate names require an ID.
+  An explicit selection overrides defaults and never falls back to another
+  subscription. Without it, provide an unambiguous azd default subscription.
+  Also set `--models none`, `recommended`, or explicit
   comma-separated `model@version` selectors.
 - Write extracted content only to trusted private directories. Output safety
   checks reject symlinks, unsafe shared directories, and unsupported filesystems
@@ -512,7 +716,7 @@ The extension uses a [Content Understanding client](https://github.com/Azure/azu
 maintained for this extension. It is an extension-internal dependency, not a
 separately published package.
 CI tests and lints both modules. Ordinary tests use fakes, local
-servers, and strict recordings; they do not call Azure or require Python.
+servers, and strict recordings; they do not call Azure.
 Reused assets retain their [fixture provenance](../testdata/parity/fixtures.yaml).
 Extension-local LF rules keep byte-level fixture and embedded-asset hashes stable
 across platforms.

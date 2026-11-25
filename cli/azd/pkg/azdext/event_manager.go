@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
@@ -19,8 +21,10 @@ type EventManager struct {
 	broker        *grpcbroker.MessageBroker[EventMessage]
 	projectEvents map[string]ProjectEventHandler
 	serviceEvents map[string]ServiceEventHandler
-	eventsMutex   sync.RWMutex // Protects both projectEvents and serviceEvents maps
-	brokerLogger  *log.Logger
+	// serviceResponseEvents holds handlers that can return structured messages.
+	serviceResponseEvents map[string]ServiceEventResponseHandler
+	eventsMutex           sync.RWMutex // Protects the project and service event handler maps
+	brokerLogger          *log.Logger
 
 	// Synchronization for concurrent access
 	mu sync.RWMutex
@@ -40,6 +44,18 @@ type ProjectEventHandler func(ctx context.Context, args *ProjectEventArgs) error
 
 type ServiceEventHandler func(ctx context.Context, args *ServiceEventArgs) error
 
+// ServiceEventResponse contains non-blocking messages returned by a service predeploy or postdeploy handler.
+// Supported kinds are ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_INFO and
+// ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING. Each message requires non-empty text.
+type ServiceEventResponse struct {
+	Messages []*ServiceEventMessage
+}
+
+// ServiceEventResponseHandler handles a service predeploy or postdeploy event and can return structured messages.
+// azd 1.39.0 or later displays the messages after deployment and includes them in JSON output, even when the
+// handler also returns an error. Older hosts ignore the messages.
+type ServiceEventResponseHandler func(ctx context.Context, args *ServiceEventArgs) (*ServiceEventResponse, error)
+
 func NewEventManager(extensionId string, azdClient *AzdClient, brokerLogger *log.Logger) *EventManager {
 	return &EventManager{
 		extensionId:   extensionId,
@@ -47,6 +63,8 @@ func NewEventManager(extensionId string, azdClient *AzdClient, brokerLogger *log
 		projectEvents: make(map[string]ProjectEventHandler),
 		serviceEvents: make(map[string]ServiceEventHandler),
 		brokerLogger:  brokerLogger,
+
+		serviceResponseEvents: make(map[string]ServiceEventResponseHandler),
 	}
 }
 
@@ -184,14 +202,79 @@ func (em *EventManager) AddServiceEventHandler(
 		},
 	}
 
-	err := em.broker.Send(ctx, msg)
-	if err != nil {
+	em.eventsMutex.Lock()
+	if _, hasResponseHandler := em.serviceResponseEvents[eventName]; hasResponseHandler {
+		em.eventsMutex.Unlock()
+		return fmt.Errorf("service event %q is already registered", eventName)
+	}
+	previous, hadPrevious := em.serviceEvents[eventName]
+	em.serviceEvents[eventName] = handler
+	em.eventsMutex.Unlock()
+
+	if err := em.broker.Send(ctx, msg); err != nil {
+		em.eventsMutex.Lock()
+		if hadPrevious {
+			em.serviceEvents[eventName] = previous
+		} else {
+			delete(em.serviceEvents, eventName)
+		}
+		em.eventsMutex.Unlock()
 		return err
 	}
 
+	return nil
+}
+
+// AddServiceEventResponseHandler subscribes to a service predeploy or postdeploy event with a handler that can
+// return structured messages. Each event can have only one service handler.
+func (em *EventManager) AddServiceEventResponseHandler(
+	ctx context.Context,
+	eventName string,
+	handler ServiceEventResponseHandler,
+	options *ServiceEventOptions,
+) error {
+	if err := validateServiceEventResponseName(eventName); err != nil {
+		return err
+	}
+	if handler == nil {
+		return fmt.Errorf("service event response handler for %q is nil", eventName)
+	}
+
+	if err := em.ensureStream(ctx); err != nil {
+		return err
+	}
+
+	if options == nil {
+		options = &ServiceEventOptions{}
+	}
+
+	msg := &EventMessage{
+		MessageType: &EventMessage_SubscribeServiceEvent{
+			SubscribeServiceEvent: &SubscribeServiceEvent{
+				EventNames: []string{eventName},
+				Host:       options.Host,
+				Language:   options.Language,
+			},
+		},
+	}
+
+	// Reserve the event before subscribing so concurrent registrations cannot create duplicate subscriptions.
 	em.eventsMutex.Lock()
-	defer em.eventsMutex.Unlock()
-	em.serviceEvents[eventName] = handler
+	_, hasHandler := em.serviceEvents[eventName]
+	_, hasResponseHandler := em.serviceResponseEvents[eventName]
+	if hasHandler || hasResponseHandler {
+		em.eventsMutex.Unlock()
+		return fmt.Errorf("service event %q is already registered", eventName)
+	}
+	em.serviceResponseEvents[eventName] = handler
+	em.eventsMutex.Unlock()
+
+	if err := em.broker.Send(ctx, msg); err != nil {
+		em.eventsMutex.Lock()
+		delete(em.serviceResponseEvents, eventName)
+		em.eventsMutex.Unlock()
+		return err
+	}
 
 	return nil
 }
@@ -206,6 +289,7 @@ func (em *EventManager) RemoveServiceEventHandler(eventName string) {
 	em.eventsMutex.Lock()
 	defer em.eventsMutex.Unlock()
 	delete(em.serviceEvents, eventName)
+	delete(em.serviceResponseEvents, eventName)
 }
 
 // Handler methods - these are registered with the broker to handle incoming requests
@@ -259,11 +343,13 @@ func (em *EventManager) onInvokeServiceHandler(
 	ctx context.Context,
 	req *InvokeServiceHandler,
 ) (*EventMessage, error) {
+	// Release the lock before running extension code so handlers can register or remove handlers.
 	em.eventsMutex.RLock()
-	defer em.eventsMutex.RUnlock()
 	handler, exists := em.serviceEvents[req.EventName]
+	responseHandler, hasResponseHandler := em.serviceResponseEvents[req.EventName]
+	em.eventsMutex.RUnlock()
 
-	if !exists {
+	if !exists && !hasResponseHandler {
 		// No handler registered, return empty response (not an error)
 		return &EventMessage{}, nil
 	}
@@ -284,12 +370,27 @@ func (em *EventManager) onInvokeServiceHandler(
 	handlerMessage := ""
 	var handlerError *ExtensionError
 
+	var messages []*ServiceEventMessage
+	var handlerErr, validationErr error
+	if hasResponseHandler {
+		var response *ServiceEventResponse
+		response, handlerErr = responseHandler(ctx, args)
+		messages, validationErr = validServiceEventMessages(response)
+		handlerErr = errors.Join(handlerErr, validationErr)
+	} else {
+		handlerErr = handler(ctx, args)
+	}
+
 	// Call the service event handler
-	handlerErr := handlerErrorWithContextCause(ctx, handler(ctx, args))
+	handlerErr = handlerErrorWithContextCause(ctx, handlerErr)
 	if handlerErr != nil {
 		handlerStatus = "failed"
 		handlerMessage = handlerErr.Error()
 		handlerError = WrapError(handlerErr)
+		if validationErr != nil {
+			// Typed errors keep only their own text; retain the validation diagnostics.
+			handlerError.Message = handlerMessage
+		}
 		log.Printf("invokeServiceHandler error for event %s: %v", req.EventName, handlerErr)
 	}
 
@@ -302,9 +403,62 @@ func (em *EventManager) onInvokeServiceHandler(
 				Status:      handlerStatus,
 				Message:     handlerMessage,
 				Error:       handlerError,
+				Messages:    messages,
 			},
 		},
 	}, nil
+}
+
+func validateServiceEventResponseName(eventName string) error {
+	if eventName != "predeploy" && eventName != "postdeploy" {
+		return fmt.Errorf(
+			"service event response handler %q is not supported; use predeploy or postdeploy",
+			eventName,
+		)
+	}
+	return nil
+}
+
+// validServiceEventMessages returns the valid messages and the joined validation failures.
+func validServiceEventMessages(response *ServiceEventResponse) ([]*ServiceEventMessage, error) {
+	if response == nil {
+		return nil, nil
+	}
+
+	var messages []*ServiceEventMessage
+	var validationErr error
+	for index, message := range response.Messages {
+		if err := validateServiceEventMessage(message); err != nil {
+			validationErr = errors.Join(validationErr, fmt.Errorf("message %d: %w", index+1, err))
+			continue
+		}
+		messages = append(messages, message)
+	}
+	return messages, validationErr
+}
+
+func validateServiceEventMessage(message *ServiceEventMessage) error {
+	if message == nil {
+		return errors.New("message is nil")
+	}
+	switch message.GetKind() {
+	case ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_INFO,
+		ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING:
+	default:
+		return fmt.Errorf("unsupported message kind %s", message.GetKind())
+	}
+	if strings.TrimSpace(message.GetMessage()) == "" {
+		return errors.New("message text is required")
+	}
+	for index, link := range message.GetLinks() {
+		if link == nil || strings.TrimSpace(link.GetUrl()) == "" {
+			return fmt.Errorf("link %d URL is required", index+1)
+		}
+		if parsedURL, err := url.Parse(link.GetUrl()); err != nil || parsedURL.Opaque != "" {
+			return fmt.Errorf("link %d URL is invalid", index+1)
+		}
+	}
+	return nil
 }
 
 func handlerErrorWithContextCause(ctx context.Context, handlerErr error) error {

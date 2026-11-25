@@ -134,7 +134,6 @@ func Test_PipelineConfigAction_ActivatesProvidersAndForwardsExtensions(t *testin
 		projectConfig:      projectConfig,
 		importManager:      project.NewImportManager(nil),
 	}
-
 	_, err := action.Run(t.Context())
 
 	require.EqualError(t, err, "configuring required pipeline extensions: stop after required extensions")

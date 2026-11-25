@@ -29,8 +29,10 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/phasetelemetry"
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -44,7 +46,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
@@ -90,6 +92,11 @@ var displayableProtocols = []displayableProtocolEntry{
 		EnvSuffix: "INVOCATIONS_WS",
 		BuildURL:  buildInvocationsWSProtocolURL,
 	},
+	{
+		Protocol:  agent_api.AgentProtocolVoiceConversationEngine,
+		EnvSuffix: "VOICE_CONVERSATION_ENGINE",
+		BuildURL:  buildVoiceConversationEngineProtocolURL,
+	},
 }
 
 // buildResponsesProtocolURL builds the per-agent HTTPS URL for the "responses" protocol.
@@ -128,6 +135,14 @@ func buildInvocationsProtocolURL(projectEndpoint, agentName string) string {
 // (for the wss:// authority) to be callable, so emitting a partial URL would only register a
 // non-callable endpoint. Callers (agentInvocationEndpoints) filter out empty results.
 func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
+	return buildHostedWSProtocolURL(projectEndpoint, agentName, agent_api.AgentProtocolInvocationsWS)
+}
+
+func buildVoiceConversationEngineProtocolURL(projectEndpoint, agentName string) string {
+	return buildHostedWSProtocolURL(projectEndpoint, agentName, agent_api.AgentProtocolVoiceConversationEngine)
+}
+
+func buildHostedWSProtocolURL(projectEndpoint, agentName string, protocol agent_api.AgentProtocol) string {
 	projectEndpoint = strings.TrimSpace(projectEndpoint)
 	u, err := url.Parse(projectEndpoint)
 	if err != nil || u.Host == "" {
@@ -135,8 +150,8 @@ func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
 	}
 
 	return fmt.Sprintf(
-		"wss://%s%s/agents/%s/endpoint/protocols/invocations_ws?api-version=%s",
-		u.Host, strings.TrimRight(u.Path, "/"), agentName, agent_api.AgentEndpointAPIVersion,
+		"wss://%s%s/agents/%s/endpoint/protocols/%s?api-version=%s",
+		u.Host, strings.TrimRight(u.Path, "/"), agentName, protocol, agent_api.AgentEndpointAPIVersion,
 	)
 }
 
@@ -351,6 +366,7 @@ func (p *AgentServiceTargetProvider) loadProjectPath(ctx context.Context) error 
 		)
 	}
 	p.projectPath = proj.GetProject().GetPath()
+	p.projectServices = proj.GetProject().GetServices()
 	return nil
 }
 
@@ -401,6 +417,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	if p.deployContextReady || p.agentDefinitionPath != "" {
 		return p.resolveServiceConfig()
 	}
+	defer phasetelemetry.Start(ctx, phasetelemetry.DeployContextResolution)()
 	if p.serviceConfig == nil {
 		return exterrors.Internal(
 			exterrors.CodeInvalidServiceConfig,
@@ -473,6 +490,8 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	}
 
 	// Get the tenant ID
+	endCredential := phasetelemetry.Start(ctx, phasetelemetry.CredentialAcquisition)
+	defer endCredential()
 	tenantResponse, err := p.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
 		SubscriptionId: subscriptionId,
 	})
@@ -498,6 +517,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 		)
 	}
 	p.credential = cred
+	endCredential()
 
 	return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath, declaredRef)
 }
@@ -644,7 +664,7 @@ func (p *AgentServiceTargetProvider) ensureEnv(ctx context.Context) error {
 	if p.env != nil {
 		return nil
 	}
-	currEnv, err := p.azdClient.Environment().GetCurrent(ctx, nil)
+	currEnv, err := synthesis.CurrentEnvironment(ctx, p.azdClient)
 	if err != nil {
 		return exterrors.Dependency(
 			exterrors.CodeEnvironmentNotFound,
@@ -959,7 +979,10 @@ func (p *AgentServiceTargetProvider) Package(
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
-) (*azdext.ServicePackageResult, error) {
+) (phaseResult0 *azdext.ServicePackageResult, phaseErr error) {
+	ctx, timing := phasetelemetry.Begin(ctx, phasetelemetry.Package, phasetelemetry.Provider, phasetelemetry.Reporter(p.azdClient))
+	defer func() { timing.End(ctx, phaseErr) }()
+
 	if err := p.prepareGatedOperation(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
@@ -1060,9 +1083,11 @@ func (p *AgentServiceTargetProvider) Package(
 				ServiceName:    serviceConfig.Name,
 				ServiceContext: serviceContext,
 			}
+			endBuild := phasetelemetry.Start(ctx, phasetelemetry.ImageBuild)
 			buildResponse, err := p.azdClient.
 				Container().
 				Build(ctx, buildRequest)
+			endBuild()
 			if err != nil {
 				return nil, exterrors.FromHost(err, exterrors.OpContainerBuild, "container build failed")
 			}
@@ -1088,6 +1113,8 @@ func (p *AgentServiceTargetProvider) packageContainer(
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
 ) ([]*azdext.Artifact, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ImagePackaging)()
+
 	packageResponse, err := p.azdClient.Container().Package(ctx, &azdext.ContainerPackageRequest{
 		ServiceName:    serviceConfig.Name,
 		ServiceContext: serviceContext,
@@ -1107,7 +1134,10 @@ func (p *AgentServiceTargetProvider) Publish(
 	targetResource *azdext.TargetResource,
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
-) (*azdext.ServicePublishResult, error) {
+) (phaseResult0 *azdext.ServicePublishResult, phaseErr error) {
+	ctx, timing := phasetelemetry.Begin(ctx, phasetelemetry.Publish, phasetelemetry.Provider, phasetelemetry.Reporter(p.azdClient))
+	defer func() { timing.End(ctx, phaseErr) }()
+
 	if err := p.prepareGatedOperation(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
@@ -1144,9 +1174,11 @@ func (p *AgentServiceTargetProvider) Publish(
 		ServiceName:    serviceConfig.Name,
 		ServiceContext: serviceContext,
 	}
+	endPush := phasetelemetry.Start(ctx, phasetelemetry.ImagePush)
 	publishResponse, err := p.azdClient.
 		Container().
 		Publish(ctx, publishRequest)
+	endPush()
 
 	if err != nil {
 		return nil, classifyContainerPublishError(err)
@@ -1603,7 +1635,16 @@ func (p *AgentServiceTargetProvider) Deploy(
 	serviceContext *azdext.ServiceContext,
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
-) (*azdext.ServiceDeployResult, error) {
+) (phaseResult0 *azdext.ServiceDeployResult, phaseErr error) {
+	ctx, timing := phasetelemetry.Begin(ctx, phasetelemetry.Deploy, phasetelemetry.Provider, phasetelemetry.Reporter(p.azdClient))
+	defer func() {
+		if r := recover(); r != nil {
+			timing.End(ctx, errors.New("operation panicked"))
+			panic(r)
+		}
+		timing.End(ctx, phaseErr)
+	}()
+
 	if err := p.prepareGatedOperation(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
@@ -1663,6 +1704,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	// Get environment variables from azd
 	progress("Loading deployment environment")
+	endConfiguration := phasetelemetry.Start(ctx, phasetelemetry.ConfigurationLoading)
+	defer endConfiguration()
 	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
 		Name: p.env.Name,
 	})
@@ -1679,6 +1722,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		azdEnv[kval.Key] = kval.Value
 	}
 	p.dependencyEnv = azdEnv
+	endConfiguration()
 
 	activityBotName := ""
 	activityBotResourceGroup := ""
@@ -1709,6 +1753,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Fprintln(os.Stderr, warning)
 	}
 	progress("Validating service dependencies")
+	endDependencies := phasetelemetry.Start(ctx, phasetelemetry.DependencyValidation)
+	defer endDependencies()
 	if err := validateRegistryConnectionDependency(
 		ctx, serviceConfig, agentDef.RegistryConnectionID, p.projectServices, p.projectPath, p.dependencyEnabled,
 	); err != nil {
@@ -1719,6 +1765,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	); err != nil {
 		return nil, err
 	}
+	endDependencies()
 
 	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
 
@@ -1913,7 +1960,13 @@ func (p *AgentServiceTargetProvider) Deploy(
 		}
 	}
 
-	return p.finalizeDeploy(
+	monitoringWarning := ""
+	if identity := result.agentVersion.InstanceIdentity; identity != nil && privateMonitoringComponentID(azdEnv) != "" {
+		progress("Granting agent identity access to Application Insights")
+		monitoringWarning = p.ensureHostedAgentMonitoringPublisher(ctx, azdEnv, identity.PrincipalID)
+	}
+
+	deployResult, err := p.finalizeDeploy(
 		ctx,
 		progress,
 		serviceConfig,
@@ -1926,6 +1979,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		activityProfile,
 		serviceTargetConfig.Activity,
 	)
+	if err != nil {
+		return nil, err
+	}
+	appendDeployWarning(deployResult, privateMonitoringComponentID(azdEnv), monitoringWarning)
+	return deployResult, nil
 }
 
 func activityBotOwnership(
@@ -2556,6 +2614,17 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		}
 	}
 
+	if err := CheckHostedContainerImagePolicy(
+		ctx,
+		azdEnv["AZURE_AI_PROJECT_ID"],
+		p.credential,
+		serviceConfig.GetName(),
+		fullImageURL,
+		azdEnv,
+	); err != nil {
+		return nil, err
+	}
+
 	progress("Preparing hosted agent configuration")
 	prep, err := p.prepareDeploy(serviceConfig, agentDef, azdEnv, []agent_yaml.AgentBuildOption{
 		agent_yaml.WithImageURL(fullImageURL),
@@ -2702,6 +2771,9 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 		ctx, agentClient, request, azdEnv, progress, shouldUpdate,
 	)
 	if err != nil {
+		if policyErr, ok := TryClassifyRuntimePolicyError(err, serviceConfig.GetName(), azdEnv["AZURE_AI_PROJECT_ID"]); ok {
+			return nil, policyErr
+		}
 		return nil, exterrors.ServiceFromAzure(err, deployOp)
 	}
 	if err := validateVoiceAgentDeployResponse(agentObject); err != nil {
@@ -2749,6 +2821,8 @@ func (p *AgentServiceTargetProvider) registerVoiceAgentEnvironmentVariables(
 	agentObject *agent_api.AgentObject,
 	hostedTarget *hostedVoiceTarget,
 ) error {
+	defer phasetelemetry.Start(ctx, phasetelemetry.EndpointUpdate)()
+
 	serviceKey := agentServiceKey(serviceConfig.Name)
 	protocolVersionKey := envkey.AgentProtocolEndpointsVersion(serviceConfig.Name)
 	endpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
@@ -2928,6 +3002,8 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 	desired []desiredTelephonyBinding,
 	agentObject *agent_api.AgentObject,
 ) error {
+	defer phasetelemetry.Start(ctx, phasetelemetry.VoiceTelephonyConfiguration)()
+
 	_, err := p.deployVoiceTelephonyBindingState(ctx, agentClient, desired, agentObject)
 	return err
 }
@@ -3682,7 +3758,8 @@ func fetchAndValidateHostedVoiceTarget(
 		return exterrors.Dependency(
 			exterrors.CodeFoundryDependencyNotReady,
 			fmt.Sprintf("hosted voice target is not compatible: %s", err),
-			"deploy an active Voice Bridge 1.0 hosted agent with invocations_ws/1.0.0, then retry",
+			"deploy an active target with voice_conversation_engine/1.0.0, or legacy invocations_ws/1.0.0 "+
+				"with voiceLiveCompatible=true and bridgeProtocolVersion=1.0 metadata, then retry",
 		)
 	}
 	return nil
@@ -3720,15 +3797,17 @@ func validateHostedVoiceTargetVersion(version *agent_api.AgentVersionObject) err
 	if definition.Kind != agent_api.AgentKindHosted {
 		return fmt.Errorf("target kind is %q, expected hosted", definition.Kind)
 	}
-	compatibleProtocol := false
+	legacyProtocol := false
 	for _, protocol := range definition.ProtocolVersions {
+		if protocol.Protocol == agent_api.AgentProtocolVoiceConversationEngine && protocol.Version == "1.0.0" {
+			return nil
+		}
 		if protocol.Protocol == agent_api.AgentProtocolInvocationsWS && protocol.Version == "1.0.0" {
-			compatibleProtocol = true
-			break
+			legacyProtocol = true
 		}
 	}
-	if !compatibleProtocol {
-		return fmt.Errorf("target does not declare invocations_ws/1.0.0")
+	if !legacyProtocol {
+		return fmt.Errorf("target must declare voice_conversation_engine/1.0.0 or legacy invocations_ws/1.0.0")
 	}
 	if !strings.EqualFold(strings.TrimSpace(version.Metadata["voiceLiveCompatible"]), "true") {
 		return fmt.Errorf("target metadata voiceLiveCompatible must be true")
@@ -3760,6 +3839,8 @@ func (p *AgentServiceTargetProvider) deployVoiceAgentRemote(
 	progress azdext.ProgressReporter,
 	shouldUpdate bool,
 ) (*agent_api.AgentObject, string, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.AgentCreateOrUpdate)()
+
 	overriddenHost := azdEnv[voiceOverriddenHostEnvKey]
 	if shouldUpdate {
 		progress("Updating voice agent using unified API")
@@ -3792,6 +3873,8 @@ func shouldUpdateVoiceAgent(remoteAgent *agent_api.AgentObject, getErr error) (b
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,
 // and computes its SHA-256. Returns the temp file path and SHA-256 hex string.
 func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serviceConfig *azdext.ServiceConfig) (string, string, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.CodePackaging)()
+
 	// Source directory is the service's directory.
 	srcDir := p.servicePath
 	if srcDir == "" {
@@ -3801,18 +3884,13 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serv
 	// Check runtime and dependency resolution for dotnet bundled mode
 	if agentDef, isHosted, err := p.loadContainerAgentDefinition(); err == nil && isHosted &&
 		agentDef.CodeConfiguration != nil {
-		isDotnet := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "dotnet_")
-		isBundled := false // default is remote_build (matches promptCodeConfig and deployHostedCodeAgent defaults)
-		if agentDef.CodeConfiguration.DependencyResolution != nil {
-			isBundled = *agentDef.CodeConfiguration.DependencyResolution == "bundled"
-		}
-		if isDotnet && isBundled {
+		if isDotnetBundled(agentDef.CodeConfiguration) {
 			return p.packageDotnetBundled(srcDir)
 		}
 
 		// Python bundled: validate that dependencies are installed in srcDir
 		isPython := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "python_")
-		if isPython && isBundled {
+		if isPython && isBundled(agentDef.CodeConfiguration) {
 			if err := validatePythonBundledDeps(srcDir); err != nil {
 				return "", "", err
 			}
@@ -3820,6 +3898,18 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serv
 	}
 
 	return zipSourceDir(ctx, srcDir)
+}
+
+// isBundled reports whether code deploy ships dependencies installed locally. The
+// default is remote_build (matches promptCodeConfig and deployHostedCodeAgent defaults).
+func isBundled(codeConfig *agent_yaml.CodeConfiguration) bool {
+	return codeConfig.DependencyResolution != nil && *codeConfig.DependencyResolution == "bundled"
+}
+
+// isDotnetBundled reports whether code deploy packages `dotnet publish` output instead
+// of the service directory, in which case .agentignore does not apply.
+func isDotnetBundled(codeConfig *agent_yaml.CodeConfiguration) bool {
+	return strings.HasPrefix(codeConfig.Runtime, "dotnet_") && isBundled(codeConfig)
 }
 
 // zipSourceDir creates a ZIP archive of srcDir honoring .agentignore, writes it to a
@@ -3856,48 +3946,7 @@ func zipSourceDir(ctx context.Context, srcDir string) (string, string, error) {
 	multiWriter := io.MultiWriter(tmpFile, hasher)
 	zipWriter := zip.NewWriter(multiWriter)
 
-	err = filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Get relative path
-		relPath, err := filepath.Rel(srcDir, path)
-		if err != nil {
-			return err
-		}
-
-		// Skip root
-		if relPath == "." {
-			return nil
-		}
-
-		// Normalize to forward slashes for ZIP
-		relPath = filepath.ToSlash(relPath)
-
-		// Skip symlinked directories to avoid traversing outside the project root
-		if d.IsDir() && d.Type()&fs.ModeSymlink != 0 {
-			return filepath.SkipDir
-		}
-
-		// Check directory exclusions
-		if d.IsDir() {
-			if ignoreMatcher.ShouldExclude(relPath, true) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Skip symlinks to avoid including files outside the agent directory
-		if d.Type()&fs.ModeSymlink != 0 {
-			return nil
-		}
-
-		// Check file exclusions
-		if ignoreMatcher.ShouldExclude(relPath, false) {
-			return nil
-		}
-
+	err = walkCodePackageFiles(srcDir, ignoreMatcher, func(path, relPath string) error {
 		// Add file to ZIP
 		fileData, err := os.ReadFile(path) //nolint:gosec // path is constructed from filepath.WalkDir within the service directory
 		if err != nil {
@@ -4253,11 +4302,14 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		// Agent doesn't exist — create
 		progress("Creating new agent from code package")
 		_, _ = fmt.Fprintf(os.Stderr, "Creating new agent: %s\n", agentDef.Name)
+		endUpload := phasetelemetry.Start(ctx, phasetelemetry.ArtifactUpload)
+		defer endUpload()
 		agentResp, err = agentClient.CreateAgentFromZip(
 			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
+		endUpload()
 		if err != nil {
-			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request)
+			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request, azdEnv["AZURE_AI_PROJECT_ID"])
 		}
 	} else {
 		if localProfile.IsActivity {
@@ -4275,11 +4327,14 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		writeExistingAgentVersionWarning(agentDef.Name)
 		updateVersionRequest := *versionRequest
 		updateVersionRequest.DigitalWorkerType = ""
+		endUpload := phasetelemetry.Start(ctx, phasetelemetry.ArtifactUpload)
+		defer endUpload()
 		agentResp, err = agentClient.UpdateAgentFromZip(
 			ctx, agentDef.Name, &updateVersionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
+		endUpload()
 		if err != nil {
-			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request)
+			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request, azdEnv["AZURE_AI_PROJECT_ID"])
 		}
 	}
 
@@ -4616,6 +4671,8 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	enableMemorySnapshot *bool,
 	progress azdext.ProgressReporter,
 ) (*agent_api.AgentVersionObject, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.AgentActivationWait)()
+
 	const confirmCount = 2 // consecutive times a terminal status must be seen
 
 	deadline := time.Now().Add(pollTimeout)
@@ -4673,6 +4730,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 		}
 	}
 
+	phasetelemetry.Timeout(ctx)
 	if lastPollErr != nil && (enableMemorySnapshot == nil || !*enableMemorySnapshot) {
 		return nil, exterrors.ServiceFromAzure(lastPollErr, exterrors.OpCreateAgent)
 	}
@@ -4752,7 +4810,20 @@ func agentDeploymentFailedError(versionResp *agent_api.AgentVersionObject, servi
 
 var hostedAgentRetryServiceNamePattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_. -]*$`)
 
-func hostedAgentCreateError(err error, serviceName string, request *agent_api.CreateAgentRequest) error {
+func hostedAgentCreateError(
+	err error,
+	serviceName string,
+	request *agent_api.CreateAgentRequest,
+	projectResourceID ...string,
+) error {
+	var projID string
+	if len(projectResourceID) > 0 {
+		projID = projectResourceID[0]
+	}
+	if policyErr, ok := TryClassifyRuntimePolicyError(err, serviceName, projID); ok {
+		return policyErr
+	}
+
 	converted := exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	responseErr, ok := errors.AsType[*azcore.ResponseError](err)
 	if !ok || responseErr.StatusCode != http.StatusBadRequest || responseErr.RawResponse == nil || request == nil {
@@ -4856,6 +4927,8 @@ func (p *AgentServiceTargetProvider) createAgent(
 	request *agent_api.CreateAgentRequest,
 	azdEnv map[string]string,
 ) (*agent_api.AgentVersionObject, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.AgentCreateOrUpdate)()
+
 	// Create agent client
 	agentClient := agent_api.NewAgentClient(
 		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
@@ -4888,7 +4961,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 		ctx, request.Name, versionRequest, agent_api.AgentEndpointAPIVersion,
 	)
 	if err != nil {
-		return nil, hostedAgentCreateError(err, serviceName, request)
+		return nil, hostedAgentCreateError(err, serviceName, request, azdEnv["AZURE_AI_PROJECT_ID"])
 	}
 
 	_, _ = fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
@@ -4979,6 +5052,8 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	activityProfile ActivityProfile,
 	activitySettings *ActivitySettings,
 ) error {
+	defer phasetelemetry.Start(ctx, phasetelemetry.EndpointUpdate)()
+
 	if agentVersionResponse.Name == "" {
 		return fmt.Errorf("agent name is empty; cannot register environment variables")
 	}
@@ -5117,6 +5192,7 @@ func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) e
 	if p.foundryProject != nil {
 		return nil
 	}
+	defer phasetelemetry.Start(ctx, phasetelemetry.ResourceLookup)()
 	if err := p.ensureEnv(ctx); err != nil {
 		return err
 	}

@@ -65,6 +65,12 @@
                 "deploymentStacks": {
                     "$ref": "#/definitions/deploymentStacksConfig"
                 },
+                "config": {
+                    "type": "object",
+                    "title": "Provider-specific configuration",
+                    "description": "Optional. Configuration interpreted by the infrastructure provisioning provider.",
+                    "additionalProperties": true
+                },
                 "layers": {
                     "type": "array",
                     "title": "Provisioning layers.",
@@ -75,8 +81,7 @@
                         "title": "A provisioning layer.",
                         "additionalProperties": false,
                         "required": [
-                            "name",
-                            "path"
+                            "name"
                         ],
                         "properties": {
                             "name": {
@@ -141,7 +146,26 @@
                                     }
                                 }
                             }
-                        }
+                        },
+                        "allOf": [
+                            {
+                                "if": {
+                                    "properties": {
+                                        "provider": {
+                                            "enum": [
+                                                "bicep",
+                                                "terraform"
+                                            ]
+                                        }
+                                    }
+                                },
+                                "then": {
+                                    "required": [
+                                        "path"
+                                    ]
+                                }
+                            }
+                        ]
                     },
                     "allOf": [
                         {

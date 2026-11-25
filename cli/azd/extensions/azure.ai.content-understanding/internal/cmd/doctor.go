@@ -45,8 +45,8 @@ func newDoctorCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *cob
 	var fix bool
 	cmd := &cobra.Command{
 		Use: "doctor", Args: cobra.NoArgs,
-		Short: "Check azd context, Entra authentication, CU access, and generative readiness",
-		Long: "Resolve azd environment or projectless configuration, authenticate through azd, " +
+		Short: "Check CU configuration, authentication, access, and generative readiness",
+		Long: "Resolve azd environment or projectless configuration, authenticate through azd or process CU_API_KEY, " +
 			"and read CU service defaults. Show effective CU settings and their configuration sources.\n" +
 			"Show human-readable diagnostics by default; use --output json for a structured report.\n" +
 			"Missing generative mappings report incomplete readiness without failing the command; " +
@@ -121,7 +121,7 @@ func runDoctor(
 	missing := defaults.MissingRequirements(mapping)
 	result := doctorResult{
 		Ready: len(missing) == 0, Endpoint: analysis.RedactURL(session.endpoint), APIVersion: session.apiVersion,
-		Authentication: "Microsoft Entra ID", Profile: environment, Analyzer: analyzer,
+		Authentication: session.authentication, Profile: environment, Analyzer: analyzer,
 		Models: mapping, Missing: missing, Failures: []doctorFailure{}, Sources: session.sources,
 	}
 	if extCtx.OutputFormat == "json" || extCtx.OutputFormat == "none" {
@@ -165,13 +165,16 @@ func formatDoctorResult(result doctorResult) string {
 	if result.Ready {
 		output.WriteString("\n[OK] Generative readiness: ready\n")
 	} else {
-		output.WriteString("\n[WARN] Generative readiness: not ready\n")
+		output.WriteString(warningText("default", "\n[WARN] Generative readiness: not ready\n"))
 		for _, missing := range result.Missing {
-			fmt.Fprintf(&output, "  - %s\n", missing)
+			output.WriteString(warningText("default", fmt.Sprintf("  - %s\n", missing)))
 		}
-		output.WriteString("\nConfigure mappings with azd ai cu defaults set --model MODEL=DEPLOYMENT.\n" +
-			"If the selected environment has cu.modelDeployments, run azd ai cu doctor --fix-defaults.\n" +
-			"Non-generative analyzers may still be usable.\n")
+		output.WriteString("\nNext steps:\n")
+		output.WriteString(actionText("default",
+			"  Configure mappings with azd ai cu defaults set --model MODEL=DEPLOYMENT.") + "\n")
+		output.WriteString(actionText("default",
+			"  If the selected environment has cu.modelDeployments, run azd ai cu doctor --fix-defaults.") + "\n")
+		output.WriteString("\nNon-generative analyzers may still be usable.\n")
 	}
 	return output.String()
 }

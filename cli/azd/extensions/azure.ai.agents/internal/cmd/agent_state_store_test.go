@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -161,7 +162,13 @@ func TestAgentStateStoreDoesNotUseUserConfig(t *testing.T) {
 	}
 	require.NoError(t, responses.Delete(t.Context(), agentKey))
 	require.NoError(t, invocations.Delete(t.Context(), agentKey))
-	assert.Nil(t, loadAgentStateForTest(t, client, agentKey))
+	record := loadAgentStateForTest(t, client, agentKey)
+	require.NotNil(t, record)
+	assert.Empty(t, record.SessionID)
+	assert.Empty(t, record.ConversationID)
+	assert.Empty(t, record.StateStore)
+	assert.Nil(t, record.Response)
+	assert.Nil(t, record.Invocation)
 }
 
 func TestClassifyAgentStateReadError(t *testing.T) {
@@ -470,6 +477,164 @@ func TestResolveStoredIDFromAgentState(t *testing.T) {
 			stored, err := getAgentSpecificContextValue(t.Context(), client, "sessions", agentKey)
 			require.NoError(t, err)
 			assert.Equal(t, wantStored, stored)
+		})
+	}
+}
+
+func TestAgentStateStoreClearSessionPreservesConcurrentReplacement(t *testing.T) {
+	store, err := newAgentStateStoreAt(t.TempDir())
+	require.NoError(t, err)
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	key := buildAgentKey(endpoint, "agent", "7", false)
+	require.NoError(t, store.mutate(t.Context(), key, func(record *agentStateRecord) {
+		record.SessionID = "deleted"
+		record.ConversationID = "conversation"
+	}))
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	var workers sync.WaitGroup
+	t.Cleanup(func() {
+		cancel()
+		workers.Wait()
+	})
+	entered, release := make(chan struct{}), make(chan struct{})
+	saved := make(chan error, 1)
+	workers.Go(func() {
+		saved <- store.mutate(ctx, key, func(record *agentStateRecord) {
+			close(entered)
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			record.SessionID = "replacement"
+		})
+	})
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal("mutation did not acquire the agent lock")
+	}
+	cleared := make(chan error, 1)
+	workers.Go(func() {
+		cleared <- store.clearSession(ctx, buildAgentKey(endpoint, "agent", "2", false), "deleted")
+	})
+	require.Never(t, func() bool {
+		select {
+		case <-cleared:
+			return true
+		default:
+			return false
+		}
+	}, 100*time.Millisecond, 10*time.Millisecond)
+	close(release)
+	require.NoError(t, <-saved)
+	require.NoError(t, <-cleared)
+	record, err := store.get(t.Context(), key)
+	require.NoError(t, err)
+	require.NotNil(t, record)
+	assert.Equal(t, "replacement", record.SessionID)
+	assert.Equal(t, "conversation", record.ConversationID)
+}
+
+func TestFullAgentCleanupDoesNotReviveLegacyVersions(t *testing.T) {
+	for _, source := range []string{"user config", "project file"} {
+		t.Run(source, func(t *testing.T) {
+			const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+			const name = "MyAgent"
+			versionKey := buildAgentKey(endpoint, name, "7", false)
+			conversationKey := buildAgentKey(endpoint, name, "3", false)
+			localKey := buildAgentKey(endpoint, name, "", true)
+			legacy := legacyProjectState{
+				Sessions: map[string]string{
+					name: "old-latest", strings.TrimSuffix(versionKey, "/remote") + "#legacy/remote": "old-v7",
+					localKey: "local-session",
+				},
+				Conversations: map[string]string{conversationKey: "old-conversation"},
+			}
+			data, err := json.Marshal(legacy)
+			require.NoError(t, err)
+			projectPath := t.TempDir()
+			config := newInvokeUserConfigServer()
+			if source == "user config" {
+				config.values["extensions.ai-agents"] = data
+			} else {
+				directory := filepath.Join(projectPath, ".azure", "test")
+				require.NoError(t, os.MkdirAll(directory, 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join(directory, ".foundry-agent.json"), data, 0o600))
+			}
+			client := newInvokeTestAzdClientWithProject(t, config,
+				&helpersProjectServer{project: &azdext.ProjectConfig{Path: projectPath}},
+				&testEnvironmentServiceServer{current: &azdext.Environment{Name: "test"}})
+			require.True(t, cleanupAgentStateForKey(t.Context(), client, buildAgentKey(endpoint, name, "2", false)))
+			for _, key := range []string{buildAgentKey(endpoint, name, "", false), versionKey, conversationKey} {
+				assert.Nil(t, loadAgentStateForTest(t, client, key), "deleted target must not reimport legacy work")
+			}
+			local := loadAgentStateForTest(t, client, localKey)
+			require.NotNil(t, local)
+			assert.Equal(t, "local-session", local.SessionID)
+		})
+	}
+}
+
+func TestAgentStateStoreClearSessionDoesNotReviveLegacyVersions(t *testing.T) {
+	for _, source := range []string{"user config", "project file"} {
+		t.Run(source, func(t *testing.T) {
+			const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+			const name = "MyAgent"
+			versionKey := buildAgentKey(endpoint, name, "7", false)
+			base := strings.TrimSuffix(versionKey, "/remote")
+			for _, tt := range []struct{ name, version, legacyKey string }{
+				{"canonical", "7", versionKey},
+				{"mixed-case bare name", "", name},
+				{"query before mode", "7", base + "?legacy=1/remote"},
+				{"fragment before mode", "7", base + "#legacy/remote"},
+				{"query after mode", "7", versionKey + "?legacy=1"},
+				{"fragment after mode", "7", versionKey + "#legacy"},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					key := buildAgentKey(endpoint, name, tt.version, false)
+					oldKey := buildAgentKey(endpoint, name, "2", false)
+					otherKey := buildAgentKey(endpoint, "other", "7", false)
+					localKey := buildAgentKey(endpoint, name, tt.version, true)
+					legacy := legacyProjectState{
+						Sessions: map[string]string{
+							tt.legacyKey: "deleted", oldKey: "keep", otherKey: "deleted", localKey: "deleted",
+						},
+						Conversations: map[string]string{tt.legacyKey: "conversation"},
+					}
+					data, err := json.Marshal(legacy)
+					require.NoError(t, err)
+					projectPath := t.TempDir()
+					config := newInvokeUserConfigServer()
+					if source == "user config" {
+						config.values["extensions.ai-agents"] = data
+					} else {
+						directory := filepath.Join(projectPath, ".azure", "test")
+						require.NoError(t, os.MkdirAll(directory, 0o700))
+						require.NoError(t, os.WriteFile(filepath.Join(directory, ".foundry-agent.json"), data, 0o600))
+					}
+					client := newInvokeTestAzdClientWithProject(t, config,
+						&helpersProjectServer{project: &azdext.ProjectConfig{Path: projectPath}},
+						&testEnvironmentServiceServer{current: &azdext.Environment{Name: "test"}})
+					store, err := newAgentStateStoreForClient(client)
+					require.NoError(t, err)
+					require.NoError(t, store.clearSession(t.Context(), oldKey, "deleted"))
+					for range 2 {
+						id, err := getAgentSpecificContextValue(t.Context(), client, "sessions", key)
+						require.NoError(t, err)
+						assert.Empty(t, id)
+					}
+					conversation, err := getAgentSpecificContextValue(t.Context(), client, "conversations", key)
+					require.NoError(t, err)
+					assert.Equal(t, "conversation", conversation)
+					for _, saved := range []struct{ key, id string }{
+						{oldKey, "keep"}, {otherKey, "deleted"}, {localKey, "deleted"},
+					} {
+						id, err := getAgentSpecificContextValue(t.Context(), client, "sessions", saved.key)
+						require.NoError(t, err)
+						assert.Equal(t, saved.id, id)
+					}
+				})
+			}
 		})
 	}
 }

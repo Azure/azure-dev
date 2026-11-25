@@ -30,26 +30,32 @@ type DataClient struct {
 }
 
 // NewDataClient creates a new data-plane client for connection operations.
-func NewDataClient(endpoint string, cred azcore.TokenCredential) *DataClient {
+func NewDataClient(
+	endpoint string,
+	cred azcore.TokenCredential,
+	options *policy.ClientOptions,
+) *DataClient {
 	userAgent := fmt.Sprintf("azd-ext-azure-ai-connections/%s", version.Version)
 
-	clientOptions := &policy.ClientOptions{
-		PerCallPolicies: []policy.Policy{
-			runtime.NewBearerTokenPolicy(
-				cred,
-				[]string{"https://ai.azure.com/.default"},
-				nil,
-			),
-			azsdk.NewMsCorrelationPolicy(),
-			azsdk.NewUserAgentPolicy(userAgent),
-		},
+	var clientOptions policy.ClientOptions
+	if options != nil {
+		clientOptions = *options
 	}
+	clientOptions.PerCallPolicies = append([]policy.Policy{
+		runtime.NewBearerTokenPolicy(
+			cred,
+			[]string{"https://ai.azure.com/.default"},
+			nil,
+		),
+		azsdk.NewMsCorrelationPolicy(),
+		azsdk.NewUserAgentPolicy(userAgent),
+	}, clientOptions.PerCallPolicies...)
 
 	pipeline := runtime.NewPipeline(
 		"azure-ai-connections-data",
 		version.Version,
 		runtime.PipelineOptions{},
-		clientOptions,
+		&clientOptions,
 	)
 
 	return &DataClient{endpoint: endpoint, pipeline: pipeline}

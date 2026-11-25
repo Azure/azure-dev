@@ -388,7 +388,7 @@ func newRecordedCommand(t *testing.T, transport *recordedTransport, analyzer str
 			return nil, err
 		}
 		return &serviceSession{client: client, apiVersion: options.APIVersion, analyzer: analyzer,
-			endpoint: options.Endpoint, environment: extCtx.Environment,
+			endpoint: options.Endpoint, environment: extCtx.Environment, authentication: "Microsoft Entra ID",
 			close: func() { closes++ }}, nil
 	})
 }

@@ -36,7 +36,9 @@ For any PR changing `cli/azd/extensions/**`, including fork PRs, you MUST load a
 [extension-user-contract-review skill](../extension-user-contract-review/SKILL.md) and its full review procedure
 before the general review lenses. Do not make invocation depend on already recognizing a contract change.
 Inspect every changed extension file, track coverage and existing threads, and preserve its findings for shared
-triage. If the skill or required evidence is unavailable, report the contract pass as blocked rather than skipping it.
+triage. For command changes, trace base/head registrations to constructors and parent commands across files; track
+each public path separately so unrelated findings or constructor moves do not hide new commands. If the skill or
+required evidence is unavailable, report the contract pass as blocked rather than skipping it.
 Skip this pass only when the complete file list contains no extension changes.
 
 If added files are under a top-level path in `cli/azd/extensions/` that did not exist before the PR, also load [new-extension.md](new-extension.md) and apply its onboarding review. An added `extension.yaml` is enough to trigger the new-extension review because a dependency-only extension pack may have no module or entry point.
@@ -44,6 +46,10 @@ If added files are under a top-level path in `cli/azd/extensions/` that did not 
 ### Step 3: Apply review lenses
 
 Load [reviewers.md](reviewers.md) and apply each of the 9 fixed lenses to the diff. Then scan the changed files for the domain signals listed in `reviewers.md` and apply matching domain lenses. Each lens produces zero or more findings in the structured format defined in `reviewers.md`.
+
+If the diff changes telemetry collection or declarations, read the [privacy checklist's reviewer guidance](../../../docs/specs/metrics-audit/privacy-review-checklist.md#for-reviewers) and the maintainer's coverage decision in the PR.
+This applies even when filenames do not contain `telemetry`, such as changes to `ReportUsage` calls or fixed event values.
+Apply the Observability Expert checks from `reviewers.md`.
 
 **The reviewing agent is the same LLM** — these lenses are _perspectives to apply sequentially or in parallel_, not separate subagents. The host may parallelize lens application if supported, but a single-pass application of all lenses to the same diff is equally valid.
 
@@ -57,8 +63,9 @@ Still in `findings.md`. Apply the voice rules to every finding's text. Build the
 
 ### Step 6: Mandatory contract completion audit
 
-For extension PRs, reconcile the contract coverage ledger with the complete changed-file list and the actual outgoing
-comments. Every distinct in-scope addition or removal must have one inline comment or a matching existing thread.
+For extension PRs, reconcile the contract coverage ledger with the complete changed-file list, discovered command
+tree deltas, and actual outgoing comments. Every distinct in-scope addition or removal must have one inline comment
+or a matching existing thread.
 Do not drop contract comments to satisfy an ordinary finding budget. Expose the companion skill's completion status
 and counts in the review body or supported result channel. An incomplete pass must say `blocked`, not imply a clean
 review.

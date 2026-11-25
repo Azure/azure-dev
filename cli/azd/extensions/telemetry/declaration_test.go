@@ -48,7 +48,54 @@ func TestExtensionTelemetryDeclarationRules(t *testing.T) {
 	Purpose: fields.FeatureInsight,
 	Endpoint: "N/A",
 }`,
-			expectedMessage: "non-SystemMetadata classifications must use an endpoint other than N/A",
+			expectedMessage: "PublicPersonalData must use an endpoint other than N/A",
+		},
+		{
+			name: "organizational identifiers accept explicit N/A",
+			declaration: `var TestField = fields.AttributeKey{
+	Key: attribute.Key("ext.test"),
+	Classification: fields.OrganizationalIdentifiableInformation,
+	Purpose: fields.FeatureInsight,
+	Endpoint: "N/A",
+}`,
+		},
+		{
+			name: "organizational identifiers require an explicit endpoint",
+			declaration: `var TestField = fields.AttributeKey{
+	Key: attribute.Key("ext.test"),
+	Classification: fields.OrganizationalIdentifiableInformation,
+	Purpose: fields.FeatureInsight,
+}`,
+			expectedMessage: "Endpoint must be set",
+		},
+		{
+			name: "organizational identifiers reject an empty endpoint",
+			declaration: `var TestField = fields.AttributeKey{
+	Key: attribute.Key("ext.test"),
+	Classification: fields.OrganizationalIdentifiableInformation,
+	Purpose: fields.FeatureInsight,
+	Endpoint: "",
+}`,
+			expectedMessage: "Endpoint must be set",
+		},
+		{
+			name: "organizational identifiers accept identifier endpoint metadata",
+			declaration: `var TestField = fields.AttributeKey{
+	Key: attribute.Key("ext.test"),
+	Classification: fields.OrganizationalIdentifiableInformation,
+	Purpose: fields.FeatureInsight,
+	Endpoint: "ReviewedEndpoint",
+}`,
+		},
+		{
+			name: "end user pseudonymized information rejects N/A",
+			declaration: `var TestField = fields.AttributeKey{
+	Key: attribute.Key("ext.test"),
+	Classification: fields.EndUserPseudonymizedInformation,
+	Purpose: fields.FeatureInsight,
+	Endpoint: "N/A",
+}`,
+			expectedMessage: "EndUserPseudonymizedInformation must use an endpoint other than N/A",
 		},
 		{
 			name: "callstack or exception classification is supported",
@@ -58,6 +105,16 @@ func TestExtensionTelemetryDeclarationRules(t *testing.T) {
 	Purpose: fields.PerformanceAndHealth,
 	Endpoint: "ReviewedEndpoint",
 }`,
+		},
+		{
+			name: "callstack or exception rejects N/A",
+			declaration: `var TestField = fields.AttributeKey{
+	Key: attribute.Key("ext.test"),
+	Classification: fields.CallstackOrException,
+	Purpose: fields.PerformanceAndHealth,
+	Endpoint: "N/A",
+}`,
+			expectedMessage: "CallstackOrException must use an endpoint other than N/A",
 		},
 		{
 			name: "customer content classification is rejected",
@@ -78,7 +135,7 @@ var TestField = fields.AttributeKey{
 	Purpose: fields.FeatureInsight,
 	Endpoint: "N/A",
 }`,
-			expectedMessage: "non-SystemMetadata classifications must use an endpoint other than N/A",
+			expectedMessage: "PublicPersonalData must use an endpoint other than N/A",
 		},
 		{
 			name: "classification is required",

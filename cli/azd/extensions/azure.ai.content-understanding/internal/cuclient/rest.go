@@ -33,12 +33,24 @@ var _ Client = (*RESTTransport)(nil)
 func NewRESTTransport(
 	endpoint string, credential azcore.TokenCredential, options *TransportOptions,
 ) (*RESTTransport, error) {
+	return newRESTTransportWithCredential(endpoint, credential, nil, options)
+}
+
+func NewRESTTransportWithKeyCredential(
+	endpoint string, credential *azcore.KeyCredential, options *TransportOptions,
+) (*RESTTransport, error) {
+	return newRESTTransportWithCredential(endpoint, nil, credential, options)
+}
+
+func newRESTTransportWithCredential(
+	endpoint string, credential azcore.TokenCredential, key *azcore.KeyCredential, options *TransportOptions,
+) (*RESTTransport, error) {
 	normalized, err := normalizeEndpoint(endpoint, options != nil && options.Transport != nil)
 	if err != nil {
 		return nil, err
 	}
-	if credential == nil {
-		return nil, validationError("missing_credential", "An azd-backed Azure credential is required.")
+	if credential == nil && key == nil {
+		return nil, validationError("missing_credential", "A CU credential is required.")
 	}
 	settings, err := normalizeOptions(options)
 	if err != nil {
@@ -49,23 +61,26 @@ func NewRESTTransport(
 		transport = newHTTPTransport(settings.RequestTimeout)
 	}
 	retryOptions := policy.RetryOptions{MaxRetries: 2, TryTimeout: settings.RequestTimeout}
-	client, err := restclient.NewClient(
-		strings.TrimSuffix(normalized, "/contentunderstanding"),
-		safeTokenCredential{inner: credential},
-		&restclient.ClientOptions{
-			APIVersion: settings.APIVersion,
-			ClientOptions: azcore.ClientOptions{
-				Transport: &boundedErrorTransport{inner: transport},
-				Retry:     retryOptions,
-				PerCallPolicies: []policy.Policy{
-					&restPolicy{endpoint: normalized, apiVersion: settings.APIVersion, retry: retryOptions},
-					azsdk.NewMsClientRequestIdPolicy(),
-					azsdk.NewMsCorrelationPolicy(),
-					azsdk.NewUserAgentPolicy("azd-ext-azure-ai-content-understanding/" + settings.Version),
-				},
+	clientOptions := &restclient.ClientOptions{
+		APIVersion: settings.APIVersion,
+		ClientOptions: azcore.ClientOptions{
+			Transport: &boundedErrorTransport{inner: transport},
+			Retry:     retryOptions,
+			PerCallPolicies: []policy.Policy{
+				&restPolicy{endpoint: normalized, apiVersion: settings.APIVersion, retry: retryOptions},
+				azsdk.NewMsClientRequestIdPolicy(),
+				azsdk.NewMsCorrelationPolicy(),
+				azsdk.NewUserAgentPolicy("azd-ext-azure-ai-content-understanding/" + settings.Version),
 			},
 		},
-	)
+	}
+	resourceEndpoint := strings.TrimSuffix(normalized, "/contentunderstanding")
+	var client *restclient.Client
+	if key != nil {
+		client, err = restclient.NewClientWithKeyCredential(resourceEndpoint, key, clientOptions)
+	} else {
+		client, err = restclient.NewClient(resourceEndpoint, safeTokenCredential{inner: credential}, clientOptions)
+	}
 	if err != nil {
 		return nil, restDomainError(err)
 	}
@@ -311,7 +326,7 @@ func parseUsage(raw json.RawMessage) (*Usage, error) {
 func restOperationDomainError(err error, operation string) error {
 	if failure, ok := errors.AsType[*restclient.OperationError](err); ok {
 		domain := operationError(operation, failure.Status, &wireDiagnostic{
-			Code: failure.Code, Details: operationDiagnosticDetails(failure.Details),
+			Code: failure.Code, Message: failure.Message, Details: operationDiagnosticDetails(failure.Details),
 		})
 		domain.StatusCode = failure.ResponseError.StatusCode
 		return domain
@@ -325,7 +340,9 @@ func operationDiagnosticDetails(values []restclient.OperationDiagnostic) []wireD
 	}
 	result := make([]wireDiagnostic, len(values))
 	for i, value := range values {
-		result[i] = wireDiagnostic{Code: value.Code, Details: operationDiagnosticDetails(value.Details)}
+		result[i] = wireDiagnostic{
+			Code: value.Code, Message: value.Message, Details: operationDiagnosticDetails(value.Details),
+		}
 	}
 	return result
 }
@@ -392,9 +409,23 @@ func restDomainError(err error) error {
 		if response.RawResponse != nil {
 			retryAfterHeader = response.RawResponse.Header.Get("Retry-After")
 		}
-		return serviceResponseError(response.StatusCode, response.ErrorCode, retryAfterHeader)
+		domain := serviceResponseError(response.StatusCode, response.ErrorCode, retryAfterHeader)
+		if service, ok := errors.AsType[*restclient.ServiceError](err); ok {
+			appendServiceDiagnostics(domain, &wireDiagnostic{
+				Code: service.Diagnostic.Code, Message: service.Diagnostic.Message,
+				Details: operationDiagnosticDetails(service.Diagnostic.Details),
+			})
+		} else {
+			appendServiceDiagnostics(domain, nil)
+		}
+		return domain
 	}
 	return transportError(err)
+}
+
+// RedactDiagnostic shares diagnostic safety rules with the REST client and command boundary.
+func RedactDiagnostic(message string) string {
+	return restclient.RedactDiagnostic(message)
 }
 
 type safeTokenCredential struct {

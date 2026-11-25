@@ -4,14 +4,15 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"os"
-	"regexp"
 	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
+	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
@@ -20,6 +21,43 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 )
+
+func TestPreviewNoticeWriterUsesStderrForMachineOutput(t *testing.T) {
+	for _, format := range []string{"default", "json", "raw"} {
+		t.Run(format, func(t *testing.T) {
+			cmd := &cobra.Command{Use: "check"}
+			cmd.Flags().String("output", format, "")
+			var stdout, stderr bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+
+			writer := previewNoticeWriter(cmd)
+			_, err := writer.Write([]byte("notice"))
+			require.NoError(t, err)
+			if format == "json" || format == "raw" {
+				require.Empty(t, stdout.String())
+				require.Equal(t, "notice", stderr.String())
+			} else {
+				require.Equal(t, "notice", stdout.String())
+				require.Empty(t, stderr.String())
+			}
+		})
+	}
+}
+
+func TestRequireInvocationPreviewNoticeForA2A(t *testing.T) {
+	clearPreviewProcess(t)
+	t.Setenv(featureflags.A2A.EnvVar, "true")
+	var notice bytes.Buffer
+
+	require.NoError(t, requireInvocationPreviewNotice(agent_api.AgentProtocolA2A, true, &notice))
+	require.Contains(t, notice.String(), "A2A init selection")
+	require.Contains(t, notice.String(), "Preview behavior may change.")
+
+	notice.Reset()
+	require.NoError(t, requireInvocationPreviewNotice(agent_api.AgentProtocolResponses, true, &notice))
+	require.Empty(t, notice.String())
+}
 
 func TestPreviewEnforcementIgnoresEnvironmentSelection(t *testing.T) {
 	for _, environment := range []string{"", " \t ", "selected", "missing"} {
@@ -48,24 +86,6 @@ func TestPreviewEnforcementIgnoresEnvironmentSelection(t *testing.T) {
 				require.Zero(t, env.reads.Load(), "preview checks must not read the host")
 			})
 		}
-	}
-}
-
-func TestPreviewHelpEmptyEnvironmentUsesOnlyProcess(t *testing.T) {
-	for _, value := range []string{"", " \t "} {
-		t.Run(value, func(t *testing.T) {
-			clearPreviewProcess(t)
-			t.Setenv("AZD_ENVIRONMENT", "default-env")
-			t.Setenv(featureflags.Voice.EnvVar, "true")
-			_, env := startPreviewCommandServer(t, map[string]any{
-				"agents": map[string]any{"long_running": "on"},
-			}, nil, nil)
-			text, err := executeRoot(t, "invoke", "--environment", value, "--help")
-			require.NoError(t, err)
-			require.Contains(t, text, "Voice Agents")
-			require.NotContains(t, text, "--long-running")
-			require.Zero(t, env.reads.Load())
-		})
 	}
 }
 
@@ -152,7 +172,7 @@ func TestPreviewLocalValidatorRunsOnlyOnRejection(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			clearPreviewProcess(t)
-			t.Setenv(featureflags.Voice.EnvVar, tc.value)
+			t.Setenv(featureflags.A2A.EnvVar, tc.value)
 			localErr := errors.New("local validation failed")
 			calls, preRuns, runs := 0, 0, 0
 			command := &cobra.Command{
@@ -161,7 +181,7 @@ func TestPreviewLocalValidatorRunsOnlyOnRejection(t *testing.T) {
 				RunE:    func(*cobra.Command, []string) error { runs++; return nil },
 			}
 			if tc.required {
-				previewCommand(command, featureflags.Voice)
+				previewCommand(command, featureflags.A2A)
 			}
 			validateBeforePreview(command, func(*cobra.Command, []string) error {
 				calls++
@@ -189,26 +209,6 @@ func TestPreviewLocalValidatorRunsOnlyOnRejection(t *testing.T) {
 			require.Equal(t, tc.wantCalls, calls)
 		})
 	}
-}
-
-func TestPreviewInitVoiceEnabledSkipsLocalValidator(t *testing.T) {
-	clearPreviewProcess(t)
-	t.Setenv(featureflags.Voice.EnvVar, "true")
-	startPreviewCommandServer(t, nil, nil, nil)
-	root := NewRootCommand()
-	command, _, err := root.Find([]string{"init"})
-	require.NoError(t, err)
-	require.Nil(t, command.PreRunE)
-	calls, runs := 0, 0
-	validateBeforePreview(command, func(*cobra.Command, []string) error {
-		calls++
-		return errors.New("preview validator must not run")
-	})
-	command.RunE = func(*cobra.Command, []string) error { runs++; return nil }
-	root.SetArgs([]string{"init", "--kind", "prompt-voice", "--agent-name", "voice-agent"})
-	require.NoError(t, root.ExecuteContext(t.Context()))
-	require.Zero(t, calls)
-	require.Equal(t, 1, runs)
 }
 
 func TestPreviewLocalValidatorsPreserveFlags(t *testing.T) {
@@ -273,17 +273,17 @@ func TestRequiredPreviewFeatures(t *testing.T) {
 		args []string
 		want []featureflags.Feature
 	}{
-		{[]string{"init", "--kind", "prompt-voice"}, []featureflags.Feature{featureflags.Voice}},
-		{[]string{"init", "--kind", " PROMPT-VOICE "}, []featureflags.Feature{featureflags.Voice}},
+		{[]string{"init", "--kind", "prompt-voice"}, none},
+		{[]string{"init", "--kind", " PROMPT-VOICE "}, none},
 		{[]string{"init", "--kind", "prompt"}, none},
 		{[]string{"init", "--kind", "hosted"}, none},
-		{[]string{"init", "--voice", "en-US-Ava"}, []featureflags.Feature{featureflags.Voice}},
+		{[]string{"init", "--voice", "en-US-Ava"}, none},
 		{[]string{"init", "--harness", "microsoft_copilot_preview"}, []featureflags.Feature{featureflags.ManagedHarness}},
 		{[]string{"init", "--harness", " GitHub_Copilot_Preview"}, []featureflags.Feature{featureflags.ManagedHarness}},
 		{[]string{"init", "--harness", "none"}, none},
 		{[]string{"init", "--harness", "unknown"}, none},
 		{[]string{"init", "--kind", "prompt-voice", "--voice", "v", "--harness", "microsoft_copilot_preview"},
-			[]featureflags.Feature{featureflags.Voice, featureflags.ManagedHarness}},
+			[]featureflags.Feature{featureflags.ManagedHarness}},
 		{[]string{"invoke", "--long-running"}, []featureflags.Feature{featureflags.LongRunning}},
 		{[]string{"invoke", "--long-running=false"}, none},
 		{[]string{"invoke", "--no-wait"}, []featureflags.Feature{featureflags.LongRunning}},
@@ -317,8 +317,8 @@ func TestPreviewCommandAnnotationIsInherited(t *testing.T) {
 	parent := &cobra.Command{Use: "parent"}
 	child := &cobra.Command{Use: "child", Run: func(*cobra.Command, []string) {}}
 	parent.AddCommand(child)
-	previewCommand(parent, featureflags.Voice)
-	require.Equal(t, []featureflags.Feature{featureflags.Voice}, requiredPreviewFeatures(child))
+	previewCommand(parent, featureflags.A2A)
+	require.Equal(t, []featureflags.Feature{featureflags.A2A}, requiredPreviewFeatures(child))
 
 	applyPreviewVisibility(parent, map[string]bool{})
 	require.True(t, parent.Hidden)
@@ -349,11 +349,7 @@ func TestPreviewHelpHiddenWhenOff(t *testing.T) {
 	}{
 		{nil, []string{"\n  invocations"}},
 		{[]string{"invoke"}, []string{
-			"--long-running", "--no-wait", "Long-running Invocations", "Run the long task", "Voice Agents",
-		}},
-		{[]string{"init"}, []string{
-			"--voice string", "'prompt-voice'", "--kind prompt-voice",
-			"Voice Agents", "support-voice", "Preview opt-ins",
+			"--long-running", "--no-wait", "Long-running Invocations", "Run the long task",
 		}},
 		{[]string{"add"}, []string{"alpha.agents"}},
 	} {
@@ -380,21 +376,10 @@ func TestPreviewHelpShownPerFeature(t *testing.T) {
 		absent  []string
 	}{
 		{featureflags.LongRunning, []string{"invoke"},
-			[]string{"--long-running", "--no-wait", "Long-running Invocations", "Run the long task"},
-			[]string{"Voice Agents"}},
+			[]string{"--long-running", "--no-wait", "Long-running Invocations", "Run the long task"}, nil},
 		{featureflags.LongRunning, nil, []string{"\n  invocations"}, nil},
-		{featureflags.Voice, []string{"init"},
-			[]string{"--voice string", "prompt-voice", "Voice Agents", "support-voice"}, nil},
-		{featureflags.Voice, []string{"invoke"}, []string{"Voice Agents"}, []string{"--long-running"}},
-		{featureflags.Voice, []string{"init"},
-			[]string{"--image, and prompt-voice agents", "For new managed prompt voice agents"}, nil},
-		{featureflags.Voice, []string{"delete"}, []string{"telephony bindings"}, nil},
-		{featureflags.Voice, []string{"endpoint", "show"}, []string{"Voice agents display"}, nil},
-		{featureflags.Voice, []string{"add"},
-			[]string{"deployment), voice, or prompt-voice Agent."},
-			[]string{"Voice and prompt-voice Agent definitions are also supported."}},
 		{featureflags.ManagedHarness, []string{"init"},
-			[]string{"including one using --harness", "--harness string"}, []string{"--voice string"}},
+			[]string{"including one using --harness", "--harness string"}, nil},
 	} {
 		t.Run(tc.feature.ID+"/"+strings.Join(tc.path, "_"), func(t *testing.T) {
 			setPreviewProcess(t, "")
@@ -471,7 +456,7 @@ func TestPreviewHelpIgnoresHostAndEnvironmentSelection(t *testing.T) {
 	text, err := executeRoot(t, "invoke", "-e", "help-env", "--help")
 	require.NoError(t, err)
 	require.NotContains(t, text, "--long-running")
-	require.NotContains(t, text, "Voice Agents")
+	require.Contains(t, text, "Voice Agents")
 	require.Zero(t, env.reads.Load())
 
 	t.Setenv("AZD_ENVIRONMENT", "host-env")
@@ -490,7 +475,7 @@ func TestPreviewHelpNeedsNoHost(t *testing.T) {
 	text, err := executeRoot(t, "invoke", "--help")
 	require.NoError(t, err)
 	require.Contains(t, text, "--long-running")
-	require.NotContains(t, text, "Voice Agents")
+	require.Contains(t, text, "Voice Agents")
 }
 
 func TestAgentHelpPreviewsOff(t *testing.T) {
@@ -514,32 +499,4 @@ func TestAgentHelpPreviewsOff(t *testing.T) {
 			snapshot.SnapshotT(t, strings.TrimRight(strings.Join(lines, "\n"), "\n"))
 		})
 	}
-}
-
-// Disabled help hides preview terms outside the root switch list.
-func TestAgentHelpPreviewsOffHidesPreviewTerms(t *testing.T) {
-	setPreviewProcess(t, "")
-	t.Setenv("NO_COLOR", "1")
-	previous := color.NoColor
-	color.NoColor = true
-	t.Cleanup(func() { color.NoColor = previous })
-	terms := regexp.MustCompile(`(?i)\bvoice\b|prompt-voice|long-running`)
-	var walk func(*cobra.Command, []string)
-	walk = func(command *cobra.Command, path []string) {
-		t.Run(strings.Join(append([]string{"root"}, path...), "_"), func(t *testing.T) {
-			text, err := executeRoot(t, append(append([]string{}, path...), "--help")...)
-			require.NoError(t, err)
-			if len(path) == 0 {
-				require.Contains(t, text, "\nPreview Feature Switches\n")
-				text, _, _ = strings.Cut(text, "\nPreview Feature Switches\n")
-			}
-			require.Empty(t, terms.FindAllString(text, -1))
-		})
-		for _, child := range command.Commands() {
-			if child.IsAvailableCommand() {
-				walk(child, append(append([]string{}, path...), child.Name()))
-			}
-		}
-	}
-	walk(NewRootCommand(), nil)
 }

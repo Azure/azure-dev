@@ -62,13 +62,17 @@ func invalidLLM() error {
 	return &cuclient.Error{
 		Kind: cuclient.ErrorService, Code: "invalid_llm_result",
 		Message:    "The analysis result cannot be rendered as LLM input.",
-		Suggestion: "Use --llm-input=false to inspect the complete JSON service response.",
+		Suggestion: "Use --output json to inspect the complete JSON service response.",
 	}
 }
 
 // RenderLLM follows the Python SDK's default to_llm_input contract.
 // YAML whitespace may differ; data types, ordered front matter, and content boundaries do not.
 func RenderLLM(raw json.RawMessage) (string, error) {
+	return renderLLM(raw, nil)
+}
+
+func renderLLM(raw, usage json.RawMessage) (string, error) {
 	var result struct {
 		Contents []llmContent `json:"contents"`
 		Warnings []llmWarning `json:"warnings"`
@@ -84,13 +88,21 @@ func RenderLLM(raw json.RawMessage) (string, error) {
 		}
 	}
 	var blocks []string
-	for _, content := range contents {
+	for index, content := range contents {
 		mapping := &yaml.Node{Kind: yaml.MappingNode}
 		mime := content.MIME
 		if mime == "" {
 			mime = "unknown"
 		}
 		appendYAML(mapping, "mimeType", mime)
+		// Operation usage is emitted once, not attributed to every content segment.
+		if index == 0 && len(usage) != 0 {
+			value, err := decodeValue(usage)
+			if err != nil {
+				return "", invalidLLM()
+			}
+			appendYAML(mapping, "usage", value)
+		}
 		if len(content.Metadata) != 0 && string(content.Metadata) != "null" {
 			metadata, err := decodeValue(content.Metadata)
 			if err != nil {

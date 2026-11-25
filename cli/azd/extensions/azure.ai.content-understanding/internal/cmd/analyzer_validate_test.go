@@ -73,7 +73,7 @@ func TestAnalyzerValidateStrictSpecAndVersion(t *testing.T) {
 	assert.Contains(t, stdout, `"warnings": []`)
 	assert.Contains(t, stdout, `"strict": true`)
 	_, _, err = f.execute(t.Context(), "analyzer", "validate", file)
-	require.ErrorContains(t, err, "apiVersion")
+	require.ErrorContains(t, err, "Line 2, column 3")
 	assert.Zero(t, f.opens)
 }
 
@@ -130,4 +130,95 @@ func TestAnalyzerValidateCancellationWriterAndMetadata(t *testing.T) {
 	require.NotNil(t, command.Launch)
 	assert.True(t, command.Launch.NoAzdEnvironment)
 	assert.Zero(t, f.opens)
+}
+
+func TestAnalyzerValidateLocatesPrivateFieldErrors(t *testing.T) {
+	f := newDefaultsFixture(t)
+	file := validationFile(t, `{
+  "baseAnalyzerId": "prebuilt-document",
+  "models": {"completion": "gpt-4.1"},
+  "fieldSchema": {"fields": {
+    "private.field": {
+      "type": "currency",
+      "method": "extarct",
+      "description": "private authored description"
+    }
+  }}
+}`)
+	for _, spec := range []bool{false, true} {
+		args := []string{"analyzer", "validate", file, "--strict"}
+		if spec {
+			args = append(args, "--spec")
+		}
+		stdout, stderr, err := f.execute(t.Context(), args...)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Line 6, column 7")
+		require.Contains(t, err.Error(), "Line 7, column 7")
+		if spec {
+			require.Contains(t, err.Error(), "service contract (enum)")
+		}
+		for _, private := range []string{"private", "currency", "extarct", file} {
+			require.NotContains(t, err.Error(), private)
+		}
+		require.Empty(t, stdout)
+		require.Empty(t, stderr)
+	}
+	require.Zero(t, f.opens)
+	require.Empty(t, f.client.calls)
+}
+
+func TestAnalyzerValidateLocatesEmptyPrimaryAliasErrors(t *testing.T) {
+	f := newDefaultsFixture(t)
+	file := validationFile(t, `{
+  "baseAnalyzerId": "prebuilt-document",
+  "models": {"completion": "gpt-4.1"},
+  "fieldSchema": {},
+  "field_schema": {"fields": {
+    "private.field": {
+      "type": "currency"
+    }
+  }}
+}`)
+	for _, spec := range []bool{false, true} {
+		args := []string{"analyzer", "validate", file, "--strict"}
+		if spec {
+			args = append(args, "--spec")
+		}
+		stdout, stderr, err := f.execute(t.Context(), args...)
+		require.ErrorContains(t, err, "Line 7, column 7")
+		for _, private := range []string{"private", "currency", file} {
+			assert.NotContains(t, err.Error(), private)
+		}
+		assert.Empty(t, stdout)
+		assert.Empty(t, stderr)
+	}
+	assert.Zero(t, f.opens)
+	assert.Empty(t, f.client.calls)
+}
+
+func TestExplicitEmptyServiceSelectorsDoNotUseFallbacks(t *testing.T) {
+	t.Setenv("CU_ENDPOINT", "https://configured.services.ai.azure.com")
+	t.Setenv("CU_API_VERSION", cuclient.DefaultAPIVersion)
+	file := validationFile(t, `{}`)
+	for _, command := range [][]string{
+		{"analyzer", "list"},
+		{"analyzer", "show", "prebuilt-layout"},
+		{"analyzer", "create", "test", "--schema", file},
+		{"analyzer", "delete", "test", "--yes"},
+		{"doctor"},
+		{"analyze", "--url", "https://example.com/input.pdf"},
+	} {
+		for _, flag := range []string{"--endpoint", "--api-version"} {
+			t.Run(command[0]+"/"+flag, func(t *testing.T) {
+				f := newDefaultsFixture(t)
+				args := append(append([]string{}, command...), flag, "")
+				stdout, stderr, err := f.execute(t.Context(), args...)
+				require.ErrorContains(t, err, "must not be empty")
+				require.Empty(t, stdout)
+				require.Empty(t, stderr)
+				require.Zero(t, f.opens)
+				require.Empty(t, f.client.calls)
+			})
+		}
+	}
 }

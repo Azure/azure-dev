@@ -2504,6 +2504,7 @@ func newServiceTargetTestClient(
 	t.Helper()
 
 	srv := grpc.NewServer()
+	azdext.RegisterEnvironmentServiceServer(srv, &stubInitializeEnvServer{})
 	if containerSrv != nil {
 		azdext.RegisterContainerServiceServer(srv, containerSrv)
 	}
@@ -2585,6 +2586,18 @@ type stubInitializeEnvServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 }
 
+func (s *stubInitializeEnvServer) GetValues(
+	context.Context, *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	return &azdext.KeyValueListResponse{}, nil
+}
+
+func (s *stubInitializeEnvServer) GetConfig(
+	context.Context, *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	return &azdext.GetConfigResponse{}, nil
+}
+
 func (s *stubInitializeEnvServer) GetCurrent(
 	context.Context, *azdext.EmptyRequest,
 ) (*azdext.EnvironmentResponse, error) {
@@ -2659,7 +2672,7 @@ func newPromptTestClient(t *testing.T, promptSrv azdext.PromptServiceServer) *az
 }
 
 type legacyPreBuiltEnvironmentServer struct {
-	azdext.UnimplementedEnvironmentServiceServer
+	stubInitializeEnvServer
 }
 
 func (s *legacyPreBuiltEnvironmentServer) GetValue(
@@ -3252,6 +3265,7 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 	protocols := []agent_yaml.ProtocolVersionRecord{
 		{Protocol: "responses", Version: "1.0.0"},
 		{Protocol: "invocations", Version: "1.0.0"},
+		{Protocol: "voice_conversation_engine", Version: "1.0.0"},
 	}
 	agentVersion := &agent_api.AgentVersionObject{
 		Name:    "my-agent",
@@ -3289,6 +3303,11 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 		t,
 		"https://proj.azure.com/agents/my-agent/endpoint/protocols/invocations?api-version=v1",
 		envStub.values["AGENT_MY_SVC_INVOCATIONS_ENDPOINT"],
+	)
+	require.Equal(
+		t,
+		"wss://proj.azure.com/agents/my-agent/endpoint/protocols/voice_conversation_engine?api-version=v1",
+		envStub.values["AGENT_MY_SVC_VOICE_CONVERSATION_ENGINE_ENDPOINT"],
 	)
 
 	// Base agent endpoint for session management
@@ -4017,6 +4036,19 @@ func TestAgentInvocationEndpoints_SkipsInvocationsWSWithMalformedEndpoint(t *tes
 	got := agentInvocationEndpoints(malformed, agentName, protocols)
 	require.Len(t, got, 1, "invocations_ws entry should be filtered when builder returns empty")
 	require.Equal(t, "responses", got[0].Protocol)
+}
+
+func TestAgentInvocationEndpoints_ConversationEngine(t *testing.T) {
+	got := agentInvocationEndpoints(
+		"https://account.services.ai.azure.com/api/projects/project",
+		"engine",
+		[]agent_yaml.ProtocolVersionRecord{{Protocol: "voice_conversation_engine", Version: "1.0.0"}},
+	)
+	require.Equal(t, []protocolEndpointInfo{{
+		Protocol: "voice_conversation_engine",
+		URL: "wss://account.services.ai.azure.com/api/projects/project/agents/engine/endpoint/protocols/" +
+			"voice_conversation_engine?api-version=v1",
+	}}, got)
 }
 
 func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {
@@ -6176,42 +6208,85 @@ func TestEndpoints_GPTLiveUsesPersistedLiveEndpoint(t *testing.T) {
 func TestEndpoints_PromptRootRef_ValidatesConventionsBesideDefinition(t *testing.T) {
 	t.Parallel()
 
-	projectRoot := t.TempDir()
-	serviceDir := filepath.Join(projectRoot, "src", "prompt")
-	definitionDir := filepath.Join(projectRoot, "definitions")
-	skillDir := filepath.Join(definitionDir, "skills", "invalid-skill")
-	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
-	require.NoError(t, os.MkdirAll(skillDir, 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(definitionDir, "agent.yaml"),
-		[]byte("kind: prompt\nname: my-prompt\ninstructions: Help the user.\n"),
-		0o600,
-	))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(skillDir, "SKILL.md"),
-		[]byte("---\nname: invalid-skill\n---\nMissing a description.\n"),
-		0o600,
-	))
+	t.Run("conflicting skill versions are rejected", func(t *testing.T) {
+		t.Parallel()
 
-	client := newEndpointsTestClient(t, projectRoot, map[string]string{
-		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com",
-		"AGENT_PROMPT_NAME":        "my-prompt",
-		"AGENT_PROMPT_VERSION":     "1",
+		projectRoot := t.TempDir()
+		serviceDir := filepath.Join(projectRoot, "src", "prompt")
+		definitionDir := filepath.Join(projectRoot, "definitions")
+		require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+		require.NoError(t, os.MkdirAll(definitionDir, 0o750))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(definitionDir, "agent.yaml"),
+			[]byte(
+				"kind: prompt\nname: my-prompt\nmodel: gpt-4.1-mini\ninstructions: Help the user.\n"+
+					"skills:\n  - name: invalid-skill\n    version: \"1\"\n  - name: invalid-skill\n    version: \"2\"\n",
+			),
+			0o600,
+		))
+
+		client := newEndpointsTestClient(t, projectRoot, map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com",
+			"AGENT_PROMPT_NAME":        "my-prompt",
+			"AGENT_PROMPT_VERSION":     "1",
+		})
+		provider := &AgentServiceTargetProvider{azdClient: client}
+		service := &azdext.ServiceConfig{
+			Name: "prompt", Host: foundryAgentHost, RelativePath: "src/prompt",
+			AdditionalProperties: mustStruct(t, map[string]any{"$ref": "definitions/agent.yaml"}),
+		}
+
+		require.NoError(t, provider.Initialize(t.Context(), service))
+		require.False(t, serviceConfigHasRef(service))
+
+		_, err := provider.Endpoints(t.Context(), service, nil)
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok)
+		require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
+		require.ErrorContains(t, err, `conflicting authored versions "1" and "2"`)
 	})
-	provider := &AgentServiceTargetProvider{azdClient: client}
-	service := &azdext.ServiceConfig{
-		Name: "prompt", Host: foundryAgentHost, RelativePath: "src/prompt",
-		AdditionalProperties: mustStruct(t, map[string]any{"$ref": "definitions/agent.yaml"}),
-	}
 
-	require.NoError(t, provider.Initialize(t.Context(), service))
-	require.False(t, serviceConfigHasRef(service))
+	t.Run("local skills folder is ignored", func(t *testing.T) {
+		t.Parallel()
 
-	_, err := provider.Endpoints(t.Context(), service, nil)
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok)
-	require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
-	require.ErrorContains(t, err, "description")
+		projectRoot := t.TempDir()
+		serviceDir := filepath.Join(projectRoot, "src", "prompt")
+		definitionDir := filepath.Join(projectRoot, "definitions")
+		skillDir := filepath.Join(definitionDir, "skills", "invalid-skill")
+		require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+		require.NoError(t, os.MkdirAll(skillDir, 0o750))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(definitionDir, "agent.yaml"),
+			[]byte("kind: prompt\nname: my-prompt\nmodel: gpt-4.1-mini\ninstructions: Help the user.\nskills:\n  - invalid-skill\n"),
+			0o600,
+		))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(skillDir, "SKILL.md"),
+			[]byte("---\nname: invalid-skill\n---\nMissing a description.\n"),
+			0o600,
+		))
+
+		const projectEndpoint = "https://proj.services.ai.azure.com/api/projects/project"
+		const endpoint = projectEndpoint + "/agents/my-prompt/endpoint/protocols/openai/responses?api-version=v1"
+		client := newEndpointsTestClient(t, projectRoot, map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT":             projectEndpoint,
+			"AGENT_PROMPT_NAME":                    "my-prompt",
+			"AGENT_PROMPT_VERSION":                 "1",
+			"AGENT_PROMPT_ENDPOINT":                endpoint,
+			"AGENT_PROMPT_PROJECT_ENDPOINT":        projectEndpoint,
+			"AGENT_PROMPT_PROMPT_ENDPOINT_VERSION": promptEndpointSnapshotVersion,
+		})
+		provider := &AgentServiceTargetProvider{azdClient: client}
+		service := &azdext.ServiceConfig{
+			Name: "prompt", Host: foundryAgentHost, RelativePath: "src/prompt",
+			AdditionalProperties: mustStruct(t, map[string]any{"$ref": "definitions/agent.yaml"}),
+		}
+
+		require.NoError(t, provider.Initialize(t.Context(), service))
+		got, err := provider.Endpoints(t.Context(), service, nil)
+		require.NoError(t, err)
+		require.Equal(t, []string{endpoint}, got)
+	})
 }
 
 func TestEndpoints_RootRefPreservesSiblingKindOverride(t *testing.T) {

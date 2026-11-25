@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -211,7 +212,7 @@ func TestInitOperationRepositoryTemplateClassification(t *testing.T) {
 			// Stop after manifest inspection, before Azure setup, and retain classification on failure.
 			err := runInitFromAzdTemplate(ctx, &initFlags{
 				src: "project", env: "dev", agentNameExplicit: true, agentName: "invalid_name",
-			}, client, nil, &AgentTemplate{Source: templateDir})
+			}, client, nil, &AgentTemplate{Source: templateDir}, io.Discard)
 			require.ErrorContains(t, err, "invalid agent name")
 			require.Equal(t, 1, workflow.runCalls)
 			state, ok := ctx.Value(initOperationContextKey{}).(*initOperationContext)

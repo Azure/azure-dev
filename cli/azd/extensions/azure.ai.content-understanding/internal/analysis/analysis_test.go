@@ -464,11 +464,19 @@ func TestExecutionPartialFailureSkipAndRedaction(t *testing.T) {
 	}}
 	result, err := Execute(t.Context(), client, plan, runOptions())
 	requireCode(t, err, "analysis_failed")
+	assert.Contains(t, err.Error(), "1 succeeded, 1 failed, 1 skipped")
+	assert.Contains(t, err.Error(), "Successful result files were retained.")
+	assert.Contains(t, err.Error(), "Input 2:")
+	assert.NotContains(t, err.Error(), "secret")
 	assert.EqualValues(t, 2, calls.Load())
 	require.Len(t, result.Records, 3)
 	assert.Equal(t, "succeeded", result.Records[0].Status)
 	assert.Equal(t, "failed", result.Records[1].Status)
 	assert.Equal(t, "skipped", result.Records[2].Status)
+	// #nosec G304 -- Reads only the successful output planned in this test's private directory.
+	saved, readErr := os.ReadFile(*result.Records[0].Output)
+	require.NoError(t, readErr)
+	assert.JSONEq(t, terminal, string(saved))
 	// #nosec G304 -- Reads only this test's private temporary report.
 	body, err := os.ReadFile(reportPath)
 	require.NoError(t, err)

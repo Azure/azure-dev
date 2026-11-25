@@ -5,14 +5,15 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
-	"path"
 	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/servicekey"
 	"azureaiagent/internal/project"
@@ -108,12 +109,14 @@ func TestServiceEnvironmentTemplates(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	environment, err := serviceEnvironmentTemplates(AiConnectionHost, cfg)
+	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
 		"SEARCH_KEY":   "${SEARCH_KEY}",
 		"SERVER_NAME":  "${SERVER_NAME}",
 		"DEFAULT_NAME": "${DEFAULT_NAME}",
 		"EVENT_BODY":   "${EVENT_BODY}",
-	}, serviceEnvironmentTemplates(cfg))
+	}, environment)
 }
 
 // TestServiceEnvironmentTemplatesDeterministic verifies a var
@@ -131,9 +134,62 @@ func TestServiceEnvironmentTemplatesDeterministic(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	environment, err := serviceEnvironmentTemplates(AiConnectionHost, cfg)
+	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
 		"TOPIC": "${TOPIC}",
-	}, serviceEnvironmentTemplates(cfg))
+	}, environment)
+}
+
+func TestServiceEnvironmentTemplatesRejectsWithoutPartialResult(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := structpb.NewStruct(map[string]any{
+		"credentials": map[string]any{"key": "${VALID}"},
+		"metadata": map[string]any{
+			"a": "${BAR:=x}",
+			"z": "${OTHER:=x}",
+		},
+	})
+	require.NoError(t, err)
+
+	for range 10 {
+		environment, err := serviceEnvironmentTemplates(AiConnectionHost, cfg)
+		require.ErrorContains(t, err, "metadata.a:")
+		require.Nil(t, environment)
+	}
+}
+
+func TestServiceEnvironmentTemplatesEmpty(t *testing.T) {
+	t.Parallel()
+
+	for _, host := range []string{AiConnectionHost, AiToolboxHost, AiSkillHost, AiProjectHost} {
+		for _, cfg := range []*structpb.Struct{nil, {}} {
+			environment, err := serviceEnvironmentTemplates(host, cfg)
+			require.NoError(t, err)
+			require.Nil(t, environment)
+		}
+	}
+}
+
+func TestServiceEnvironmentTemplatesToolboxFields(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := structpb.NewStruct(map[string]any{
+		"description": "Uses ${LITERAL} and ${LITERAL:=default}",
+		"endpoint":    "${ENDPOINT}",
+		"tools": []any{
+			map[string]any{"configuration": map[string]any{"key": "${TOOL_KEY}"}},
+		},
+	})
+	require.NoError(t, err)
+
+	environment, err := serviceEnvironmentTemplates(AiToolboxHost, cfg)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		"ENDPOINT": "${ENDPOINT}",
+		"TOOL_KEY": "${TOOL_KEY}",
+	}, environment)
 }
 
 func TestEscapeFoundryTemplates(t *testing.T) {
@@ -170,8 +226,17 @@ func TestEscapeFoundryTemplates(t *testing.T) {
 func TestAddResourceServiceWritesEnvironment(t *testing.T) {
 	server := &recordingProjectServer{}
 	client := newProjectRecorderClient(t, server)
+	//nolint:gosec // Test templates, not credentials.
 	cfg, err := project.MarshalStruct(&project.Connection{
-		Credentials: map[string]any{"key": "${SEARCH_KEY}"},
+		Target:           "${TARGET}",
+		Credentials:      map[string]any{"key": "${SEARCH_KEY}"},
+		Metadata:         map[string]string{"resourceId": "${RESOURCE_ID}"},
+		Audience:         "${AUDIENCE}",
+		AuthorizationUrl: "${AUTHORIZATION_URL}",
+		TokenUrl:         "${TOKEN_URL}",
+		RefreshUrl:       "${REFRESH_URL}",
+		ConnectorName:    "${CONNECTOR_NAME}",
+		Scopes:           []string{"${SCOPE}"},
 	})
 	require.NoError(t, err)
 
@@ -188,9 +253,153 @@ func TestAddResourceServiceWritesEnvironment(t *testing.T) {
 	defer server.mu.Unlock()
 	require.Len(t, server.added, 1)
 	assert.Empty(t, server.added[0].GetEnvironment())
+	//nolint:gosec // Test templates, not credentials.
 	assert.Equal(t, map[string]any{
-		"SEARCH_KEY": "${SEARCH_KEY}",
+		"TARGET":            "${TARGET}",
+		"SEARCH_KEY":        "${SEARCH_KEY}",
+		"RESOURCE_ID":       "${RESOURCE_ID}",
+		"AUDIENCE":          "${AUDIENCE}",
+		"AUTHORIZATION_URL": "${AUTHORIZATION_URL}",
+		"TOKEN_URL":         "${TOKEN_URL}",
+		"REFRESH_URL":       "${REFRESH_URL}",
+		"CONNECTOR_NAME":    "${CONNECTOR_NAME}",
+		"SCOPE":             "${SCOPE}",
 	}, server.env["search"])
+}
+
+func TestAddResourceServiceIgnoresUnexpandedFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		host   string
+		values map[string]any
+	}{
+		{
+			name: "connection",
+			host: AiConnectionHost,
+			values: map[string]any{
+				"name":           "${NAME}",
+				"category":       "${CATEGORY:=literal}",
+				"authType":       "${AUTH_TYPE}",
+				"expiryTime":     "${UNCLOSED",
+				"sharedUserList": []any{"${USER:?literal}"},
+				"peRequirement":  "${REQUIREMENT}",
+				"peStatus":       "${STATUS:=literal}",
+				"error":          "${ERROR}",
+			},
+		},
+		{
+			name: "toolbox",
+			host: AiToolboxHost,
+			values: map[string]any{
+				"name":        "${NAME}",
+				"description": "Uses ${VALUE} and ${VALUE:=literal}",
+				"metadata":    map[string]any{"literal": "${UNCLOSED"},
+			},
+		},
+		{
+			name: "skill",
+			host: AiSkillHost,
+			values: map[string]any{
+				"description": "Uses ${VALUE} and ${VALUE:=literal}",
+				"archive":     "./skills/${LITERAL}",
+			},
+		},
+		{
+			name: "project",
+			host: AiProjectHost,
+			values: map[string]any{
+				"network": map[string]any{"agentSubnet": map[string]any{"vnet": "${VNET:=literal}"}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg, err := structpb.NewStruct(tt.values)
+			require.NoError(t, err)
+			server := &recordingProjectServer{}
+			client := newProjectRecorderClient(t, server)
+			require.NoError(t, addResourceService(
+				t.Context(), client, "sample", tt.host, cfg, []string{aiProjectServiceName},
+			))
+
+			server.mu.Lock()
+			defer server.mu.Unlock()
+			require.Len(t, server.added, 1)
+			assert.Equal(t, tt.values, server.added[0].GetAdditionalProperties().AsMap())
+			assert.Empty(t, server.env)
+			assert.Equal(t, []string{aiProjectServiceName}, server.uses["sample"])
+		})
+	}
+}
+
+func TestAddResourceServiceValidatesConnectionExpandedFields(t *testing.T) {
+	t.Parallel()
+
+	for _, field := range []string{
+		"target", "audience", "authorizationUrl", "tokenUrl", "refreshUrl", "connectorName", "scopes",
+	} {
+		for _, value := range []string{"${VALUE:=fallback}", "${OUTER:-${INNER}}"} {
+			t.Run(field+"/"+value, func(t *testing.T) {
+				t.Parallel()
+
+				values := map[string]any{field: value}
+				fieldPath := field
+				if field == "scopes" {
+					values[field] = []any{value}
+					fieldPath += "[0]"
+				}
+				cfg, err := structpb.NewStruct(values)
+				require.NoError(t, err)
+				server := &recordingProjectServer{}
+				client := newProjectRecorderClient(t, server)
+				err = addResourceService(
+					t.Context(), client, "sample", AiConnectionHost, cfg, []string{aiProjectServiceName},
+				)
+				require.ErrorContains(t, err, `service "sample"`)
+				require.ErrorContains(t, err, fieldPath+":")
+
+				server.mu.Lock()
+				defer server.mu.Unlock()
+				assert.Empty(t, server.added)
+				assert.Empty(t, server.env)
+				assert.Empty(t, server.uses)
+			})
+		}
+	}
+}
+
+func TestAddResourceServiceRejectsUnsupportedReferencesBeforeChanges(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{"${BAR:=x}", "${OUTER:-${NESTED}}"} {
+		t.Run(value, func(t *testing.T) {
+			t.Parallel()
+			server := &recordingProjectServer{}
+			client := newProjectRecorderClient(t, server)
+			cfg, err := project.MarshalStruct(&project.Toolbox{
+				Tools: []map[string]any{
+					{"configuration": map[string]any{"endpoint": value}},
+				},
+			})
+			require.NoError(t, err)
+
+			err = addResourceService(
+				t.Context(), client, "search", AiToolboxHost, cfg, []string{aiProjectServiceName},
+			)
+			require.ErrorContains(t, err, `service "search"`)
+			require.ErrorContains(t, err, "tools[0].configuration.endpoint:")
+
+			server.mu.Lock()
+			defer server.mu.Unlock()
+			require.Empty(t, server.added)
+			require.Empty(t, server.env)
+			require.Empty(t, server.uses)
+		})
+	}
 }
 
 func TestCollectLegacyProjectDeploymentsIgnoresSplitProject(
@@ -810,39 +1019,96 @@ func TestEmitResourceServicesWiresExistingProject(t *testing.T) {
 	assert.Equal(t, []string{aiProjectServiceName}, server.uses["myagent"])
 }
 
-// TestPromptResourceServices covers the translation from a prompt agent's own
-// definition and folder layout into the sibling services init writes, which is
-// what gives prompt agents the same host coverage hosted agents already have.
+func TestEmitResourceServicesRejectsInvalidSiblingBeforeChanges(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		resources foundryResources
+		field     string
+	}{
+		{
+			name: "later connection",
+			resources: foundryResources{Connections: []project.Connection{
+				{Name: "valid", Target: "${TARGET}"},
+				{Name: "invalid", Target: "${VAR:=x}"},
+			}},
+			field: "target:",
+		},
+		{
+			name: "later toolbox",
+			resources: foundryResources{
+				Connections: []project.Connection{{Name: "valid", Target: "${TARGET}"}},
+				Toolboxes: []project.Toolbox{{
+					Name:  "invalid",
+					Tools: []map[string]any{{"endpoint": "${VAR:=x}"}},
+				}},
+			},
+			field: "tools[0].endpoint:",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			server := &recordingProjectServer{}
+			client := newProjectRecorderClient(t, server)
+
+			count, err := emitResourceServices(t.Context(), client, "agent", tt.resources)
+			require.ErrorContains(t, err, `service "invalid" has invalid environment variable references`)
+			require.ErrorContains(t, err, tt.field)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+			assert.Zero(t, count)
+
+			server.mu.Lock()
+			defer server.mu.Unlock()
+			assert.Empty(t, server.added)
+			assert.Empty(t, server.env)
+			assert.Empty(t, server.uses)
+			assert.Empty(t, server.configValues)
+			assert.Empty(t, server.configSections)
+		})
+	}
+}
+
+// TestPromptResourceServices covers wiring existing sibling services
+// (connections, skills, toolboxes) into ExtraUses for a prompt agent.
 func TestPromptResourceServices(t *testing.T) {
 	t.Parallel()
 
-	t.Run("connections and skill bundles become siblings", func(t *testing.T) {
+	t.Run("connections and skills are only wired when sibling services exist", func(t *testing.T) {
 		t.Parallel()
 
-		dir := t.TempDir()
-		bundle := filepath.Join(dir, "skills", "code-review")
-		require.NoError(t, os.MkdirAll(bundle, 0o750))
-		require.NoError(t, os.WriteFile(filepath.Join(bundle, "SKILL.md"), []byte(
-			"---\nname: code-review\ndescription: reviews code\n---\n\nDo the review.\n",
-		), 0o600))
-
-		client := newProjectRecorderClient(t, &recordingProjectServer{})
 		agent := &agent_yaml.PromptAgent{
 			Connections: []string{"search"},
+			Skills: []agent_yaml.HarnessSkillRef{
+				{Name: "code review"},
+				{Name: "pinned-skill", Version: "2"},
+			},
 		}
 
-		got, err := promptResourceServices(t.Context(), client, agent, dir, dir)
+		// When neither service exists in azure.yaml, no ExtraUses edges are added.
+		client := newProjectRecorderClient(t, &recordingProjectServer{})
+		got, err := promptResourceServices(t.Context(), client, agent)
 		require.NoError(t, err)
-
 		require.Empty(t, got.Connections)
+		assert.Empty(t, got.ExtraUses)
 
-		// archive: points at the bundle folder so the whole bundle -- scripts and
-		// references included -- travels with the instructions.
-		require.Len(t, got.Skills, 1)
-		skill, ok := got.Skills["code-review"]
-		require.True(t, ok, "the skill is keyed by the name SKILL.md declares")
-		assert.Equal(t, "reviews code", skill.Description)
-		assert.Equal(t, "./"+path.Join(filepath.ToSlash(dir), "skills/code-review"), skill.Archive)
+		// When matching azure.ai.connection and azure.ai.skill services exist,
+		// ExtraUses includes their sanitized service names while skipping
+		// version-pinned skills.
+		withSiblings := newProjectRecorderClient(t, &recordingProjectServer{
+			existing: map[string]*azdext.ServiceConfig{
+				aiProjectServiceName: {Name: aiProjectServiceName, Host: AiProjectHost},
+				"search":             {Name: "search", Host: AiConnectionHost},
+				"codereview":         {Name: "codereview", Host: AiSkillHost},
+				"pinned-skill":       {Name: "pinned-skill", Host: AiSkillHost},
+			},
+		})
+		got, err = promptResourceServices(t.Context(), withSiblings, agent)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"search", "codereview"}, got.ExtraUses)
 	})
 
 	t.Run("toolbox reference is only wired when the service exists", func(t *testing.T) {
@@ -853,8 +1119,7 @@ func TestPromptResourceServices(t *testing.T) {
 		// A dangling uses: entry would fail the project load, so a toolbox with
 		// no service in azure.yaml contributes no edge at all.
 		client := newProjectRecorderClient(t, &recordingProjectServer{})
-		dir := t.TempDir()
-		got, err := promptResourceServices(t.Context(), client, agent, dir, dir)
+		got, err := promptResourceServices(t.Context(), client, agent)
 		require.NoError(t, err)
 		assert.Empty(t, got.ExtraUses)
 
@@ -863,68 +1128,10 @@ func TestPromptResourceServices(t *testing.T) {
 				"my-toolbox": {Name: "my-toolbox", Host: AiToolboxHost},
 			},
 		})
-		got, err = promptResourceServices(t.Context(), withToolbox, agent, dir, dir)
+		got, err = promptResourceServices(t.Context(), withToolbox, agent)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"my-toolbox"}, got.ExtraUses)
 	})
-}
-
-// TestEmitResourceServices_EmitsSkillServices verifies each skill bundle is
-// written as its own azure.ai.skill service pointing at the bundle folder, and
-// that the agent uses: it. Creating and versioning the skill belongs to the
-// azure.ai.skills extension; the agents extension only attaches the version it
-// publishes, so without this service nothing ever creates the skill.
-func TestEmitResourceServices_EmitsSkillServices(t *testing.T) {
-	t.Parallel()
-
-	server := &recordingProjectServer{}
-	client := newProjectRecorderClient(t, server)
-
-	_, err := emitResourceServices(t.Context(), client, "myagent", foundryResources{
-		Skills: map[string]project.SkillService{
-			"code-review": {Description: "reviews code", Archive: "./skills/code-review"},
-		},
-	})
-	require.NoError(t, err)
-
-	server.mu.Lock()
-	defer server.mu.Unlock()
-
-	var skillSvc *azdext.ServiceConfig
-	for _, svc := range server.added {
-		if svc.Host == AiSkillHost {
-			skillSvc = svc
-		}
-	}
-	require.NotNil(t, skillSvc, "a skill bundle must produce an azure.ai.skill service")
-	// The service key is the skill name; the skills extension has no name field.
-	assert.Equal(t, "code-review", skillSvc.Name)
-	require.NotNil(t, skillSvc.AdditionalProperties)
-	assert.Equal(t,
-		"./skills/code-review",
-		skillSvc.AdditionalProperties.Fields["archive"].GetStringValue(),
-	)
-	// The skill must deploy before the agent that pins its version.
-	assert.Contains(t, server.uses["myagent"], "code-review")
-	assert.Equal(t, []string{aiProjectServiceName}, server.uses["code-review"])
-}
-
-func TestEmitResourceServicesSanitizesSkillServiceName(t *testing.T) {
-	t.Parallel()
-
-	server := &recordingProjectServer{}
-	client := newProjectRecorderClient(t, server)
-	_, err := emitResourceServices(t.Context(), client, "myagent", foundryResources{
-		Skills: map[string]project.SkillService{
-			"code review": {Description: "reviews code", Archive: "./skills/code-review"},
-		},
-	})
-	require.NoError(t, err)
-
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	assert.Contains(t, server.uses["myagent"], "codereview")
-	assert.Equal(t, []string{aiProjectServiceName}, server.uses["codereview"])
 }
 
 // TestEmitResourceServices_ExtraUsesAreWired verifies a name passed as ExtraUses

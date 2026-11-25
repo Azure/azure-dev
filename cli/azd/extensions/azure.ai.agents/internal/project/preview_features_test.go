@@ -42,7 +42,7 @@ func TestPreviewNestedHarnessReference(t *testing.T) {
 			"kind": "prompt", "harness": map[string]any{"$ref": "harness.yaml"},
 		})}
 	before := proto.CloneOf(service)
-	require.ErrorContains(t, RequireAgentFeatures(service, root), "agents.managed_harness")
+	require.ErrorContains(t, RequireAgentFeatures(service, root, io.Discard), "agents.managed_harness")
 	provider := &AgentServiceTargetProvider{projectPath: root}
 	_, err := provider.Package(t.Context(), service, nil, nil)
 	require.ErrorContains(t, err, "agents.managed_harness")
@@ -56,7 +56,7 @@ func TestMemorySnapshotFeatureSwitch(t *testing.T) {
 			for _, field := range []string{"enableMemorySnapshot", "enable_memory_snapshot"} {
 				t.Run(field, func(t *testing.T) {
 					for _, enabled := range []bool{false, true} {
-						err := RequireDefinitionFeatures(map[string]any{"kind": "hosted", field: enabled})
+						err := RequireDefinitionFeatures(map[string]any{"kind": "hosted", field: enabled}, io.Discard)
 						if !enabled || value == "true" || value == "1" || value == "T" || value == "TRUE" {
 							require.NoError(t, err)
 						} else {
@@ -73,17 +73,40 @@ func TestMemorySnapshotFeatureSwitch(t *testing.T) {
 		{"kind": "hosted", "enableMemorySnapshot": false, "enable_memory_snapshot": true},
 		{"kind": "hosted", "enableMemorySnapshot": true, "enable_memory_snapshot": false},
 	} {
-		require.ErrorContains(t, RequireDefinitionFeatures(definition), featureflags.MemorySnapshot.ID)
+		require.ErrorContains(t, RequireDefinitionFeatures(definition, io.Discard), featureflags.MemorySnapshot.ID)
 	}
 	t.Setenv(featureflags.MemorySnapshot.EnvVar, "true")
-	t.Setenv(featureflags.Voice.EnvVar, "false")
 	definition := map[string]any{
 		"kind": "hosted", "enableMemorySnapshot": true,
 		"protocols": []any{map[string]any{"protocol": "invocations_ws"}},
 	}
-	require.ErrorContains(t, RequireDefinitionFeatures(definition), featureflags.Voice.ID)
-	t.Setenv(featureflags.Voice.EnvVar, "true")
-	require.NoError(t, RequireDefinitionFeatures(definition))
+	require.NoError(t, RequireDefinitionFeatures(definition, io.Discard))
+}
+
+func TestConversationEngineIgnoresRetiredVoiceFeatureSwitch(t *testing.T) {
+	const legacyVoiceFlag = "AZD_ALPHA_ENABLE_AGENTS_VOICE"
+	for _, value := range []string{"unset", "", "false", "0", "invalid", "true"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(legacyVoiceFlag, value)
+			if value == "unset" {
+				require.NoError(t, os.Unsetenv(legacyVoiceFlag))
+			}
+			for _, key := range []string{"protocols", "protocol_versions", "container_protocol_versions"} {
+				for _, protocols := range [][]any{
+					{map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"}},
+					{map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"},
+						map[string]any{"protocol": "invocations_ws", "version": "1.0.0"}},
+				} {
+					definition := map[string]any{"kind": "hosted", key: protocols}
+					require.NoError(t, CheckDefinitionFeatures(definition))
+					require.NoError(t, RequireDefinitionFeatures(definition, io.Discard))
+					notices, err := RequireDefinitionFeatureNotices(definition)
+					require.NoError(t, err)
+					require.Empty(t, notices)
+				}
+			}
+		})
+	}
 }
 
 func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
@@ -127,14 +150,20 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 			"kind": "prompt", "name": "agent", "model": "gpt-4.1-mini", "instructions": "Be helpful.",
 			"harness": map[string]any{"type": " \tgithub_copilot_preview\r\n "},
 		}, featureflags.ManagedHarness},
-		{"voice", map[string]any{"kind": "voice"}, featureflags.Voice},
-		{"prompt voice", map[string]any{"kind": "prompt-voice"}, featureflags.Voice},
+		{"voice", map[string]any{"kind": "voice"}, featureflags.Feature{}},
+		{"prompt voice", map[string]any{"kind": "prompt-voice"}, featureflags.Feature{}},
 		{"hosted voice bridge", map[string]any{"kind": "hosted",
-			"protocols": []any{map[string]any{"protocol": "invocations_ws"}}}, featureflags.Voice},
+			"protocols": []any{map[string]any{"protocol": "invocations_ws"}}}, featureflags.Feature{}},
 		{"api hosted voice bridge", map[string]any{"kind": "hosted",
-			"protocol_versions": []any{map[string]any{"protocol": "invocations_ws"}}}, featureflags.Voice},
+			"protocol_versions": []any{map[string]any{"protocol": "invocations_ws"}}}, featureflags.Feature{}},
 		{"legacy api hosted voice bridge", map[string]any{"kind": "hosted",
-			"container_protocol_versions": []any{map[string]any{"protocol": " invocations_ws "}}}, featureflags.Voice},
+			"container_protocol_versions": []any{map[string]any{"protocol": " invocations_ws "}}}, featureflags.Feature{}},
+		{"hosted conversation engine", map[string]any{"kind": "hosted",
+			"protocols": []any{map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"}}}, featureflags.Feature{}},
+		{"api hosted conversation engine", map[string]any{"kind": "hosted",
+			"protocol_versions": []any{map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"}}}, featureflags.Feature{}},
+		{"legacy api hosted conversation engine", map[string]any{"kind": "hosted",
+			"container_protocol_versions": []any{map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"}}}, featureflags.Feature{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -151,7 +180,7 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 					}
 					before := proto.CloneOf(service)
 					ctx := t.Context()
-					err := RequireAgentFeatures(service, root)
+					err := RequireAgentFeatures(service, root, io.Discard)
 					if tc.feature.ID == "" {
 						require.NoError(t, err)
 					} else {
@@ -175,7 +204,7 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 							require.Equal(t, "eastus", target.Metadata["location"])
 						}
 						t.Setenv(tc.feature.EnvVar, "true")
-						require.NoError(t, RequireAgentFeatures(service, root))
+						require.NoError(t, RequireAgentFeatures(service, root, io.Discard))
 						t.Setenv(tc.feature.EnvVar, "")
 					}
 					require.True(t, proto.Equal(before, service))

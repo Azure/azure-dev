@@ -1,0 +1,12 @@
+name: acr-unverified-scopes
+infra:
+  provider: bicep
+  layers:
+    - name: application
+      path: infra/application
+    - name: foundry
+      provider: microsoft.foundry
+      path: infra/foundry
+services:
+  ai-project:
+    host: azure.ai.project

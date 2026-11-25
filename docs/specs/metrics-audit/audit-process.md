@@ -28,7 +28,7 @@ Telemetry audits run on a quarterly cycle aligned with fiscal quarters.
 |------|---------------|
 | **Telemetry Lead** | Owns the audit process, runs scans, publishes reports |
 | **Feature Developers** | Respond to gap issues, implement telemetry for new commands |
-| **Privacy Contact** | Reviews new classifications, approves changes to hashing |
+| **Maintainer / Privacy Contact** | Confirms approval coverage and resolves classification or handling questions |
 | **Data Engineering** | Validates downstream Kusto functions and cooked tables |
 | **PM / Analytics** | Reviews audit report, prioritizes gap closures |
 
@@ -44,10 +44,10 @@ Telemetry audits run on a quarterly cycle aligned with fiscal quarters.
 
 ### 2. Field Inventory
 
-- [ ] Diff `fields/fields.go` against the previous audit snapshot
+- [ ] Diff core `fields/fields.go` and first-party `extensions/telemetry/fields.go` against the previous audit snapshot
 - [ ] Identify new fields added without documentation
 - [ ] Verify all fields have correct classification and purpose
-- [ ] Verify hashing is applied to all user-provided values
+- [ ] Verify each field's hashing, validation, and omission rules match the [schema](telemetry-schema.md#hashing)
 - [ ] Cross-reference with the [Telemetry Schema](telemetry-schema.md)
 
 ### 3. Event Inventory
@@ -56,11 +56,13 @@ Telemetry audits run on a quarterly cycle aligned with fiscal quarters.
 - [ ] Identify new events added without documentation
 - [ ] Verify event naming follows conventions (`prefix.noun.verb`)
 
-### 4. Privacy Review
+### 4. Privacy review
 
-- [ ] Review all new fields against the [Privacy Review Checklist](privacy-review-checklist.md)
-- [ ] Confirm no `CustomerContent` is emitted
-- [ ] Confirm no unhashed user-provided values
+- [ ] Assess changed collection and handling against the [privacy review checklist](privacy-review-checklist.md), not just new keys
+- [ ] Record existing approval coverage or the required additional review; do not start uncovered collection before approval
+- [ ] Confirm no new `CustomerContent` collection; track handling and rollout for existing reclassified fields separately
+- [ ] Check the full supported input range and relevant invalid-input paths, not just default values
+- [ ] Verify affected retained copies and their owners using the checks below
 - [ ] Spot-check 5 random existing fields for classification accuracy
 
 ### 5. Disabled Telemetry Check
@@ -82,14 +84,8 @@ telemetry data and we cannot directly measure the opt-out rate.
 - [ ] Estimate: `opt-out rate ≈ 1 − (active telemetry users / total installs)`
 - [ ] Track this ratio over time to detect trends
 
-> **⚠️ Open question for @AngelosP / Privacy team**: Should azd send a single anonymous
-> opt-out counter signal (containing zero identifying information — no machine ID, no IP,
-> just an increment) when the user has `AZURE_DEV_COLLECT_TELEMETRY=no`? This is a gray
-> area: GDPR Article 7(3) requires stopping processing on consent withdrawal, but a
-> zero-identifier counter may not constitute "personal data." The .NET SDK installer does
-> send a telemetry entry on successful installation even before the user sets the opt-out
-> variable. A decision from the privacy team would clarify whether this approach is
-> acceptable for azd.
+Keep opt-out behavior unchanged. Do not add a reporting path when telemetry is disabled.
+Download counts and active-user counts are different measures, so the estimate above is not a measured opt-out rate.
 
 ### 7. Data Pipeline Health
 
@@ -125,6 +121,45 @@ Cooked tables are pre-aggregated views used by dashboards and reports.
 - [ ] New columns from new fields are populated correctly
 - [ ] Historical data migration is complete (if field was renamed)
 - [ ] Dashboard queries return expected results
+
+## Retained copies and rollout
+
+Maintainers and data owners use these checks when collection or handling changes.
+Record the PR's coverage decision in the [privacy checklist template](privacy-review-checklist.md#pr-checklist-template-for-telemetry-changes) and coordinate any needed formal review with the service's privacy owner and reviewers.
+
+When changing deployed classification metadata, have the platform and privacy owners confirm the required update process.
+Record open classification questions with the relevant owner.
+
+### Check each affected copy
+
+Include raw data, derived tables, report imports, caches, and exports where applicable.
+For each copy, record the following in the internal review or rollout record:
+
+- Its owner and the actual retention setting, including when the clock starts and how often cleanup runs.
+- How data-subject requests and any required deletion after a customer relationship ends are handled. These are separate from ordinary age-based expiry.
+- The central platform's confirmed coverage, any required registration or configuration, and work left to feature or reporting owners.
+- Evidence and the date checked, plus open questions and who will confirm them.
+
+Where lifecycle-based deletion applies, confirm the notification and deletion process with the privacy and platform owners, including whether age-based expiry meets the requirement.
+Check requirements for mixed records and storage assets with the relevant owner rather than applying one field's rule to everything stored beside it.
+
+When associated websites or surveys are included, check browser collection and backend logging separately.
+Confirm the data subjects, role, access, storage and processing locations, and delete/export handling.
+For vendor services, verify account defaults and project-specific overrides, including expiry criteria and cleanup schedules.
+If the inventory or flow diagram changes, preserve manual edits and keep data types and inventory references traceable.
+
+### Record rollout separately from implementation
+
+Track code, metadata, and downstream work separately:
+
+| Deliverable | What to record |
+|---|---|
+| Code and tests | Implementation PR, release or feature gate, and tests of included and excluded values |
+| Classification metadata | Owner, deployment status, and evidence that ingestion uses the intended metadata |
+| Downstream handling | Affected consumers, migration or historical-copy work, and evidence of the required filtering, retention, or deletion |
+
+Keep account-specific evidence and internal policy determinations out of public issues and PRs.
+Record pending work with an owner and follow-up.
 
 ## Automation Suggestions
 

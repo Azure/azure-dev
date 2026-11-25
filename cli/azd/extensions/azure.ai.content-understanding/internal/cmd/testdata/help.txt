@@ -10,8 +10,8 @@ Available Commands
   analyzer : Manage Content Understanding analyzers
   config   : Manage CU user defaults without an azd project
   defaults : Read or update CU resource model deployment defaults, not local azd configuration
-  doctor   : Check azd context, Entra authentication, CU access, and generative readiness
-  env-var  : Inspect supported compatibility process variables safely
+  doctor   : Check CU configuration, authentication, access, and generative readiness
+  env-var  : Discover supported environment variables and inspect set values
   infra    : Generate infrastructure and complete azd-managed provisioning
   version  : Display the extension version
 

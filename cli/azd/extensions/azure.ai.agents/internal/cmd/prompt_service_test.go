@@ -23,6 +23,45 @@ type failingPromptEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 }
 
+func TestPromptEnvValuesEnvironmentPrecedence(t *testing.T) {
+	for _, tt := range []struct {
+		name, selected, explicit, want string
+	}{
+		{name: "saved default", want: "prod"},
+		{name: "command selection", selected: "dev", want: "dev"},
+		{name: "explicit name", selected: "prod", explicit: "dev", want: "dev"},
+		{name: "missing selection", selected: "missing"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_ENVIRONMENT", tt.selected)
+			env := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "prod"},
+				environments: map[string]*azdext.Environment{
+					"dev": {Name: "dev"}, "prod": {Name: "prod"},
+				},
+				values: map[string]map[string]string{
+					"dev": {"target": "dev"}, "prod": {"target": "prod"},
+				},
+			}
+			client := newTestAzdClient(t, env, nil)
+			values, err := promptEnvValues(t.Context(), client, tt.explicit)
+			if tt.want == "" {
+				require.Equal(t, codes.NotFound, status.Code(err))
+				require.Nil(t, values)
+				require.Zero(t, env.getValuesCalls)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.want, values["target"])
+			}
+			if tt.selected != "" || tt.explicit != "" {
+				require.Zero(t, env.getCurrentCalls)
+			} else {
+				require.Equal(t, 1, env.getCurrentCalls)
+			}
+		})
+	}
+}
+
 type promptEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	values map[string]string

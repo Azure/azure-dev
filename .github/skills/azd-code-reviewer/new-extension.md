@@ -1,4 +1,4 @@
-<!-- cspell:ignore golangci -->
+<!-- cspell:ignore golangci CODEOWNERS -->
 
 # New first-party extension review
 
@@ -38,3 +38,5 @@ Registry updates and any resulting test snapshot updates should be handled in a 
 For an executable extension with a release YAML, check that the author plans to follow up with a member of the azd core team to register it as a new Azure DevOps pipeline under `azure-dev/extensions` and verify its access to the shared release infrastructure.
 
 A contributor with repository permissions should create a matching `ext-*` GitHub label for issue tracking.
+
+If the extension reports telemetry, use the [privacy checklist](../../../docs/specs/metrics-audit/privacy-review-checklist.md#for-reviewers) to check its payload and approval coverage.

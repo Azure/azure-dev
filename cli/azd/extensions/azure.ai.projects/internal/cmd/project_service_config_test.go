@@ -16,14 +16,64 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/provisioning"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+func TestValidateProjectACRBuildsWithoutEnvironment(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		envName    string
+		currentErr error
+		readErr    error
+		wantErr    string
+	}{
+		{name: "empty environment"},
+		{name: "not found", currentErr: status.Error(codes.NotFound, "environment not found")},
+		{name: "no default", currentErr: status.Error(codes.Unknown, "default environment not found")},
+		{name: "unavailable", currentErr: status.Error(codes.Unavailable, "service unavailable"),
+			wantErr: "service unavailable"},
+		{name: "corrupt", currentErr: status.Error(codes.Unknown, "invalid environment metadata"),
+			wantErr: "invalid environment metadata"},
+		{name: "canceled", currentErr: status.Error(codes.Canceled, "request canceled"), wantErr: "request canceled"},
+		{name: "values read failure", envName: "test", readErr: status.Error(codes.NotFound, "values missing"),
+			wantErr: "values missing"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			client, _, env, _, _ := newSelfInitializingDeploymentClient(t, root)
+			env.current = tt.envName
+			env.currentErr = tt.currentErr
+			env.readErr = tt.readErr
+			args := &azdext.ProjectEventArgs{Project: &azdext.ProjectConfig{
+				Path: root,
+				Services: map[string]*azdext.ServiceConfig{
+					"project": {Host: aiProjectHost},
+					"agent": {Host: "azure.ai.agent", AdditionalProperties: mustProjectProperties(t, map[string]any{
+						"kind": "hosted", "docker": map[string]any{"remoteBuild": true},
+					})},
+				},
+			}}
+			err := validateProjectACRBuilds(t.Context(), client, args)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Empty(t, env.setLog)
+			require.Error(t, projectLifecycleHandler(t.Context(), client, args))
+			require.Empty(t, env.setLog)
+		})
+	}
+}
 
 func TestLoadProjectServiceConfig(t *testing.T) {
 	t.Parallel()
@@ -315,16 +365,48 @@ func mustProjectProperties(
 type recordingProjectEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 
-	mu          sync.Mutex
-	envName     string
-	envNameSet  string
-	key         string
-	value       string
-	values      map[string]string
-	models      []*azdext.PromptAiModelRequest
-	deployments []*azdext.PromptAiDeploymentRequest
-	failAt      int
-	failKey     string
+	mu                sync.Mutex
+	envName           string
+	envNameSet        string
+	key               string
+	value             string
+	values            map[string]string
+	models            []*azdext.PromptAiModelRequest
+	deployments       []*azdext.PromptAiDeploymentRequest
+	failAt            int
+	failDeploymentErr error
+	remainingQuota    *float64
+	resolveCandidates []*azdext.AiModelDeployment
+	modelVersions     []*azdext.AiModelVersion
+	failKey           string
+	currentErr        error
+	namedErr          error
+	config            map[string][]byte
+}
+
+func (s *recordingProjectEnvironmentServer) GetConfig(
+	_ context.Context, request *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	if s.config != nil {
+		if request.GetEnvName() != s.envName {
+			return nil, fmt.Errorf("unexpected config environment %q", request.GetEnvName())
+		}
+		value, found := s.config[request.GetPath()]
+		return &azdext.GetConfigResponse{Value: value, Found: found}, nil
+	}
+	return &azdext.GetConfigResponse{}, nil
+}
+
+func (s *recordingProjectEnvironmentServer) Get(
+	_ context.Context, request *azdext.GetEnvironmentRequest,
+) (*azdext.EnvironmentResponse, error) {
+	if s.namedErr != nil {
+		return nil, s.namedErr
+	}
+	if request.GetName() != s.envName {
+		return nil, fmt.Errorf("unexpected named environment %q", request.GetName())
+	}
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: s.envName}}, nil
 }
 
 func (s *recordingProjectEnvironmentServer) GetValues(
@@ -345,7 +427,42 @@ func (s *recordingProjectEnvironmentServer) GetValues(
 
 type recordingProjectPromptServer struct {
 	azdext.UnimplementedPromptServiceServer
+	azdext.UnimplementedAiModelServiceServer
 	environment *recordingProjectEnvironmentServer
+}
+
+func (p *recordingProjectPromptServer) ResolveModelDeployments(
+	_ context.Context, request *azdext.ResolveModelDeploymentsRequest,
+) (*azdext.ResolveModelDeploymentsResponse, error) {
+	s := p.environment
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.resolveCandidates) > 0 {
+		return &azdext.ResolveModelDeploymentsResponse{
+			Deployments: s.resolveCandidates,
+		}, nil
+	}
+	if s.remainingQuota == nil {
+		return &azdext.ResolveModelDeploymentsResponse{}, nil
+	}
+	return &azdext.ResolveModelDeploymentsResponse{
+		Deployments: []*azdext.AiModelDeployment{
+			{
+				ModelName: request.GetModelName(),
+				Format:    "OpenAI",
+				Version:   "env-version",
+				Sku: &azdext.AiModelSku{
+					Name:            "GlobalStandard",
+					MinCapacity:     1,
+					MaxCapacity:     1000,
+					CapacityStep:    1,
+					DefaultCapacity: 10,
+				},
+				Capacity:       10,
+				RemainingQuota: s.remainingQuota,
+			},
+		},
+	}, nil
 }
 
 func (p *recordingProjectPromptServer) PromptAiModel(
@@ -358,7 +475,10 @@ func (p *recordingProjectPromptServer) PromptAiModel(
 	if s.failAt == len(s.models) {
 		return nil, errors.New("model selection cancelled")
 	}
-	return &azdext.PromptAiModelResponse{Model: &azdext.AiModel{Name: "env-model"}}, nil
+	return &azdext.PromptAiModelResponse{Model: &azdext.AiModel{
+		Name:     "env-model",
+		Versions: s.modelVersions,
+	}}, nil
 }
 
 func (p *recordingProjectPromptServer) PromptAiDeployment(
@@ -368,9 +488,50 @@ func (p *recordingProjectPromptServer) PromptAiDeployment(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.deployments = append(s.deployments, request)
+	if len(s.resolveCandidates) > 0 {
+		opts := request.GetOptions()
+		var matched []*azdext.AiModelDeployment
+		for _, c := range s.resolveCandidates {
+			if len(opts.GetVersions()) > 0 && c.GetVersion() != opts.GetVersions()[0] {
+				continue
+			}
+			if len(opts.GetSkus()) > 0 && c.GetSku().GetName() != opts.GetSkus()[0] {
+				continue
+			}
+			sku := c.GetSku()
+			capVal := sku.GetDefaultCapacity()
+			if opts.Capacity != nil && deploymentCapacityValid(sku, opts.GetCapacity()) {
+				capVal = opts.GetCapacity()
+			}
+			if c.RemainingQuota != nil && float64(capVal) > *c.RemainingQuota {
+				continue
+			}
+			matched = append(matched, &azdext.AiModelDeployment{
+				ModelName: c.GetModelName(),
+				Format:    c.GetFormat(),
+				Version:   c.GetVersion(),
+				Sku:       sku,
+				Capacity:  capVal,
+			})
+		}
+		if len(matched) == 0 {
+			return nil, s.failDeploymentErr
+		}
+		return &azdext.PromptAiDeploymentResponse{
+			Deployment: matched[len(matched)-1],
+		}, nil
+	}
+	if s.failDeploymentErr != nil && len(s.deployments) == 1 &&
+		request.GetOptions().GetCapacity() == provisioning.DefaultDeploymentCapacity {
+		return nil, s.failDeploymentErr
+	}
+	capVal := int32(3)
+	if s.remainingQuota != nil && request.GetOptions().Capacity != nil {
+		capVal = request.GetOptions().GetCapacity()
+	}
 	return &azdext.PromptAiDeploymentResponse{Deployment: &azdext.AiModelDeployment{
 		ModelName: "env-model", Format: "OpenAI", Version: "env-version",
-		Sku: &azdext.AiModelSku{Name: "Standard"}, Capacity: 3,
+		Sku: &azdext.AiModelSku{Name: "Standard"}, Capacity: capVal,
 	}}, nil
 }
 
@@ -378,6 +539,9 @@ func (s *recordingProjectEnvironmentServer) GetCurrent(
 	context.Context,
 	*azdext.EmptyRequest,
 ) (*azdext.EnvironmentResponse, error) {
+	if s.currentErr != nil {
+		return nil, s.currentErr
+	}
 	return &azdext.EnvironmentResponse{
 		Environment: &azdext.Environment{Name: s.envName},
 	}, nil
@@ -412,7 +576,9 @@ func newProjectEnvironmentClient(
 	server := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(server, envServer)
 	if recording, ok := envServer.(*recordingProjectEnvironmentServer); ok {
-		azdext.RegisterPromptServiceServer(server, &recordingProjectPromptServer{environment: recording})
+		promptServer := &recordingProjectPromptServer{environment: recording}
+		azdext.RegisterPromptServiceServer(server, promptServer)
+		azdext.RegisterAiModelServiceServer(server, promptServer)
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -593,12 +759,14 @@ func TestProjectLifecycleHandlerDeploymentPrecedence(t *testing.T) {
 					assert.Empty(t, request.Filter.Capabilities)
 					assert.Equal(t, float64(1), request.Quota.MinRemainingCapacity)
 				}
-				for _, request := range server.deployments {
+				wantCapacities := []int32{100, provisioning.DefaultDeploymentCapacity}
+				for i, request := range server.deployments {
 					assert.Equal(t, "env-model", request.ModelName)
 					assert.Equal(t, []string{"westus"}, request.Options.Locations)
 					assert.Empty(t, request.Options.Versions)
 					assert.Empty(t, request.Options.Skus)
-					assert.Nil(t, request.Options.Capacity)
+					require.NotNil(t, request.Options.Capacity)
+					assert.Equal(t, wantCapacities[i], request.Options.GetCapacity())
 					assert.Equal(t, float64(1), request.Quota.MinRemainingCapacity)
 				}
 				resolved, _, err := provisioning.DecodeProjectDeployments(server.values[projectDeploymentsEnvKey])
@@ -621,6 +789,301 @@ func TestProjectLifecycleHandlerDeploymentPrecedence(t *testing.T) {
 					assert.Equal(t, test.value, server.values[projectDeploymentsEnvKey])
 				}
 			}
+		})
+	}
+}
+
+func TestPromptProjectDeploymentsFallsBackWhenDefaultCapacityExceedsQuota(t *testing.T) {
+	for _, reason := range []string{
+		azdext.AiErrorReasonNoValidSkus,
+		azdext.AiErrorReasonNoDeploymentMatch,
+	} {
+		t.Run(reason, func(t *testing.T) {
+			st, err := status.New(codes.FailedPrecondition, reason).WithDetails(&errdetails.ErrorInfo{
+				Reason: reason,
+				Domain: azdext.AiErrorDomain,
+			})
+			require.NoError(t, err)
+
+			server := &recordingProjectEnvironmentServer{
+				envName:           "env-fallback",
+				failDeploymentErr: st.Err(),
+			}
+			client := newProjectEnvironmentClient(t, server)
+			resolved, err := provisioning.PromptProjectDeployments(
+				t.Context(),
+				client,
+				&azdext.AzureContext{
+					Scope: &azdext.AzureScope{
+						SubscriptionId: "sub-b",
+						Location:       "westus",
+					},
+				},
+				[]synthesis.Deployment{
+					{
+						Name:  "chat",
+						Model: synthesis.DeploymentModel{Name: "gpt-5"},
+					},
+				},
+			)
+			require.NoError(t, err)
+			require.Len(t, resolved, 1)
+			require.Len(t, server.deployments, 2)
+			require.NotNil(t, server.deployments[0].GetOptions().Capacity)
+			assert.Equal(
+				t,
+				provisioning.DefaultDeploymentCapacity,
+				server.deployments[0].GetOptions().GetCapacity(),
+			)
+			assert.Nil(t, server.deployments[1].GetOptions().Capacity)
+			assert.Equal(t, 3, resolved[0].Sku.Capacity)
+		})
+
+		t.Run(reason+"_clamps_to_remaining_quota", func(t *testing.T) {
+			st, err := status.New(codes.FailedPrecondition, reason).WithDetails(&errdetails.ErrorInfo{
+				Reason: reason,
+				Domain: azdext.AiErrorDomain,
+			})
+			require.NoError(t, err)
+
+			server := &recordingProjectEnvironmentServer{
+				envName:           "env-fallback-clamped",
+				failDeploymentErr: st.Err(),
+				remainingQuota:    new(float64(120)),
+			}
+			client := newProjectEnvironmentClient(t, server)
+			resolved, err := provisioning.PromptProjectDeployments(
+				t.Context(),
+				client,
+				&azdext.AzureContext{
+					Scope: &azdext.AzureScope{
+						SubscriptionId: "sub-b",
+						Location:       "westus",
+					},
+				},
+				[]synthesis.Deployment{
+					{
+						Name:  "chat",
+						Model: synthesis.DeploymentModel{Name: "gpt-5"},
+					},
+				},
+			)
+			require.NoError(t, err)
+			require.Len(t, resolved, 1)
+			require.Len(t, server.deployments, 1)
+			require.NotNil(t, server.deployments[0].GetOptions().Capacity)
+			assert.Equal(t, int32(120), server.deployments[0].GetOptions().GetCapacity())
+			assert.Empty(t, server.deployments[0].GetOptions().GetVersions())
+			assert.Empty(t, server.deployments[0].GetOptions().GetSkus())
+			assert.Equal(t, 120, resolved[0].Sku.Capacity)
+		})
+
+		t.Run(reason+"_scopes_candidate_across_differing_steps", func(t *testing.T) {
+			st, err := status.New(codes.FailedPrecondition, reason).WithDetails(&errdetails.ErrorInfo{
+				Reason: reason,
+				Domain: azdext.AiErrorDomain,
+			})
+			require.NoError(t, err)
+
+			server := &recordingProjectEnvironmentServer{
+				envName:           "env-fallback-multi",
+				failDeploymentErr: st.Err(),
+				resolveCandidates: []*azdext.AiModelDeployment{
+					{
+						ModelName: "env-model",
+						Format:    "OpenAI",
+						Version:   "2025-08-07",
+						Sku: &azdext.AiModelSku{
+							Name:            "GlobalStandard",
+							MinCapacity:     1,
+							MaxCapacity:     1000,
+							CapacityStep:    1,
+							DefaultCapacity: 10,
+						},
+						Capacity:       10,
+						RemainingQuota: new(float64(120)),
+					},
+					{
+						ModelName: "env-model",
+						Format:    "OpenAI",
+						Version:   "2025-08-07",
+						Sku: &azdext.AiModelSku{
+							Name:            "Standard",
+							MinCapacity:     10,
+							MaxCapacity:     1000,
+							CapacityStep:    20,
+							DefaultCapacity: 10,
+						},
+						Capacity:       10,
+						RemainingQuota: new(float64(100)),
+					},
+				},
+			}
+			client := newProjectEnvironmentClient(t, server)
+			resolved, err := provisioning.PromptProjectDeployments(
+				t.Context(),
+				client,
+				&azdext.AzureContext{
+					Scope: &azdext.AzureScope{
+						SubscriptionId: "sub-b",
+						Location:       "westus",
+					},
+				},
+				[]synthesis.Deployment{
+					{
+						Name:  "chat",
+						Model: synthesis.DeploymentModel{Name: "gpt-5"},
+					},
+				},
+			)
+			require.NoError(t, err)
+			require.Len(t, resolved, 1)
+			require.Len(t, server.deployments, 1)
+			assert.Equal(t, []string{"2025-08-07"}, server.deployments[0].GetOptions().GetVersions())
+			assert.Equal(t, []string{"GlobalStandard"}, server.deployments[0].GetOptions().GetSkus())
+			assert.Equal(t, int32(120), server.deployments[0].GetOptions().GetCapacity())
+			assert.Equal(t, "GlobalStandard", resolved[0].Sku.Name)
+			assert.Equal(t, 120, resolved[0].Sku.Capacity)
+		})
+
+		t.Run(reason+"_prefers_clamped_GlobalStandard_over_higher_quota_secondary_skus", func(t *testing.T) {
+			server := &recordingProjectEnvironmentServer{
+				envName: "env-fallback-gpt6-luna",
+				resolveCandidates: []*azdext.AiModelDeployment{
+					{
+						ModelName: "gpt-6-luna",
+						Format:    "OpenAI",
+						Version:   "2026-09-22",
+						Sku: &azdext.AiModelSku{
+							Name:            "GlobalBatch",
+							MinCapacity:     1,
+							MaxCapacity:     1000,
+							CapacityStep:    1,
+							DefaultCapacity: 10,
+						},
+						Capacity:       10,
+						RemainingQuota: new(float64(1000)),
+					},
+					{
+						ModelName: "gpt-6-luna",
+						Format:    "OpenAI",
+						Version:   "2026-09-22",
+						Sku: &azdext.AiModelSku{
+							Name:            "DataZoneStandard",
+							MinCapacity:     1,
+							MaxCapacity:     1000,
+							CapacityStep:    1,
+							DefaultCapacity: 10,
+						},
+						Capacity:       10,
+						RemainingQuota: new(float64(233)),
+					},
+					{
+						ModelName: "gpt-6-luna",
+						Format:    "OpenAI",
+						Version:   "2026-09-22",
+						Sku: &azdext.AiModelSku{
+							Name:            "GlobalStandard",
+							MinCapacity:     1,
+							MaxCapacity:     1000,
+							CapacityStep:    1,
+							DefaultCapacity: 10,
+						},
+						Capacity:       10,
+						RemainingQuota: new(float64(125)),
+					},
+				},
+			}
+			client := newProjectEnvironmentClient(t, server)
+			resolved, err := provisioning.PromptProjectDeployments(
+				t.Context(),
+				client,
+				&azdext.AzureContext{
+					Scope: &azdext.AzureScope{
+						SubscriptionId: "sub-b",
+						Location:       "eastus",
+					},
+				},
+				[]synthesis.Deployment{
+					{
+						Name:  "chat",
+						Model: synthesis.DeploymentModel{Name: "gpt-6-luna"},
+					},
+				},
+			)
+			require.NoError(t, err)
+			require.Len(t, resolved, 1)
+			require.Len(t, server.deployments, 1)
+			assert.Equal(t, []string{"2026-09-22"}, server.deployments[0].GetOptions().GetVersions())
+			assert.Equal(t, []string{"GlobalStandard"}, server.deployments[0].GetOptions().GetSkus())
+			assert.Equal(t, int32(125), server.deployments[0].GetOptions().GetCapacity())
+			assert.Equal(t, "GlobalStandard", resolved[0].Sku.Name)
+			assert.Equal(t, 125, resolved[0].Sku.Capacity)
+		})
+
+		t.Run(reason+"_prefers_default_version_when_clamping", func(t *testing.T) {
+			server := &recordingProjectEnvironmentServer{
+				envName: "env-fallback-default-version",
+				modelVersions: []*azdext.AiModelVersion{
+					{Version: "2025-01-01", IsDefault: false},
+					{Version: "2025-08-07", IsDefault: true},
+				},
+				resolveCandidates: []*azdext.AiModelDeployment{
+					{
+						ModelName: "env-model",
+						Format:    "OpenAI",
+						Version:   "2025-01-01",
+						Sku: &azdext.AiModelSku{
+							Name:            "GlobalStandard",
+							MinCapacity:     1,
+							MaxCapacity:     1000,
+							CapacityStep:    1,
+							DefaultCapacity: 10,
+						},
+						Capacity:       10,
+						RemainingQuota: new(float64(180)),
+					},
+					{
+						ModelName: "env-model",
+						Format:    "OpenAI",
+						Version:   "2025-08-07",
+						Sku: &azdext.AiModelSku{
+							Name:            "GlobalStandard",
+							MinCapacity:     1,
+							MaxCapacity:     1000,
+							CapacityStep:    1,
+							DefaultCapacity: 10,
+						},
+						Capacity:       10,
+						RemainingQuota: new(float64(120)),
+					},
+				},
+			}
+			client := newProjectEnvironmentClient(t, server)
+			resolved, err := provisioning.PromptProjectDeployments(
+				t.Context(),
+				client,
+				&azdext.AzureContext{
+					Scope: &azdext.AzureScope{
+						SubscriptionId: "sub-b",
+						Location:       "eastus",
+					},
+				},
+				[]synthesis.Deployment{
+					{
+						Name:  "chat",
+						Model: synthesis.DeploymentModel{Name: "gpt-5"},
+					},
+				},
+			)
+			require.NoError(t, err)
+			require.Len(t, resolved, 1)
+			require.Len(t, server.deployments, 1)
+			assert.Equal(t, []string{"2025-08-07"}, server.deployments[0].GetOptions().GetVersions())
+			assert.Equal(t, []string{"GlobalStandard"}, server.deployments[0].GetOptions().GetSkus())
+			assert.Equal(t, int32(120), server.deployments[0].GetOptions().GetCapacity())
+			assert.Equal(t, "2025-08-07", resolved[0].Model.Version)
+			assert.Equal(t, 120, resolved[0].Sku.Capacity)
 		})
 	}
 }
@@ -741,4 +1204,146 @@ func TestProjectLifecycleHandlerSeedsRuntimeModelName(t *testing.T) {
 			assert.Empty(t, server.models)
 		})
 	}
+}
+
+func TestProjectPredeployHandlerDoesNotWriteDeploymentsOrPrompt(t *testing.T) {
+	for _, noPrompt := range []bool{false, true} {
+		t.Run(fmt.Sprintf("noPrompt=%v", noPrompt), func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", strconv.FormatBool(noPrompt))
+			server := &recordingProjectEnvironmentServer{
+				envName: "dev",
+				values: map[string]string{
+					"AZURE_SUBSCRIPTION_ID": "sub",
+					"AZURE_LOCATION":        "westus",
+				},
+			}
+			client := newProjectEnvironmentClient(t, server)
+			args := &azdext.ProjectEventArgs{
+				Project: &azdext.ProjectConfig{
+					Services: map[string]*azdext.ServiceConfig{
+						"project": {
+							Host: aiProjectHost,
+							AdditionalProperties: mustProjectProperties(t, map[string]any{
+								"deployments": []any{
+									map[string]any{
+										"name":  "chat",
+										"model": map[string]any{"name": "gpt-4.1-mini", "version": "2025-04-14"},
+										"sku":   map[string]any{"name": "GlobalStandard", "capacity": 10},
+									},
+								},
+							}),
+						},
+					},
+				},
+			}
+
+			require.NoError(t, projectPredeployHandler(t.Context(), client, args))
+			assert.Empty(t, server.models)
+			assert.Empty(t, server.deployments)
+			assert.NotContains(t, server.values, projectDeploymentsEnvKey)
+			assert.Equal(t, "chat", server.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
+		})
+	}
+
+	t.Run("seeds from AI_PROJECT_DEPLOYMENTS override or skips when empty or on-disk", func(t *testing.T) {
+		const key = "AZURE_AI_MODEL_DEPLOYMENT_NAME"
+		const override = `[{"name":"env-chat","model":{"name":"gpt-4.1","format":"OpenAI","version":"1"},` +
+			`"sku":{"name":"Standard","capacity":1}}]`
+		for _, tc := range []struct {
+			name     string
+			override string
+			onDisk   bool
+			want     string
+		}{
+			{name: "from AI_PROJECT_DEPLOYMENTS", override: override, want: "env-chat"},
+			{name: "empty AI_PROJECT_DEPLOYMENTS", override: "[]", want: ""},
+			{name: "on-disk infra present", onDisk: true, want: ""},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				root := t.TempDir()
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte("name: test\n"), 0o600))
+				if tc.onDisk {
+					infra := filepath.Join(root, "infra")
+					require.NoError(t, os.MkdirAll(infra, 0o750))
+					require.NoError(t, os.WriteFile(filepath.Join(infra, "main.bicep"), []byte("// on disk\n"), 0o600))
+				}
+				values := map[string]string{}
+				if tc.override != "" {
+					values[projectDeploymentsEnvKey] = tc.override
+				}
+				server := &recordingProjectEnvironmentServer{
+					envName: "dev",
+					values:  values,
+				}
+				client := newProjectEnvironmentClient(t, server)
+				args := &azdext.ProjectEventArgs{
+					Project: &azdext.ProjectConfig{
+						Path: root,
+						Services: map[string]*azdext.ServiceConfig{
+							"project": {
+								Host: aiProjectHost,
+								AdditionalProperties: mustProjectProperties(t, map[string]any{
+									"deployments": []any{
+										map[string]any{"name": "yaml-chat"},
+									},
+								}),
+							},
+						},
+					},
+				}
+
+				require.NoError(t, projectPredeployHandler(t.Context(), client, args))
+				assert.Empty(t, server.models)
+				assert.Empty(t, server.deployments)
+				assert.Equal(t, tc.override, server.values[projectDeploymentsEnvKey])
+				assert.Equal(t, tc.want, server.values[key])
+			})
+		}
+	})
+
+	t.Run("validates project and ACR reuse", func(t *testing.T) {
+		require.ErrorContains(t, projectPredeployHandler(t.Context(), nil, nil), "no project")
+
+		// No azure.ai.project service is a no-op before environment lookup.
+		require.NoError(t, projectPredeployHandler(t.Context(), nil, &azdext.ProjectEventArgs{
+			Project: &azdext.ProjectConfig{
+				Services: map[string]*azdext.ServiceConfig{
+					"agent": {Host: "azure.ai.agent"},
+				},
+			},
+		}))
+
+		// Duplicate azure.ai.project services fail config validation.
+		require.ErrorContains(t, projectPredeployHandler(t.Context(), nil, &azdext.ProjectEventArgs{
+			Project: &azdext.ProjectConfig{
+				Services: map[string]*azdext.ServiceConfig{
+					"first":  {Host: aiProjectHost},
+					"second": {Host: aiProjectHost},
+				},
+			},
+		}), "multiple services")
+
+		// ACR reuse gate runs during predeploy.
+		t.Setenv(synthesis.ACRReuseEnvVar, "false")
+		root := t.TempDir()
+		raw := []byte("infra:\n  provider: microsoft.foundry\nservices:\n  project:\n    host: azure.ai.project\n")
+		require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), raw, 0o600))
+		server := &recordingProjectEnvironmentServer{
+			envName: "dev",
+			values:  map[string]string{},
+			config: map[string][]byte{
+				synthesis.ACRPendingConfigKey: []byte(`{"version":1}`),
+			},
+		}
+		client := newProjectEnvironmentClient(t, server)
+		err := projectPredeployHandler(t.Context(), client, &azdext.ProjectEventArgs{
+			Project: &azdext.ProjectConfig{
+				Path: root,
+				Services: map[string]*azdext.ServiceConfig{
+					"project": {Host: aiProjectHost},
+				},
+			},
+		})
+		require.ErrorContains(t, err, synthesis.ACRReuseEnvVar)
+	})
 }

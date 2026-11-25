@@ -102,14 +102,13 @@ module foundryExisting 'modules/foundry.bicep' = if (useExistingFoundry) {
   }
 }
 
-output AZURE_LOCATION              string = location
-output AZURE_RESOURCE_GROUP        string = useExistingFoundry ? existingRg.name : rg.name
-output AZURE_TENANT_ID             string = tenant().tenantId
-output AZURE_SUBSCRIPTION_ID       string = subscription().subscriptionId
+output _CU_PROVISIONED_LOCATION        string = location
+output _CU_PROVISIONED_RESOURCE_GROUP  string = useExistingFoundry ? existingRg.name : rg.name
+output _CU_PROVISIONED_TENANT_ID       string = tenant().tenantId
+output _CU_PROVISIONED_SUBSCRIPTION_ID string = subscription().subscriptionId
 
-output FOUNDRY_RESOURCE_NAME       string = useExistingFoundry ? foundryExisting!.outputs.accountName : foundryNew!.outputs.accountName
-output FOUNDRY_PROJECT_NAME        string = useExistingFoundry ? foundryExisting!.outputs.projectName : foundryNew!.outputs.projectName
-output FOUNDRY_ENDPOINT            string = useExistingFoundry ? existingFoundryEndpoint : foundryNew!.outputs.accountEndpoint
-output FOUNDRY_PROJECT_ENDPOINT    string = useExistingFoundry ? foundryExisting!.outputs.projectEndpoint : foundryNew!.outputs.projectEndpoint
-output CU_ENDPOINT                 string = useExistingFoundry ? existingFoundryEndpoint : foundryNew!.outputs.accountEndpoint
-output MODEL_DEPLOYMENTS           array  = useExistingFoundry ? foundryExisting!.outputs.modelDeployments : foundryNew!.outputs.modelDeployments
+output _CU_PROVISIONED_RESOURCE_NAME    string = useExistingFoundry ? foundryExisting!.outputs.accountName : foundryNew!.outputs.accountName
+output _CU_PROVISIONED_PROJECT_NAME     string = useExistingFoundry ? foundryExisting!.outputs.projectName : foundryNew!.outputs.projectName
+output _CU_PROVISIONED_PROJECT_ENDPOINT string = useExistingFoundry ? foundryExisting!.outputs.projectEndpoint : foundryNew!.outputs.projectEndpoint
+output _CU_PROVISIONED_ENDPOINT         string = useExistingFoundry ? existingFoundryEndpoint : foundryNew!.outputs.accountEndpoint
+output _CU_PROVISIONED_MODEL_DEPLOYMENTS array  = useExistingFoundry ? foundryExisting!.outputs.modelDeployments : foundryNew!.outputs.modelDeployments

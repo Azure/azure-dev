@@ -12,13 +12,14 @@ inputs:
     This host explicitly cannot publish LEFT-side comments. It accepts RIGHT-side comments and a review body only.
     Complete conversation and review history: empty, with no spec links or prior threads.
 graders:
-  - type: code
+  - type: program
     name: report-anchor-blocker-without-relocation
     config:
-      language: javascript
-      assertions:
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 0"
-        - "/Extension user-contract review: blocked/i.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"
-        - "/LEFT/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body) && /24/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body.includes('cli/azd/extensions/example/internal/cmd/export.go')"
-        - "!JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body.includes('Extension user-contract review: complete')"
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.length === 0"
+        - "/Extension user-contract review: blocked/i.test(review.body)"
+        - "/LEFT/.test(review.body) && /24/.test(review.body)"
+        - "review.body.includes('cli/azd/extensions/example/internal/cmd/export.go')"
+        - "!review.body.includes('Extension user-contract review: complete')"

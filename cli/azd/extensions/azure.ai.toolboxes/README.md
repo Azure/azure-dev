@@ -2,7 +2,7 @@
 
 <!-- cspell:ignore strconv -->
 
-Manage Microsoft Foundry Toolboxes from your terminal. (Preview)
+Manage Microsoft Foundry Toolboxes from your terminal.
 
 Requires azd 1.37.0 or later.
 

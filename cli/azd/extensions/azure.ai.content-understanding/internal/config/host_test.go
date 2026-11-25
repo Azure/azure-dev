@@ -450,11 +450,47 @@ func TestLoadInvalidSnapshots(t *testing.T) {
 	}
 }
 
-func TestRuntimeKeyRejectedBeforeHostAccess(t *testing.T) {
-	_, err := Load(t.Context(), nil, "", Options{}, map[string]string{"CU_API_KEY": "private-api-key"})
+func TestInvalidRuntimeKeyRejectedBeforeHostAccess(t *testing.T) {
+	_, err := Load(t.Context(), nil, "", Options{}, map[string]string{"CU_API_KEY": "private-api-key\n"})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "API-key authentication is not enabled")
+	assert.Contains(t, err.Error(), "CU_API_KEY must be nonempty")
 	assert.NotContains(t, err.Error(), "private-api-key")
+}
+
+func TestLoadProcessKeySkipsTenantAndDeploymentLookup(t *testing.T) {
+	for _, selection := range []string{"", "dev", "subscription"} {
+		t.Run(selection, func(t *testing.T) {
+			h := validHost()
+			h.name = selection
+			if selection == "" {
+				h.name = "dev"
+			}
+			h.scope, h.tenant = nil, ""
+			h.values = append(h.values, &azdext.KeyValue{Key: "AZURE_SUBSCRIPTION_ID", Value: "selected-sub"})
+			ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
+			result, err := Load(ctx, hostClient(t, h), selection, Options{},
+				map[string]string{"CU_API_KEY": "private-api-key"})
+			require.NoError(t, err)
+			assert.Equal(t, "private-api-key", result.APIKey)
+			assert.Empty(t, result.TenantID)
+			assert.NotContains(t, h.calls(), "deployment")
+			assert.NotContains(t, h.calls(), "tenant:selected-sub")
+		})
+	}
+}
+
+func TestLoadRejectsPersistedUserKey(t *testing.T) {
+	for _, name := range []string{"CU_API_KEY", "apiKey", "api_key"} {
+		t.Run(name, func(t *testing.T) {
+			h := validHost()
+			h.user = []byte(`{"` + name + `":"private-api-key"}`)
+			ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
+			_, err := Load(ctx, hostClient(t, h), "", Options{Endpoint: "https://resource.services.ai.azure.com"},
+				map[string]string{"CU_API_KEY": "process-key"})
+			require.ErrorContains(t, err, "API keys are supported only through the process")
+			assert.NotContains(t, err.Error(), "private-api-key")
+		})
+	}
 }
 
 func TestUserDefaultsWithoutProjectOrCurrentEnvironment(t *testing.T) {

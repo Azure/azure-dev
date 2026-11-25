@@ -9,6 +9,7 @@ import (
 
 	"azure.ai.projects/internal/helpformat"
 	"azure.ai.projects/internal/provisioning"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -18,7 +19,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:  "project",
 		Use:   "project <command> [options]",
-		Short: "Manage Microsoft Foundry Project resources from your terminal. (Preview)",
+		Short: "Manage Microsoft Foundry Project resources from your terminal.",
 	})
 
 	rootCmd.SilenceUsage = true
@@ -44,7 +45,12 @@ func NewRootCommand() *cobra.Command {
 
   # Inspect the resolved project endpoint
   azd ai project show`
-	helpformat.Install(rootCmd, "azd ai", projectHelpFooter)
+	helpformat.Install(rootCmd, "azd ai", projectHelpFooter())
+	defaultHelp := rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		applyProjectACRVisibility(rootCmd)
+		defaultHelp(cmd, args)
+	})
 
 	return rootCmd
 }
@@ -62,11 +68,16 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		WithProvisioningProvider(
 			provisioning.FoundryProviderName,
 			func() azdext.ProvisioningProvider {
-				return provisioning.NewFoundryProvisioningProvider(
-					azdClient,
-				)
+				return provisioning.NewFoundryProvisioningProvider(azdClient)
 			},
 		).
+		WithValidationCheck(azdext.ValidationCheckRegistration{
+			CheckType: azdext.ValidationCheckTypeProvision,
+			RuleID:    provisioning.ACRRemoteBuildRuleID,
+			Factory: func() azdext.ValidationCheckProvider {
+				return provisioning.NewACRRemoteBuildCheck(azdClient)
+			},
+		}).
 		WithValidationCheck(azdext.ValidationCheckRegistration{
 			CheckType: azdext.ValidationCheckTypeProvision,
 			RuleID:    provisioning.ResourceGroupLocationRuleID,
@@ -76,6 +87,12 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 				)
 			},
 		}).
+		WithProjectEventHandler(
+			"prepackage",
+			func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+				return validateProjectACRBuilds(ctx, azdClient, args)
+			},
+		).
 		WithProjectEventHandler(
 			"preprovision",
 			func(
@@ -91,7 +108,10 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 				ctx context.Context,
 				args *azdext.ProjectEventArgs,
 			) error {
-				return projectLifecycleHandler(ctx, azdClient, args)
+				return projectPredeployHandler(ctx, azdClient, args)
 			},
-		)
+		).
+		WithProjectEventHandler("predown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			return synthesis.RequireACRReuseForProjectState(ctx, azdClient, args.Project)
+		})
 }

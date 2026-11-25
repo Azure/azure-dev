@@ -6,9 +6,11 @@ package grpcserver
 import (
 	"context"
 	"errors"
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -20,6 +22,44 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
+
+func TestEnvironmentRPCScopeWritesReachLayerSnapshots(t *testing.T) {
+	ctx := t.Context()
+	mockContext := mocks.NewMockContext(ctx)
+	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	store := environment.NewLocalFileDataStore(azdContext, config.NewFileConfigManager(config.NewManager()))
+	manager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, store, nil)
+	require.NoError(t, err)
+	_, err = manager.Create(ctx, environment.Spec{Name: "dev"})
+	require.NoError(t, err)
+	// Command injection and environment RPCs resolve through this same manager cache.
+	commandEnv, err := manager.Get(ctx, "dev")
+	require.NoError(t, err)
+	server := grpc.NewServer()
+	azdext.RegisterEnvironmentServiceServer(server, NewEnvironmentService(lazy.From(azdContext), lazy.From(manager)))
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	for _, entry := range []struct{ key, value string }{
+		{"AZURE_SUBSCRIPTION_ID", "shared-subscription"},
+		{"AZURE_LOCATION", "eastus"},
+	} {
+		_, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: "dev", Key: entry.key, Value: entry.value,
+		})
+		require.NoError(t, err)
+	}
+	snapshot := environment.NewWithValues(commandEnv.Name(), commandEnv.Dotenv())
+	require.Equal(t, "shared-subscription", snapshot.GetSubscriptionId())
+	require.Equal(t, "eastus", snapshot.GetLocation())
+	require.NoError(t, manager.Reload(ctx, commandEnv))
+	require.Equal(t, snapshot.Dotenv(), commandEnv.Dotenv(), "scope writes must also be persisted")
+}
 
 // Test_EnvironmentService_NoEnvironment verifies that when no environments are set,
 // the GetCurrent method returns an error and List returns an empty list.

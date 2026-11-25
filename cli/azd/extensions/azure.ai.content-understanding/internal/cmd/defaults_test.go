@@ -99,7 +99,7 @@ func (f *defaultsFixture) root() *cobra.Command {
 		}
 		return &serviceSession{
 			client: f.client, models: f.models, apiVersion: version, environment: environment,
-			endpoint: f.endpoint, analyzer: f.analyzer,
+			endpoint: f.endpoint, analyzer: f.analyzer, authentication: "Microsoft Entra ID",
 			sources: f.sources,
 			close:   func() { f.closes++ },
 			confirm: func(context.Context, string) (bool, error) {

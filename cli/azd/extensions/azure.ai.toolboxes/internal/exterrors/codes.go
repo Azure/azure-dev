@@ -59,6 +59,7 @@ const (
 	CodeConnectionMissingTarget       = "connection_missing_target"
 	CodeLastToolRemoval               = "last_tool_removal"
 	CodePendingToolboxStoreFailed     = "pending_toolbox_store_failed"
+	CodeToolBlockedByPolicy           = "tool_blocked_by_policy"
 )
 
 // Operation names for [ServiceFromAzure] errors.

@@ -14,9 +14,9 @@ import (
 	"strconv"
 	"strings"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/project"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -50,6 +50,50 @@ func readAdoptedDeploymentState(
 		response.GetProject().GetServices(), response.GetProject().GetPath(), values,
 	)
 	return declared, values, err
+}
+
+// syncAdoptedPendingModelDeploymentSignal reconciles the "model_deployment" tag
+// in AI_AGENT_PENDING_PROVISION after project adoption and deployment authoring
+// finish.
+func syncAdoptedPendingModelDeploymentSignal(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	flags *initFlags,
+	deferredAzureContext bool,
+) error {
+	var modelFlag, modelDeploymentFlag string
+	if flags != nil {
+		modelFlag = strings.TrimSpace(flags.model)
+		modelDeploymentFlag = strings.TrimSpace(flags.modelDeployment)
+	}
+	if !deferredAzureContext && modelFlag != "" {
+		return updatePendingModelDeploymentSignal(ctx, azdClient, envName, true, true)
+	}
+
+	declared, values, err := readAdoptedDeploymentState(ctx, azdClient, envName)
+	if err != nil {
+		return err
+	}
+	envDeployments, present, err := project.DecodeProjectDeploymentsEnv(values[projectDeploymentsEnvKey])
+	if err != nil {
+		return err
+	}
+
+	var anyModelProcessed, anyNew bool
+	switch {
+	case present:
+		anyModelProcessed = true
+		anyNew = len(envDeployments) > 0
+	case len(declared) > 0:
+		anyModelProcessed = true
+		anyNew = true
+	case modelDeploymentFlag != "":
+		anyModelProcessed = true
+		anyNew = false
+	}
+
+	return updatePendingModelDeploymentSignal(ctx, azdClient, envName, anyModelProcessed, anyNew)
 }
 
 func preflightAdoptedDeploymentReplacement(

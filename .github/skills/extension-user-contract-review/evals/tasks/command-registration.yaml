@@ -1,0 +1,29 @@
+id: command-registration
+name: Discover a command registered in a different changed file
+tags: [positive, command, registration, deduplication]
+inputs:
+  prompt: |
+    Review this synthetic extension PR. Complete metadata: title "Add optimization downloads".
+    Complete changed-file list:
+    cli/azd/extensions/example/internal/cmd/optimize.go
+    cli/azd/extensions/example/internal/cmd/optimize_download.go
+    cli/azd/extensions/example/schemas/optimization.yaml
+    cli/azd/extensions/example/README.md
+    In optimize.go, the optimize command already has status and list subcommands. Added RIGHT line 88:
+    cmd.AddCommand(newOptimizeDownloadCommand(extCtx))
+    The added optimize_download.go constructor returns a Cobra command with Use "download" and no positional
+    arguments or local flags. It is reachable as "azd ai agent optimize download". Tests, help snapshots, and docs
+    are also updated. The authored optimization YAML schema adds an optional trace-window configuration component.
+    An existing review thread marked <!-- extension-user-contract-changes-reviewer --> at
+    schemas/optimization.yaml line 42 covers that exact component and has no new changes beyond the reviewed contract.
+    There is no thread for download.
+graders:
+  - type: program
+    name: registered-command-survives-schema-thread
+    config:
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.some(c => c.path === 'cli/azd/extensions/example/internal/cmd/optimize.go' && c.line === 88 && c.side === 'RIGHT' && c.body.includes('download') && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.'))"
+        - "review.comments.length === 1"
+        - "/complete.*4 files? inspected; 1 new contract comments?; 1 existing threads?/.test(review.body)"

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -83,11 +83,12 @@ func (display *ProvisioningProgressDisplay) getResourceTypeDisplayName(
 	)
 
 	if err != nil {
-		// Dynamic resource type translation failed -- fallback to static translation
-		displayName = azapi.GetResourceTypeDisplayName(resourceType)
+		// Dynamic resource type translation failed -- fallback to static translation.
+		// Do not cache the fallback: a later poll can retry the lookup after the resource is available.
+		return azapi.GetResourceTypeDisplayName(resourceType)
 	}
 
-	// Cache the result (even if empty)
+	// Cache the result (even if empty).
 	display.resourceDisplayNames[resourceId] = displayName
 	return displayName
 }
@@ -134,12 +135,12 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 		)
 	}
 
-	newlyDeployedResources := []*armresources.DeploymentOperation{}
-	newlyFailedResources := []*armresources.DeploymentOperation{}
-	runningDeployments := []*armresources.DeploymentOperation{}
+	newlyDeployedResources := []*armdeployments.DeploymentOperation{}
+	newlyFailedResources := []*armdeployments.DeploymentOperation{}
+	runningDeployments := []*armdeployments.DeploymentOperation{}
 
 	err := display.resourceManager.WalkDeploymentOperations(ctx, display.deployment,
-		func(ctx context.Context, operation *armresources.DeploymentOperation) error {
+		func(ctx context.Context, operation *armdeployments.DeploymentOperation) error {
 			if isNestedDeployment(operation) {
 				if isTerminalProvisioningState(operation.Properties.ProvisioningState) {
 					display.terminalOperationPollCounts[*operation.ID]++
@@ -170,15 +171,15 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 				lookupKey = *operation.Properties.TargetResource.ResourceName
 			}
 
-			if *operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate &&
+			if *operation.Properties.ProvisioningOperation == armdeployments.ProvisioningOperationCreate &&
 				operation.Properties.Timestamp.After(*queryStart) &&
 				!display.displayedResources[lookupKey] {
 				switch *operation.Properties.ProvisioningState {
-				case string(armresources.ProvisioningStateSucceeded):
+				case string(armdeployments.ProvisioningStateSucceeded):
 					newlyDeployedResources = append(newlyDeployedResources, operation)
-				case string(armresources.ProvisioningStateRunning):
+				case string(armdeployments.ProvisioningStateRunning):
 					runningDeployments = append(runningDeployments, operation)
-				case string(armresources.ProvisioningStateFailed):
+				case string(armdeployments.ProvisioningStateFailed):
 					newlyFailedResources = append(newlyFailedResources, operation)
 				}
 			}
@@ -191,8 +192,8 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 	}
 
 	slices.SortFunc(newlyDeployedResources, func(
-		a *armresources.DeploymentOperation,
-		b *armresources.DeploymentOperation,
+		a *armdeployments.DeploymentOperation,
+		b *armdeployments.DeploymentOperation,
 	) int {
 		return a.Properties.Timestamp.Compare(*b.Properties.Timestamp)
 	})
@@ -203,8 +204,8 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 }
 func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 	ctx context.Context,
-	resources []*armresources.DeploymentOperation,
-	inProgressResources []*armresources.DeploymentOperation,
+	resources []*armdeployments.DeploymentOperation,
+	inProgressResources []*armdeployments.DeploymentOperation,
 ) {
 	for _, resource := range resources {
 		resourceTypeName := *resource.Properties.TargetResource.ResourceType
@@ -251,6 +252,12 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 
 		display.displayedResources[dedupKey] = true
 	}
+	if !display.console.IsSpinnerInteractive() {
+		// In non-interactive output, in-progress names are not rendered; avoid
+		// querying ARM for values that would be discarded.
+		return
+	}
+
 	// update progress
 	inProgress := []string{}
 	for _, inProgResource := range inProgressResources {
@@ -267,12 +274,6 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 		if resourceTypeDisplayName != "" {
 			inProgress = append(inProgress, resourceTypeDisplayName)
 		}
-	}
-
-	if !display.console.IsSpinnerInteractive() {
-		// If non-interactive, we simply do not want to display spinner messages that ends up
-		// being individual lines of messages on the console
-		return
 	}
 
 	// ensure stable ordering

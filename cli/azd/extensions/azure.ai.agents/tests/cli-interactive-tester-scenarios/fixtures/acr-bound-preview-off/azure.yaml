@@ -1,0 +1,9 @@
+name: acr-preview-off
+infra:
+  provider: microsoft.foundry
+services:
+  project:
+    host: azure.ai.project
+  agent:
+    host: azure.ai.agent
+    kind: hosted

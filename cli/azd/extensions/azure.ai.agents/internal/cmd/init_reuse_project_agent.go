@@ -262,17 +262,84 @@ func runReuseProjectAgentServices(
 	))
 
 	env := getExistingEnvironment(ctx, flags.env, azdClient)
-	if env == nil {
-		envName := flags.env
-		if envName == "" {
-			envName = sanitizeAgentName(services[0].AgentName + "-dev")
+	envName := flags.env
+	if env != nil {
+		envName = env.Name
+	} else if envName == "" {
+		envName = sanitizeAgentName(services[0].AgentName + "-dev")
+	}
+	registryID := flags.effectiveACRResourceID
+	if flags.acrResourceIDSet {
+		registryID = flags.acrResourceID
+	}
+	var subscription *azdext.AzureScope
+	projectRoot := ""
+	if registryID != "" {
+		if env == nil {
+			flags.resolvedEnvironmentName = envName
 		}
+		var err error
+		subscription, err = planInitACRSubscription(ctx, azdClient, flags, ".")
+		if err != nil {
+			return err
+		}
+		values := map[string]string{}
+		if env != nil {
+			values, err = getAgentEnvironmentValues(ctx, azdClient, env.Name)
+			if err != nil {
+				return err
+			}
+			if err := readInitACRBinding(ctx, azdClient, env.Name, values); err != nil {
+				return err
+			}
+		}
+		values["AZURE_ENV_NAME"] = envName
+		if subscription != nil {
+			values["AZURE_SUBSCRIPTION_ID"] = subscription.SubscriptionId
+			values["AZURE_TENANT_ID"] = subscription.TenantId
+		}
+		projectRoot = resolveProjectPath(ctx, azdClient)
+		content, err := readProjectAzureYAML(projectRoot)
+		if err != nil {
+			return err
+		}
+		if err := validateInitACRManifestInEnvironment(content, projectRoot, registryID, values); err != nil {
+			return err
+		}
+		if err := ensureInitACRProjectsCapability(ctx, flags, azdClient); err != nil {
+			return err
+		}
+		if subscription != nil {
+			if err := resolveSubscription(
+				ctx, azdClient, &azdext.AzureContext{Scope: subscription}, initACRSubscriptionMessage,
+			); err != nil {
+				return err
+			}
+		}
+	}
+	if env == nil {
 		var err error
 		env, err = createNewEnvironment(ctx, azdClient, envName)
 		if err != nil {
 			return fmt.Errorf("failed to create azd environment: %w", err)
 		}
 		flags.env = env.Name
+	}
+
+	if flags.acrResourceIDSet {
+		if subscription != nil {
+			if _, err := persistSubscription(
+				ctx, azdClient, &azdext.AzureContext{Scope: subscription}, env.Name,
+			); err != nil {
+				return err
+			}
+		}
+		if err := authorSelectedFoundryProject(
+			ctx, azdClient, env.Name, nil, projectRoot,
+			projectAuthoringCurrent, flags.noPrompt, registryID,
+		); err != nil {
+			return err
+		}
 	}
 
 	fmt.Println(color.HiBlackString("Reusing the agent configuration already in this project."))

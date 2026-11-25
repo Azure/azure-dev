@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,7 +41,10 @@ func materializeContractProject(t *testing.T) (string, generatedProjectFixture) 
 	require.NoError(t, err)
 	require.False(t, result.ReusedExistingTemplate)
 	paths := make([]string, 0, len(fixture.Hashes))
-	for path := range fixture.Hashes {
+	expected := map[string]string{}
+	maps.Copy(expected, fixture.Hashes)
+	maps.Copy(expected, fixture.NativeHashes)
+	for path := range expected {
 		paths = append(paths, path)
 	}
 	require.ElementsMatch(t, paths, result.Files)
@@ -69,10 +73,7 @@ func TestGeneratedProjectTree(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
-	for path, hash := range fixture.NativeHashes {
-		require.Contains(t, fixture.Hashes, path)
-		fixture.Hashes[path] = hash
-	}
+	maps.Copy(fixture.Hashes, fixture.NativeHashes)
 	require.Equal(t, fixture.Hashes, actual)
 	config, err := directory.ReadFile(".azure/config.json")
 	require.NoError(t, err)

@@ -1,5 +1,17 @@
 # Release History
 
+## 1.0.1 (2026-11-17)
+
+### Bugs Fixed
+
+- [[#10891]](https://github.com/Azure/azure-dev/pull/10891) Fix connection commands and deployments for Foundry projects with custom subdomains that differ from their ARM account names.
+
+## 1.0.0 (2026-11-05)
+
+### Other Changes
+
+- [[#10836]](https://github.com/Azure/azure-dev/pull/10836) Remove Preview labels from command help and extension descriptions.
+
 ## 1.0.0-beta.11 (2026-10-23)
 
 ### Features Added

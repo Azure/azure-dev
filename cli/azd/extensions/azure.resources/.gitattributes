@@ -1,0 +1,2 @@
+# Scaffold templates are embedded and written out verbatim, so keep them LF on every platform.
+internal/resources/scaffold/assets/** text eol=lf

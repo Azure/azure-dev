@@ -115,15 +115,15 @@ func runSchemaCreate(
 			return err
 		}
 		if !suggestion.FoundFields {
-			if _, err := fmt.Fprintln(cmd.ErrOrStderr(),
-				"Warning: No suggested fields were returned; using the default extraction template."); err != nil {
+			if err := writeWarning(cmd, extCtx.OutputFormat,
+				"No suggested fields were returned; using the default extraction template."); err != nil {
 				return fmt.Errorf("write schema suggestion warning: %w", err)
 			}
 		}
 		if len(suggestion.Warnings) != 0 {
-			if _, err := fmt.Fprintf(cmd.ErrOrStderr(),
-				"Warning: CU returned %d schema-suggestion warning(s); review the generated schema.\n",
-				len(suggestion.Warnings)); err != nil {
+			if err := writeWarning(cmd, extCtx.OutputFormat, fmt.Sprintf(
+				"CU returned %d schema-suggestion warning(s); review the generated schema.",
+				len(suggestion.Warnings))); err != nil {
 				return fmt.Errorf("write schema service warning: %w", err)
 			}
 		}

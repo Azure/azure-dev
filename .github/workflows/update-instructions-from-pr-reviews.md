@@ -47,6 +47,9 @@ on:
         default: "3"
         type: string
 
+concurrency:
+  job-discriminator: ${{ github.run_id }}
+
 # The agent only needs to read the repo and its PR history. All writes happen
 # through the create-pull-request safe output in a separate, permission-scoped job.
 permissions:
@@ -58,7 +61,7 @@ permissions:
 
 engine:
   id: copilot
-  model: copilot/gpt-5.6-sol
+  model: copilot/gpt-6.1-sol
   args: ["--effort", "medium"]
 
 tools:
@@ -73,6 +76,7 @@ safe-outputs:
   report-failed-jobs: false
   # Keep transient runtime failures and empty agent runs in workflow logs instead of opening issues.
   report-failure-as-issue:
+    - "!activation_failed"
     - "!missing_safe_outputs"
     - "!report_incomplete"
     - "!inference_access_error"

@@ -177,7 +177,7 @@ func TestAnalyzeResolvedDefaultAnalyzer(t *testing.T) {
 }
 
 func TestAnalyzePublicFlagsRequestMappingAndOutput(t *testing.T) {
-	for _, format := range []string{"default", "json", "none"} {
+	for _, format := range []string{"json"} {
 		t.Run(format, func(t *testing.T) {
 			f := newAnalyzeFixture(t)
 			path := schemaFile(t, "binary input")
@@ -194,16 +194,12 @@ func TestAnalyzePublicFlagsRequestMappingAndOutput(t *testing.T) {
 				return cuclient.AnalyzeResponse{JSON: json.RawMessage(analyzeEnvelope)}, nil
 			}
 			stdout, stderr, err := f.execute(t.Context(),
-				"--file", path, "--llm-input=false", "-a", "custom-analyzer", "-i", "-j", "1", "-o", format,
+				"--file", path, "-a", "custom-analyzer", "-i", "-j", "1", "-o", format,
 				"--endpoint", "https://explicit.services.ai.azure.com", "--api-version", cuclient.PreviewAPIVersion)
 			require.NoError(t, err)
 			assert.Empty(t, stderr)
-			if format == "none" {
-				assert.Empty(t, stdout)
-			} else {
-				assert.JSONEq(t, analyzeEnvelope, stdout)
-				assert.Contains(t, stdout, "9007199254740993")
-			}
+			assert.JSONEq(t, analyzeEnvelope, stdout)
+			assert.Contains(t, stdout, "9007199254740993")
 			assert.Equal(t, 1, f.opens)
 			assert.Equal(t, 1, f.closes)
 			assert.Equal(t, "https://explicit.services.ai.azure.com", f.options.Endpoint)
@@ -214,22 +210,19 @@ func TestAnalyzePublicFlagsRequestMappingAndOutput(t *testing.T) {
 }
 
 func TestAnalyzeUsageAndLLMStreaming(t *testing.T) {
-	for _, flags := range [][]string{{"--usage"}, {"--llm-input"}, {"--llm-input", "--usage"}} {
+	for _, flags := range [][]string{nil, {"--usage"}, {"--usage", "--pretty=false"}, {"--output", "markdown", "--usage"}} {
 		t.Run(strings.Join(flags, "/"), func(t *testing.T) {
 			f := newAnalyzeFixture(t)
 			stdout, stderr, err := f.execute(t.Context(), append([]string{"https://example.com/image.png"}, flags...)...)
 			require.NoError(t, err)
 			assert.Empty(t, stderr)
 			assert.Contains(t, stdout, "Picture")
-			if len(flags) == 1 && flags[0] == "--llm-input" {
-				assert.Contains(t, stdout, "mimeType: image/png")
-				assert.Contains(t, stdout, "warnings:")
-				assert.False(t, json.Valid([]byte(stdout)))
-			} else {
-				var wrapper map[string]json.RawMessage
-				require.NoError(t, json.Unmarshal([]byte(stdout), &wrapper))
-				assert.Contains(t, wrapper, "result")
-				assert.JSONEq(t, `{"tokens":{"model":9007199254740993}}`, string(wrapper["usage"]))
+			assert.Contains(t, stdout, "mimeType: image/png")
+			assert.Contains(t, stdout, "warnings:")
+			assert.False(t, json.Valid([]byte(stdout)))
+			if len(flags) != 0 {
+				assert.Contains(t, stdout, "usage:")
+				assert.Contains(t, stdout, "9007199254740993")
 			}
 		})
 	}
@@ -312,7 +305,7 @@ func TestAnalyzeDryRunRedactedNoWritesNoRequests(t *testing.T) {
 	assert.Equal(t, f.opens, f.closes)
 }
 
-func TestAnalyzeExistingPolicyEnvironmentAndNoOutputStillWrites(t *testing.T) {
+func TestAnalyzeExistingPolicyEnvironmentAndSavedOutput(t *testing.T) {
 	for _, test := range []struct {
 		env, flag string
 		calls     int32
@@ -332,7 +325,7 @@ func TestAnalyzeExistingPolicyEnvironmentAndNoOutputStillWrites(t *testing.T) {
 			path := schemaFile(t, "input")
 			output := schemaFile(t, "existing")
 			report := filepath.Join(testutil.TempDir(t), "report.json")
-			args := []string{path, "--llm-input=false", "--output-file", output, "--report-file", report, "-o", "none"}
+			args := []string{path, "--output-file", output, "--report-file", report, "-o", "json"}
 			if test.flag != "" {
 				args = append(args, "--on-existing", test.flag)
 			}
@@ -345,7 +338,11 @@ func TestAnalyzeExistingPolicyEnvironmentAndNoOutputStillWrites(t *testing.T) {
 				_, err := os.Stat(report)
 				require.NoError(t, err)
 			}
-			assert.Empty(t, stdout)
+			if test.wantErr {
+				assert.Empty(t, stdout)
+			} else {
+				assert.True(t, json.Valid([]byte(stdout)))
+			}
 			assert.Empty(t, stderr)
 			assert.Equal(t, test.calls, f.client.calls.Load())
 			// #nosec G304 -- Reads only this test's private temporary output.
@@ -484,7 +481,7 @@ func TestAnalyzeHelpAndMetadataRemainOffline(t *testing.T) {
 			assert.True(t, command.Launch.NoAzdEnvironment)
 		} else {
 			for _, flag := range []string{"--file", "--source", "--url", "--pattern", "--recursive", "--analyzer",
-				"--inline", "--usage", "--llm-input", "--output-file", "--output-dir", "--on-existing",
+				"--inline", "--usage", "--pretty", "--output-file", "--output-dir", "--on-existing",
 				"--dry-run", "--yes", "--report-file", "--concurrency"} {
 				assert.Contains(t, stdout.String(), flag)
 			}
@@ -504,12 +501,10 @@ func TestAnalyzeDefaultViewAndExplicitJSON(t *testing.T) {
 		flags        []string
 		full         bool
 	}{
-		{"default", "default", nil, false},
-		{"explicit LLM", "default", []string{"--llm-input"}, false},
+		{"default", "default", []string{"--pretty=false"}, false},
+		{"explicit Markdown", "markdown", []string{"--pretty=false"}, false},
 		{"implicit full JSON", "json", nil, true},
-		{"full default", "default", []string{"--llm-input=false"}, true},
-		{"full JSON", "json", []string{"--llm-input=false"}, true},
-		{"suppressed", "none", nil, false},
+		{"original JSON", "json", []string{"--pretty=false"}, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newAnalyzeFixture(t)
@@ -518,8 +513,6 @@ func TestAnalyzeDefaultViewAndExplicitJSON(t *testing.T) {
 			require.NoError(t, err)
 			assert.Empty(t, stderr)
 			switch {
-			case tt.format == "none":
-				assert.Empty(t, stdout)
 			case tt.full:
 				assert.JSONEq(t, analyzeEnvelope, stdout)
 			default:
@@ -560,8 +553,7 @@ func TestAnalyzeJSONViewConflictDoesNotOpenOrWrite(t *testing.T) {
 			args := append([]string{"--url", "https://example.com/a.pdf",
 				"--output-dir", directory, "--report-file", filepath.Join(directory, "report.json")}, flags...)
 			stdout, stderr, err := f.execute(t.Context(), args...)
-			require.ErrorContains(t, err, "--output json")
-			assert.Contains(t, err.Error(), "--llm-input=true")
+			require.Error(t, err)
 			assert.Empty(t, stdout)
 			assert.Empty(t, stderr)
 			assert.Zero(t, f.opens)
@@ -625,10 +617,10 @@ func TestAnalyzeDefaultSavedView(t *testing.T) {
 				require.NoError(t, os.WriteFile(input, []byte("input"), 0o600))
 				output := filepath.Join(testutil.TempDir(t), "saved")
 				report := filepath.Join(testutil.TempDir(t), "report.json")
-				args := []string{input, "--output-file", output, "--report-file", report, "--output", "none"}
+				args := []string{input, "--output-file", output, "--report-file", report}
 				if batch {
 					args = []string{"--source", directory, "--output-dir", output,
-						"--report-file", report, "--output", "none"}
+						"--report-file", report}
 					suffix := ".result.md"
 					if full {
 						suffix = ".result.json"
@@ -636,11 +628,11 @@ func TestAnalyzeDefaultSavedView(t *testing.T) {
 					output = filepath.Join(output, "invoice.pdf"+suffix)
 				}
 				if full {
-					args = append(args, "--llm-input=false")
+					args = append(args, "--output", "json")
 				}
 				stdout, stderr, err := f.execute(t.Context(), args...)
 				require.NoError(t, err)
-				assert.Empty(t, stdout)
+				assert.True(t, json.Valid([]byte(stdout)))
 				assert.Empty(t, stderr)
 				// #nosec G304 -- Reads only this test's private temporary output.
 				body, err := os.ReadFile(output)
@@ -690,7 +682,7 @@ func TestAnalyzeResultWriteFailure(t *testing.T) {
 			root.SetErr(&bytes.Buffer{})
 			args := []string{"analyze", "https://example.com/a.pdf"}
 			if full {
-				args = append(args, "--llm-input=false")
+				args = append(args, "--output", "json")
 			}
 			root.SetArgs(args)
 			err := root.ExecuteContext(t.Context())

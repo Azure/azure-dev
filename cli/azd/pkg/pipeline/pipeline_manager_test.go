@@ -5,6 +5,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -1370,6 +1372,7 @@ func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {
 		wantOptionCount      int
 		want                 pipelineAuthSelection
 		wantErr              string
+		wantSuggestion       string
 	}{
 		{
 			name:            "prompts and selects MSI by default",
@@ -1423,6 +1426,8 @@ func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {
 			authTypeArg: string(AuthTypeClientCredentials),
 			usingMsi:    true,
 			wantErr:     "--auth-type client-credentials is not supported with managed identity authentication",
+			wantSuggestion: "To switch to client credentials, run `azd env unset AZURE_PIPELINE_MSI_CLIENT_ID`, " +
+				"then rerun `azd pipeline config --auth-type client-credentials`.",
 		},
 		{
 			name:            "explicit federated omits client credentials option",
@@ -1471,6 +1476,11 @@ func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {
 			got, err := pm.resolvePipelineAuth(t.Context(), tt.usingMsi, tt.usingAppRegistration)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
+				if tt.wantSuggestion != "" {
+					suggestionErr, ok := errors.AsType[*errorhandler.ErrorWithSuggestion](err)
+					require.True(t, ok)
+					require.Contains(t, suggestionErr.Suggestion, tt.wantSuggestion)
+				}
 				require.False(t, prompted)
 				return
 			}

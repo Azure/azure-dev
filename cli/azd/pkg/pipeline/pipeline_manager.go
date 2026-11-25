@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -1510,10 +1511,21 @@ func (pm *PipelineManager) resolvePipelineAuth(
 	}
 
 	if usingMsi && authType == AuthTypeClientCredentials {
-		return pipelineAuthSelection{}, fmt.Errorf(
-			"--auth-type %s is not supported with managed identity authentication",
-			AuthTypeClientCredentials,
-		)
+		return pipelineAuthSelection{}, &errorhandler.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"--auth-type %s is not supported with managed identity authentication",
+				AuthTypeClientCredentials,
+			),
+			Message: "This environment's pipeline uses a managed identity, which doesn't support client credentials.",
+			Suggestion: fmt.Sprintf(
+				"To switch to client credentials, run `azd env unset %s`, "+
+					"then rerun `azd pipeline config --auth-type %s`. "+
+					"For GitHub Actions, azd doesn't change an existing workflow, "+
+					"so update its Azure login step to use client credentials.",
+				AzurePipelineMsiResourceId,
+				AuthTypeClientCredentials,
+			),
+		}
 	}
 
 	if usingMsi || usingAppRegistration {

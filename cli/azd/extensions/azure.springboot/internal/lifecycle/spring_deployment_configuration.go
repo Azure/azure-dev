@@ -4,8 +4,8 @@
 package lifecycle
 
 import (
-	"azurespringboot/internal/build"
 	"azurespringboot/internal/deploy"
+	"azurespringboot/internal/packaging"
 	"azurespringboot/internal/springmodel"
 	"context"
 	"errors"
@@ -182,10 +182,10 @@ func (r *Runtime) readServiceDatasource(
 	ctx context.Context, project *azdext.ProjectConfig, service *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext, requireFinal bool,
 ) (*springmodel.DiscoveredDatasource, error) {
-	if err := build.ValidateServiceConfiguration(service); err != nil {
+	if err := packaging.ValidateServiceConfiguration(service); err != nil {
 		return nil, err
 	}
-	root, err := build.ServicePath(project, service)
+	root, err := packaging.ServicePath(project, service)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +211,7 @@ func (r *Runtime) readServiceDatasource(
 		input.Root = root
 	}
 	if serviceContext != nil {
-		input.JarPath, err = build.FindSpringJar(serviceContext, root)
+		input.JarPath, err = packaging.FindSpringJar(serviceContext, root)
 		if err != nil {
 			return nil, err
 		}

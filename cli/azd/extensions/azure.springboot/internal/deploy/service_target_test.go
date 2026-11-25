@@ -4,7 +4,7 @@
 package deploy
 
 import (
-	"azurespringboot/internal/build"
+	"azurespringboot/internal/packaging"
 	"azurespringboot/internal/testutil"
 	"context"
 	"os"
@@ -128,7 +128,7 @@ services:
 `), 0o600))
 	target := newServiceTarget(packagingTestClient(t, project), nil, nil, nil, nil)
 	require.ErrorContains(t, target.Initialize(t.Context(), service), "module must be a nonempty")
-	require.NoDirExists(t, filepath.Join(project.Path, build.StagingDirectoryName))
+	require.NoDirExists(t, filepath.Join(project.Path, packaging.StagingDirectoryName))
 }
 
 func coreDockerPackageContext() *azdext.ServiceContext {

@@ -7,8 +7,8 @@ import (
 	"context"
 	"strings"
 
-	"azurespringboot/internal/build"
 	"azurespringboot/internal/exterrors"
+	"azurespringboot/internal/packaging"
 	"azurespringboot/internal/springmodel"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -219,10 +219,10 @@ func ReadOfflineServiceDatasource(
 	service *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
 ) (*springmodel.DiscoveredDatasource, error) {
-	if err := build.ValidateServiceConfiguration(service); err != nil {
+	if err := packaging.ValidateServiceConfiguration(service); err != nil {
 		return nil, err
 	}
-	root, err := build.ServicePath(project, service)
+	root, err := packaging.ServicePath(project, service)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +233,7 @@ func ReadOfflineServiceDatasource(
 		Root: root, Deployed: true, Environment: map[string]string{}, AllowPending: true,
 	}
 	if serviceContext != nil {
-		input.JarPath, err = build.FindSpringJar(serviceContext, root)
+		input.JarPath, err = packaging.FindSpringJar(serviceContext, root)
 		if err != nil {
 			return nil, err
 		}

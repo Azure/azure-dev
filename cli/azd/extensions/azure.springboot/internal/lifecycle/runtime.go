@@ -4,8 +4,8 @@
 package lifecycle
 
 import (
-	"azurespringboot/internal/build"
 	"azurespringboot/internal/deploy"
+	"azurespringboot/internal/packaging"
 	"azurespringboot/internal/postgres"
 	"azurespringboot/internal/springmodel"
 	"context"
@@ -76,10 +76,10 @@ func (r *Runtime) resolveService(
 			fmt.Sprintf("set the service host to %s", springmodel.SpringHost),
 		)
 	}
-	if err := build.ValidateServiceConfiguration(service); err != nil {
+	if err := packaging.ValidateServiceConfiguration(service); err != nil {
 		return nil, err
 	}
-	if err := build.ValidateServiceConfiguration(service); err != nil {
+	if err := packaging.ValidateServiceConfiguration(service); err != nil {
 		return nil, err
 	}
 	database, err := r.discoverServiceDatabase(ctx, project, service, serviceContext, values, requireLate)
@@ -155,7 +155,7 @@ func (r *Runtime) resolveProject(
 			dbServices = append(dbServices, item)
 		}
 		if validateFiles {
-			if err := build.ValidateSpringBuild(project, service); err != nil {
+			if err := packaging.ValidateSpringBuild(project, service); err != nil {
 				return nil, springmodel.ResolvedDatabase{}, err
 			}
 		}
@@ -721,7 +721,7 @@ func (r *Runtime) PreBuild(ctx context.Context, args *azdext.ServiceEventArgs) e
 			return err
 		}
 	}
-	return build.PrepareSpringBuild(args.Project, args.Service)
+	return packaging.PrepareSpringBuild(args.Project, args.Service)
 }
 
 // PreDeploy verifies provisioned access before Spring initializes its application schema at startup.

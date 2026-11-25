@@ -4,7 +4,7 @@
 package deploy
 
 import (
-	"azurespringboot/internal/build"
+	"azurespringboot/internal/packaging"
 	"azurespringboot/internal/testutil"
 	"context"
 	"errors"
@@ -55,17 +55,17 @@ func (s *nativePackagingServer) Package(
 	ctx context.Context, request *azdext.ContainerPackageRequest,
 ) (*azdext.ContainerPackageResponse, error) {
 	s.calls++
-	packaged, err := build.RunWithProgress(ctx, nil, func(progress *async.Progress[project.ServiceProgress]) (
+	packaged, err := packaging.RunWithProgress(ctx, nil, func(progress *async.Progress[project.ServiceProgress]) (
 		*project.ServicePackageResult, error,
 	) {
-		return s.helper.Package(ctx, s.service, build.NativeServiceContext(request.GetServiceContext()),
+		return s.helper.Package(ctx, s.service, packaging.NativeServiceContext(request.GetServiceContext()),
 			environment.New("dev"), progress)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &azdext.ContainerPackageResponse{Result: &azdext.ServicePackageResult{
-		Artifacts: build.ExtensionArtifacts(packaged.Artifacts),
+		Artifacts: packaging.ExtensionArtifacts(packaged.Artifacts),
 	}}, nil
 }
 
@@ -106,12 +106,12 @@ func TestNativeRuntimeImageUsesIsolatedContextAndCorePackageOnce(t *testing.T) {
 						"build", "-f", filepath.Join(contextPath, "Dockerfile"), "--platform", "linux/amd64", contextPath,
 					}, args.Args[:6])
 					require.Equal(t, contextPath, args.Cwd)
-					// #nosec G304 -- contextPath is the isolated temporary directory passed to docker build.
+					// #nosec G304 -- contextPath is the isolated temporary directory passed to docker packaging.
 					content, err := os.ReadFile(filepath.Join(contextPath, "Dockerfile"))
 					require.NoError(t, err)
-					require.Equal(t, build.SpringDockerfile, string(content))
-					// #nosec G304 -- build.StagedJarName is a fixed filename inside contextPath.
-					content, err = os.ReadFile(filepath.Join(contextPath, build.StagedJarName))
+					require.Equal(t, packaging.SpringDockerfile, string(content))
+					// #nosec G304 -- packaging.StagedJarName is a fixed filename inside contextPath.
+					content, err = os.ReadFile(filepath.Join(contextPath, packaging.StagedJarName))
 					require.NoError(t, err)
 					require.Equal(t, jar, content)
 					require.NoError(t, os.WriteFile(args.Args[len(args.Args)-1], []byte(imageID), 0o600))
@@ -140,7 +140,7 @@ services:
 					nil, console, cloud.AzurePublic()), service: native.Services["petclinic"],
 			}
 			target := newServiceTarget(packagingTestClient(t, config, server), nil, nil, nil, nil)
-			target.images = build.NewRuntimeImageBuilder(runner)
+			target.images = packaging.NewRuntimeImageBuilder(runner)
 			serviceContext := testutil.MavenPackageContext(t, jar)
 			result, err := target.Package(t.Context(), service, serviceContext, func(string) {})
 			require.NoError(t, err)
@@ -165,7 +165,7 @@ type failedRuntimeBuilder struct {
 	directory string
 }
 
-func (b *failedRuntimeBuilder) Build(_ context.Context, context *build.StagedContainerContext) (*azdext.Artifact, error) {
+func (b *failedRuntimeBuilder) Build(_ context.Context, context *packaging.StagedContainerContext) (*azdext.Artifact, error) {
 	b.directory = context.Directory()
 	return nil, errors.New("failed to retrieve https://registry-user:registry-password@" +
 		"registry.example/image?sig=token#fragment")

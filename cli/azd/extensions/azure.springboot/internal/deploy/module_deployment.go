@@ -4,7 +4,7 @@
 package deploy
 
 import (
-	"azurespringboot/internal/build"
+	"azurespringboot/internal/packaging"
 	"azurespringboot/internal/springmodel"
 	"context"
 	"encoding/json"
@@ -135,7 +135,7 @@ func (d *azureModuleDeployer) Deploy(
 		return nil, fmt.Errorf("compiling service Bicep module: %w", nonDisclosureError(err))
 	}
 	var template map[string]any
-	if err := json.Unmarshal([]byte(build.Compiled), &template); err != nil {
+	if err := json.Unmarshal([]byte(packaging.Compiled), &template); err != nil {
 		return nil, fmt.Errorf("decoding compiled service Bicep module: %w", err)
 	}
 
@@ -328,7 +328,7 @@ func resolveServiceModulesFromSection(
 				fmt.Sprintf("authored configuration for service %q is unavailable", service.GetName()),
 				"restore the service object in azure.yaml")
 		}
-		if err := build.ValidateRawServiceConfiguration(service.GetName(), authored); err != nil {
+		if err := packaging.ValidateRawServiceConfiguration(service.GetName(), authored); err != nil {
 			return nil, err
 		}
 		name, err := serviceModuleName(service, authored)

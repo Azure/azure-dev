@@ -6,9 +6,9 @@ package cmd
 import (
 	"context"
 
-	"azurespringboot/internal/build"
 	"azurespringboot/internal/deploy"
 	"azurespringboot/internal/lifecycle"
+	"azurespringboot/internal/packaging"
 	"azurespringboot/internal/springmodel"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -23,7 +23,7 @@ func configureExtensionHostWithNoPrompt(host *azdext.ExtensionHost, noPrompt boo
 
 	host.
 		WithFrameworkService("java", func() azdext.FrameworkServiceProvider {
-			return build.NewJavaFrameworkService(host.Client())
+			return packaging.NewJavaFrameworkService(host.Client())
 		}).
 		WithServiceTarget(springmodel.SpringHost, func() azdext.ServiceTargetProvider {
 			return deploy.NewServiceTarget(host.Client(), runtime, runtime.EnvironmentStore())

@@ -4,7 +4,7 @@
 package deploy
 
 import (
-	"azurespringboot/internal/build"
+	"azurespringboot/internal/packaging"
 	"azurespringboot/internal/springmodel"
 	"context"
 	"errors"
@@ -28,7 +28,7 @@ type serviceTarget struct {
 	environments    springmodel.EnvironmentStore
 	modules         moduleDeployer
 	resources       containerAppResourceService
-	images          build.RuntimeImageBuilder
+	images          packaging.RuntimeImageBuilder
 	moduleMu        sync.Mutex
 	resolvedModules map[string]*resolvedServiceModule
 }
@@ -60,7 +60,7 @@ func newServiceTarget(
 		environments: environments,
 		modules:      modules,
 		resources:    resources,
-		images: build.NewRuntimeImageBuilder(azdexec.NewCommandRunner(&azdexec.RunnerOptions{
+		images: packaging.NewRuntimeImageBuilder(azdexec.NewCommandRunner(&azdexec.RunnerOptions{
 			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
 		})),
 	}
@@ -74,7 +74,7 @@ func (t *serviceTarget) Initialize(ctx context.Context, serviceConfig *azdext.Se
 	if err != nil {
 		return fmt.Errorf("getting the azd project for Spring service validation: %w", err)
 	}
-	if err := build.ValidateSpringBuild(projectResponse.GetProject(), serviceConfig); err != nil {
+	if err := packaging.ValidateSpringBuild(projectResponse.GetProject(), serviceConfig); err != nil {
 		return err
 	}
 	modules, err := resolveProjectServiceModules(ctx, t.client, projectResponse.GetProject())
@@ -113,7 +113,7 @@ func (t *serviceTarget) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
-	if err := build.ValidateServiceConfiguration(serviceConfig); err != nil {
+	if err := packaging.ValidateServiceConfiguration(serviceConfig); err != nil {
 		return nil, err
 	}
 	projectResponse, err := t.client.Project().Get(ctx, &azdext.EmptyRequest{})
@@ -141,7 +141,7 @@ func (t *serviceTarget) Package(
 		}
 	}
 
-	staged, err := build.PrepareContainerContext(ctx, project, serviceConfig, serviceContext)
+	staged, err := packaging.PrepareContainerContext(ctx, project, serviceConfig, serviceContext)
 	if err != nil {
 		return nil, err
 	}

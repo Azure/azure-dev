@@ -32,11 +32,26 @@ func NonDisclosureError(err error) error {
 	return nonDisclosureError(err)
 }
 
+type redactedSentinelError struct {
+	message  string
+	sentinel error
+}
+
+func (e *redactedSentinelError) Error() string { return e.message }
+
+func (e *redactedSentinelError) Unwrap() error { return e.sentinel }
+
 func nonDisclosureError(err error) error {
-	if err == nil ||
-		errors.Is(err, context.Canceled) ||
-		errors.Is(err, context.DeadlineExceeded) {
-		return err
+	if err == nil {
+		return nil
 	}
-	return errors.New(redactURLs(err.Error()))
+	sanitized := redactURLs(err.Error())
+	switch {
+	case errors.Is(err, context.Canceled):
+		return &redactedSentinelError{message: sanitized, sentinel: context.Canceled}
+	case errors.Is(err, context.DeadlineExceeded):
+		return &redactedSentinelError{message: sanitized, sentinel: context.DeadlineExceeded}
+	default:
+		return errors.New(sanitized)
+	}
 }

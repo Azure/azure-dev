@@ -15,7 +15,35 @@ type profileExpression struct {
 	active map[string]bool
 }
 
+func matchesSpringProfileList(expressions []string, profiles []string) (bool, error) {
+	if len(expressions) == 0 {
+		return false, errors.New("empty Spring profile activation expression")
+	}
+	matched := false
+	for _, expression := range expressions {
+		ok, err := matchesSpringProfiles(expression, profiles)
+		if err != nil {
+			return false, err
+		}
+		matched = matched || ok
+	}
+	return matched, nil
+}
+
 func matchesSpringProfiles(expression string, profiles []string) (bool, error) {
+	parts := strings.Split(expression, ",")
+	matched := false
+	for _, part := range parts {
+		ok, err := matchesSingleSpringProfileExpression(part, profiles)
+		if err != nil {
+			return false, err
+		}
+		matched = matched || ok
+	}
+	return matched, nil
+}
+
+func matchesSingleSpringProfileExpression(expression string, profiles []string) (bool, error) {
 	tokens := strings.Fields(strings.NewReplacer(
 		"(", " ( ", ")", " ) ", "!", " ! ", "&", " & ", "|", " | ",
 	).Replace(expression))

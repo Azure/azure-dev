@@ -618,11 +618,19 @@ func (l *springConfigLoader) loadFile(location, relative string, optional, profi
 				}
 			}
 		}
-		if expression := document["spring.config.activate.on-profile"]; expression != "" {
+		raw := springProperties{}
+		for key, value := range document {
+			raw[key] = springProperty{value, location}
+		}
+		normalized, err := normalizeSpringProperties(raw)
+		if err != nil {
+			return err
+		}
+		if expressions := normalized.rawList("spring.config.activate.on-profile"); len(expressions) > 0 {
 			if l.profiles == nil {
 				continue
 			}
-			selected, err := matchesSpringProfiles(expression, l.profiles)
+			selected, err := matchesSpringProfileList(expressions, l.profiles)
 			if err != nil {
 				return configurationError("a Spring profile activation expression is invalid")
 			}
@@ -636,16 +644,8 @@ func (l *springConfigLoader) loadFile(location, relative string, optional, profi
 				}
 			}
 		}
-		if _, present := document["spring.config.activate.on-cloud-platform"]; present {
+		if _, present := normalized.get("spring.config.activate.on-cloud-platform"); present {
 			return configurationError("cloud-platform activated Spring documents require runtime configuration evidence")
-		}
-		raw := springProperties{}
-		for key, value := range document {
-			raw[key] = springProperty{value, location}
-		}
-		normalized, err := normalizeSpringProperties(raw)
-		if err != nil {
-			return err
 		}
 		maps.Copy(l.values, normalized)
 		for _, imported := range splitSpringList(document["spring.config.import"]) {

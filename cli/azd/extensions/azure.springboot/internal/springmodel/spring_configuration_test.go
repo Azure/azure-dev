@@ -231,16 +231,26 @@ func TestSpringConfigurationHikariKeysAndPlaceholders(t *testing.T) {
 func TestSpringConfigurationImportsAndActivatedDocuments(t *testing.T) {
 	root := springConfigFixture(t, map[string]string{
 		"src/main/resources/application.properties": "spring.profiles.active=prod\n" +
-			"spring.config.import=extra.properties\nspring.datasource.username=base\n" +
+			"spring.config.import=extra.properties,comma.yml\nspring.datasource.username=base\n" +
 			"#---\nspring.config.activate.on-profile=!prod\nspring.config.import=configserver:secret\n",
 		"src/main/resources/extra.properties":      "spring.datasource.username=imported\n",
 		"src/main/resources/extra-prod.properties": "spring.datasource.username=imported-profile\n",
+		"src/main/resources/comma.yml": "spring:\n  config:\n    activate:\n      on-profile: staging,prod\n" +
+			"custom:\n  activated: comma-or\n---\n" +
+			"spring:\n  config:\n    activate:\n      on-profile:\n        - dev\n        - prod\n" +
+			"custom:\n  list-activated: yaml-list-or\n",
 	})
 	configuration, err := loadSpringConfiguration(t.Context(), springConfigInput{root: root})
 	require.NoError(t, err)
 	value, _, err := configuration.resolve("spring.datasource.username", false)
 	require.NoError(t, err)
 	require.Equal(t, "imported-profile", value)
+	commaVal, _, err := configuration.resolve("custom.activated", false)
+	require.NoError(t, err)
+	require.Equal(t, "comma-or", commaVal)
+	listVal, _, err := configuration.resolve("custom.list-activated", false)
+	require.NoError(t, err)
+	require.Equal(t, "yaml-list-or", listVal)
 }
 
 func TestSpringConfigurationRejectsUnsafeOrAmbiguousSources(t *testing.T) {
@@ -377,17 +387,22 @@ func TestSpringConfigurationDoesNotReadHostExternalFilesForDeployedApp(t *testin
 }
 
 func TestSpringProfilesMatchFrameworkGroupingRules(t *testing.T) {
-	for _, expression := range []string{"prod", "prod & !test", "(prod & us) | eu"} {
+	for _, expression := range []string{"prod", "prod,cloud", "cloud,prod", "prod & !test", "(prod & us) | eu"} {
 		match, err := matchesSpringProfiles(expression, []string{"prod", "us"})
 		require.NoError(t, err)
 		require.True(t, match)
 	}
-	for _, expression := range []string{"prod & us | eu", "(prod", "prod || us", ""} {
+	match, err := matchesSpringProfiles("dev,staging", []string{"prod"})
+	require.NoError(t, err)
+	require.False(t, match)
+	for _, expression := range []string{
+		"prod & us | eu", "(prod", "prod || us", "", "prod,", ",prod", "prod,a & b | c",
+	} {
 		_, err := matchesSpringProfiles(expression, []string{"prod"})
 		require.Error(t, err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err := loadSpringConfiguration(ctx, springConfigInput{root: t.TempDir()})
+	_, err = loadSpringConfiguration(ctx, springConfigInput{root: t.TempDir()})
 	require.ErrorIs(t, err, context.Canceled)
 }

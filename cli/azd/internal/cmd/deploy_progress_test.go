@@ -194,8 +194,8 @@ func TestDeployProgressTracker_PauseErasesTableAndSuppressesRender(t *testing.T)
 
 	tracker.ResumeRendering()
 	output := buf.String()
-	// Resume first moves to a fresh row if the prompt left the cursor mid-line.
-	assert.True(t, strings.HasPrefix(output, strings.Repeat(" ", 120)+"\r"), "resume must start on a fresh row")
+	// Resume starts on a new row so output that ends mid-line or with "\r" is kept.
+	assert.True(t, strings.HasPrefix(output, "\r\n"), "resume must start on a new row")
 	assert.Contains(t, output, "Deploying")
 	assert.NotContains(t, output, "\033[3A", "resume must draw below the prompt, not over it")
 }
@@ -227,6 +227,31 @@ func TestDeployProgressTracker_PadsExactWidthRows(t *testing.T) {
 
 	tracker.PauseRendering()
 	assert.Equal(t, "\033[4A\033[J", buf.String())
+}
+
+func TestDeployProgressTracker_RedrawClearsWrappedRows(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := newDeployProgressTracker(&buf, true, []string{"web"})
+	tracker.termWidth = func() int { return 20 }
+
+	tracker.Update("web", phaseDeploying, strings.Repeat("x", 30))
+	tracker.Render()
+	buf.Reset()
+
+	tracker.Update("web", phaseDeploying, "")
+	tracker.Render()
+	// The previous render took 10 rows (3 + 3 + 4); the whole region is erased before redrawing
+	// so characters left on wrapped rows don't linger.
+	assert.True(t, strings.HasPrefix(buf.String(), "\033[10A\033[J"), "redraw must erase the previous table")
+}
+
+func TestDeployProgressTracker_TabsCountedAsSpaces(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := newDeployProgressTracker(&buf, true, []string{"a\tb"})
+	tracker.termWidth = func() int { return 120 }
+
+	tracker.Render()
+	assert.NotContains(t, buf.String(), "\t", "tabs must be written as spaces")
 }
 
 func TestDeployProgressTracker_RecountsRowsAfterResize(t *testing.T) {

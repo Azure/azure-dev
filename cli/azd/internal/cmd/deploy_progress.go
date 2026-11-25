@@ -251,9 +251,10 @@ func (t *deployProgressTracker) Render() {
 
 	var buf strings.Builder
 
-	// Move cursor up to overwrite previous render
+	// Move the cursor to the top of the previous render and erase it. Clearing the whole
+	// region (not just each line's first row) removes leftovers from rows that wrapped.
 	if rows := t.renderedRows(); rows > 0 {
-		buf.WriteString(fmt.Sprintf("\033[%dA", rows))
+		buf.WriteString(fmt.Sprintf("\033[%dA\033[J", rows))
 	}
 
 	// Compute column widths
@@ -279,7 +280,8 @@ func (t *deployProgressTracker) Render() {
 	width := t.termWidth()
 	var rendered []string
 	writeLine := func(line string) {
-		line = fitLine(line, width)
+		// Tabs advance to terminal tab stops, which physicalRows can't measure.
+		line = fitLine(strings.ReplaceAll(line, "\t", " "), width)
 		buf.WriteString("\033[2K") // clear line before writing
 		buf.WriteString(line)
 		buf.WriteString("\n")
@@ -396,11 +398,11 @@ func (t *deployProgressTracker) ResumeRendering() {
 	t.mu.Lock()
 	t.paused = false
 	if t.interactive {
-		// The interaction may have left the cursor mid-line (e.g. a hook printing "Done"
-		// without a trailing newline). Writing a full row of spaces wraps to a new row only
-		// in that case; at column 0 the terminal defers the wrap and "\r" returns to the
-		// start of the same row. The table then renders without erasing that output.
-		fmt.Fprint(t.writer, strings.Repeat(" ", max(t.termWidth(), 1))+"\r")
+		// The interaction may have left the cursor mid-line or at the start of a row that
+		// still shows output (e.g. a hook printing "Done" or "Done\r"). Always start the
+		// table on a new row so that output is never overwritten, at the cost of a blank
+		// row when the cursor was already on an empty one.
+		fmt.Fprint(t.writer, "\r\n")
 	}
 	t.mu.Unlock()
 

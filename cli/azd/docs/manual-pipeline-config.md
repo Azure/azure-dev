@@ -9,6 +9,10 @@ The Azure Developer CLI provides the command `azd pipeline config` to automatica
 1. Configuring the git repo to use the created `Service Principal` to authenticate to Azure.
 1. Creating a pipeline definition.
 
+When `azd pipeline config` generates a GitHub Actions workflow, its Azure login step uses the authentication method you selected in the prompt or with `--auth-type`. If you change methods, update the login step in your existing workflow; `azd` does not rewrite it. For Terraform with client credentials, pass the `ARM_CLIENT_SECRET` repository secret to the provision step as `ARM_CLIENT_SECRET`.
+
+Each time you configure client credentials, `azd` adds a new client secret to the app registration. It does not revoke existing secrets, which other pipelines or workloads may still use.
+
 When the project requires azd extensions, the generated pipeline installs each required extension by ID and exact
 version. The generated definition does not reproduce the extension source used on the development machine. If CI must
 use a non-default registry or an unpublished azd build, update the generated pipeline to configure that source or
@@ -71,6 +75,8 @@ You need to set `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` secret for GitHub to use
 You can use the [github cli](https://cli.github.com) to set secrets for your GitHub repository.
 
 The `client id` and `tenant id` are the ones from a `Service Principal` which has configured a federated credential for the GitHub repository you are using. You can follow [these steps](https://learn.microsoft.com/azure/active-directory/workload-identities/workload-identity-federation-create-trust?pivots=identity-wif-apps-methods-azp#github-actions) to set up the federated credential for the app registration (Service principal).
+
+If the workflow's Azure login fails with [AADSTS7002381](https://login.microsoftonline.com/error?code=7002381), the tenant requires the GitHub Actions token to identify an approved GitHub enterprise. Ask your Microsoft Entra administrator which repositories qualify and run the workflow from one of them. Signing in again on your machine does not change the workflow's token.
 
 #### Client Secret with GitHub
 

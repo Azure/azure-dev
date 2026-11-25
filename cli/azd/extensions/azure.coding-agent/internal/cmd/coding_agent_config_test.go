@@ -24,7 +24,8 @@ import (
 
 //go:generate go tool mockgen -destination mocks_azdext_test.go -copyright_file ./testdata/mock_copyright.txt -package cmd github.com/azure/azure-dev/cli/azd/pkg/azdext PromptServiceClient
 
-//go:generate go tool mockgen -destination mocks_azd_entraid.go -copyright_file ./testdata/mock_copyright.txt -package cmd github.com/azure/azure-dev/cli/azd/pkg/entraid EntraIdService
+// Generate against the in-tree interface so the mock works before and after the extension updates its azd module pin.
+//go:generate go tool mockgen -destination mocks_azd_entraid.go -copyright_file ./testdata/mock_copyright.txt -package cmd -source ../../../../pkg/entraid/entraid.go
 
 //go:generate go tool mockgen -destination mocks_azdexec_test.go -copyright_file ./testdata/mock_copyright.txt -package cmd github.com/azure/azure-dev/cli/azd/pkg/exec CommandRunner
 

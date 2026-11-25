@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	syncatomic "sync/atomic"
 	"syscall"
@@ -197,7 +198,9 @@ type ConsoleOptions struct {
 
 	// OptionDetails is an optional field that can be used to provide additional information about the options.
 	OptionDetails []string
-	DefaultValue  any
+	// ShowOptionDetailsBelow displays each select option's detail on its own line below the label.
+	ShowOptionDetailsBelow bool
+	DefaultValue           any
 	// EnableFiltering controls whether select prompts allow filtering. Nil uses the component default.
 	EnableFiltering *bool
 	// AllowEmptySelection controls whether multi-select prompts can be submitted without a selection.
@@ -837,7 +840,7 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 	for i, option := range options.Options {
 		surveyOptions[i] = option
 
-		if c.IsSpinnerInteractive() && i < len(options.OptionDetails) {
+		if !options.ShowOptionDetailsBelow && c.IsSpinnerInteractive() && i < len(options.OptionDetails) {
 			if options.OptionDetails[i] != "" {
 				detailString := output.WithGrayFormat("(%s)", options.OptionDetails[i])
 				surveyOptions[i] += fmt.Sprintf("\n  %s\n", detailString)
@@ -851,8 +854,22 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 		}
 	}
 
+	message := options.Message
+	if !c.noPrompt && options.ShowOptionDetailsBelow && len(options.OptionDetails) > 0 {
+		var prompt strings.Builder
+		fmt.Fprintln(&prompt, message)
+		for i, option := range options.Options {
+			fmt.Fprintf(&prompt, "  %s\n", option)
+			if i < len(options.OptionDetails) && options.OptionDetails[i] != "" {
+				fmt.Fprintf(&prompt, "    %s\n", options.OptionDetails[i])
+			}
+		}
+		prompt.WriteString("Enter the option name:")
+		message = prompt.String()
+	}
+
 	survey := &survey.Select{
-		Message: options.Message,
+		Message: message,
 		Options: surveyOptions,
 		Default: surveyDefault,
 		Help:    options.Help,

@@ -43,9 +43,12 @@ type SelectOptions struct {
 	EnableFiltering *bool
 }
 
+// SelectChoice is an option in a Select prompt.
 type SelectChoice struct {
 	Value string
 	Label string
+	// Detail is optional hint text shown below the label while the list is open.
+	Detail string
 }
 
 type indexedSelectChoice struct {
@@ -221,10 +224,12 @@ func (p *Select) applyFilter() {
 			}
 		}
 
-		containsValue := strings.Contains(strings.ToLower(option.Value), strings.ToLower(p.filter))
-		containsLabel := strings.Contains(strings.ToLower(option.Label), strings.ToLower(p.filter))
+		filterLower := strings.ToLower(p.filter)
+		containsValue := strings.Contains(strings.ToLower(option.Value), filterLower)
+		containsLabel := strings.Contains(strings.ToLower(option.Label), filterLower)
+		containsDetail := strings.Contains(strings.ToLower(option.Detail), filterLower)
 
-		if containsValue || containsLabel {
+		if containsValue || containsLabel || containsDetail {
 			p.filteredChoices = append(p.filteredChoices, option)
 		}
 	}
@@ -298,6 +303,10 @@ func (p *Select) renderOptions(printer Printer, indent string) {
 		} else {
 			prefix := " "
 			printer.Fprintf("%s%s %s%s\n", indent, prefix, digitPrefix, displayValue)
+		}
+
+		if option.Detail != "" {
+			printer.Fprintf("%s    %*s%s\n", indent, len(digitPrefix), "", output.WithGrayFormat("%s", option.Detail))
 		}
 	}
 

@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -256,12 +257,6 @@ func (pm *PipelineManager) Configure(
 		return result, err
 	}
 
-	// pipeline definition files
-	err = pm.ensurePipelineDefinition(ctx)
-	if err != nil {
-		return result, fmt.Errorf("ensuring pipeline definition: %w", err)
-	}
-
 	// ServiceManagementReference can be set as user config (~/.azd/config.json)
 	userConfig, err := pm.userConfigManager.Load()
 	if err != nil {
@@ -282,12 +277,6 @@ func (pm *PipelineManager) Configure(
 	}
 	if updatedConfig {
 		pm.console.Message(ctx, "")
-	}
-
-	// Get git repo details
-	gitRepoInfo, err := pm.getGitRepoDetails(ctx)
-	if err != nil {
-		return result, fmt.Errorf("ensuring git remote: %w", err)
 	}
 
 	if pm.args.PipelineServicePrincipalName != "" && pm.args.PipelineServicePrincipalId != "" {
@@ -318,35 +307,21 @@ func (pm *PipelineManager) Configure(
 		usingAppRegistration = false // MSI takes precedence over SP
 	}
 
-	skipAuth := false
-	if !usingMsi && !usingAppRegistration {
-		log.Printf("Authentication mode has not been set. Prompt user if they want to set it up now.")
-		const optionMsi = "Federated User Managed Identity (MSI + OIDC)"
-		const optionOidc = "Federated Service Principal (SP + OIDC)"
-		const optionClientSec = "Client Credentials (SP + Secret)"
-		const optionSkip = "Skip authentication setup (for manually configured pipelines or existing set up)"
-		options := []string{
-			optionMsi,
-			optionOidc,
-			optionClientSec,
-			optionSkip,
-		}
-		selectedOption, err := pm.console.Select(ctx, input.ConsoleOptions{
-			Message:      "Select how to authenticate the pipeline to Azure",
-			Options:      options,
-			DefaultValue: optionMsi,
-		})
-		if err != nil {
-			return result, fmt.Errorf("prompting for authentication type: %w", err)
-		}
-		switch options[selectedOption] {
-		case optionMsi:
-			usingMsi = true
-		case optionOidc, optionClientSec:
-			usingAppRegistration = true
-		case optionSkip:
-			skipAuth = true
-		}
+	authSelection, err := pm.resolvePipelineAuth(ctx, usingMsi, usingAppRegistration)
+	if err != nil {
+		return result, err
+	}
+	usingMsi = authSelection.usingMsi
+	usingAppRegistration = authSelection.usingAppRegistration
+	skipAuth := authSelection.skipAuth
+	authType := cmp.Or(authSelection.authType, AuthTypeFederated)
+
+	if err := pm.ensurePipelineDefinition(ctx, authType); err != nil {
+		return result, fmt.Errorf("ensuring pipeline definition: %w", err)
+	}
+	gitRepoInfo, err := pm.getGitRepoDetails(ctx)
+	if err != nil {
+		return result, fmt.Errorf("ensuring git remote: %w", err)
 	}
 
 	// Service Principal or MSI are both handled by authConfiguration as a top layer abstraction.
@@ -572,7 +547,7 @@ func (pm *PipelineManager) Configure(
 			ctx,
 			gitRepoInfo,
 			infra.Options,
-			PipelineAuthType(pm.args.PipelineAuthTypeName),
+			authType,
 			authConfig.AzureCredentials,
 		)
 		if err != nil {
@@ -584,10 +559,10 @@ func (pm *PipelineManager) Configure(
 			spinnerMessage := "Configuring client credentials for service principal"
 			pm.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
-			creds, err := pm.entraIdService.ResetPasswordCredentials(ctx, subscriptionId, authConfig.ClientId)
+			creds, err := pm.entraIdService.AddPasswordCredential(ctx, subscriptionId, authConfig.ClientId)
 			pm.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
 			if err != nil {
-				return result, fmt.Errorf("failed to reset password credentials: %w", err)
+				return result, fmt.Errorf("failed to add a client secret for the pipeline: %w", err)
 			}
 
 			authConfig.AzureCredentials = creds
@@ -1331,7 +1306,7 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		tmplContext.Variables = appendUnique(tmplContext.Variables, "AZURE_ENV_NAME")
 
 		if props.AuthType == AuthTypeClientCredentials {
-			tmplContext.Secrets = appendUnique(tmplContext.Secrets, "AZURE_CLIENT_SECRET")
+			tmplContext.Secrets = appendUnique(tmplContext.Secrets, "ARM_CLIENT_SECRET")
 		}
 	}
 
@@ -1470,7 +1445,7 @@ func (pm *PipelineManager) SetRequiredExtensions(extensions []RequiredExtension)
 	return nil
 }
 
-func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
+func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context, authType PipelineAuthType) error {
 	// pipeline definition files
 	hasAppHost := pm.importManager.HasAppHost(ctx, pm.prjConfig)
 
@@ -1494,9 +1469,6 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 		branchName = customBranchName
 	}
 
-	// default auth type for all providers
-	authType := AuthTypeFederated
-
 	// Check and prompt for missing CI/CD files
 	err = pm.checkAndPromptForProviderFiles(
 		ctx, projectProperties{
@@ -1519,6 +1491,139 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 	pm.configOptions.projectVariables = slices.Clone(pm.prjConfig.Pipeline.Variables)
 	pm.configOptions.provisioningProvider = &pm.infra.Options
 	return nil
+}
+
+type pipelineAuthSelection struct {
+	usingMsi             bool
+	usingAppRegistration bool
+	skipAuth             bool
+	authType             PipelineAuthType
+}
+
+func (pm *PipelineManager) resolvePipelineAuth(
+	ctx context.Context,
+	usingMsi bool,
+	usingAppRegistration bool,
+) (pipelineAuthSelection, error) {
+	var authType PipelineAuthType
+	if pm.args != nil {
+		authType = PipelineAuthType(strings.TrimSpace(pm.args.PipelineAuthTypeName))
+	}
+
+	if usingMsi && authType == AuthTypeClientCredentials {
+		return pipelineAuthSelection{}, &errorhandler.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"--auth-type %s is not supported with managed identity authentication",
+				AuthTypeClientCredentials,
+			),
+			Message:    "This environment's pipeline uses a managed identity, which doesn't support client credentials.",
+			Suggestion: pm.msiToClientCredentialsSuggestion(),
+		}
+	}
+
+	if usingMsi || usingAppRegistration {
+		return pipelineAuthSelection{
+			usingMsi:             usingMsi,
+			usingAppRegistration: usingAppRegistration,
+			authType:             authType,
+		}, nil
+	}
+
+	if authType == AuthTypeClientCredentials {
+		return pipelineAuthSelection{
+			usingAppRegistration: true,
+			authType:             AuthTypeClientCredentials,
+		}, nil
+	}
+
+	log.Printf("Authentication mode has not been set. Prompt user if they want to set it up now.")
+	const (
+		optionMsi       = "Federated Managed Identity (MSI + OIDC) (Recommended)"
+		optionOidc      = "Federated Service Principal (SP + OIDC)"
+		optionClientSec = "Client Credentials (SP + Secret)"
+		optionSkip      = "Skip authentication setup"
+	)
+
+	options := []string{
+		optionMsi,
+		optionOidc,
+	}
+	optionDetails := []string{
+		"Creates or reuses a user-assigned managed identity. No client secret to store.",
+		"Uses a Microsoft Entra app registration. No client secret to store.",
+	}
+	if authType != AuthTypeFederated {
+		options = append(options, optionClientSec)
+		optionDetails = append(
+			optionDetails,
+			"A fallback for pipelines that can't use OIDC. Stores an expiring client secret.",
+		)
+	}
+	options = append(options, optionSkip)
+	optionDetails = append(
+		optionDetails,
+		"Choose this if your pipeline already has Azure access or you'll set it up yourself.",
+	)
+
+	selectedOption, err := pm.console.Select(ctx, input.ConsoleOptions{
+		Message:                "Select how to authenticate the pipeline to Azure:",
+		Options:                options,
+		OptionDetails:          optionDetails,
+		ShowOptionDetailsBelow: true,
+		DefaultValue:           optionMsi,
+	})
+	if err != nil {
+		return pipelineAuthSelection{}, fmt.Errorf("prompting for authentication type: %w", err)
+	}
+
+	switch options[selectedOption] {
+	case optionMsi:
+		return pipelineAuthSelection{
+			usingMsi: true,
+			authType: AuthTypeFederated,
+		}, nil
+	case optionOidc:
+		return pipelineAuthSelection{
+			usingAppRegistration: true,
+			authType:             AuthTypeFederated,
+		}, nil
+	case optionClientSec:
+		return pipelineAuthSelection{
+			usingAppRegistration: true,
+			authType:             AuthTypeClientCredentials,
+		}, nil
+	case optionSkip:
+		return pipelineAuthSelection{
+			skipAuth: true,
+			authType: authType,
+		}, nil
+	default:
+		return pipelineAuthSelection{}, fmt.Errorf("unexpected authentication option: %s", options[selectedOption])
+	}
+}
+
+// msiToClientCredentialsSuggestion explains how to clear the managed identity from the selected environment and,
+// when set, from the process environment, since Environment.Getenv falls back to process values.
+func (pm *PipelineManager) msiToClientCredentialsSuggestion() string {
+	// Environment names can't contain quotes or '$', so double quotes are safe in common shells.
+	envArg := fmt.Sprintf(`-e "%s"`, pm.env.Name())
+
+	var steps []string
+	if _, inDotenv := pm.env.LookupDotenv(AzurePipelineMsiResourceId); inDotenv {
+		steps = append(steps, fmt.Sprintf("run `azd env unset %s %s`", AzurePipelineMsiResourceId, envArg))
+	}
+	if _, inShell := os.LookupEnv(AzurePipelineMsiResourceId); inShell {
+		steps = append(steps, fmt.Sprintf("remove %s from your shell or CI environment", AzurePipelineMsiResourceId))
+	}
+
+	return fmt.Sprintf(
+		"To switch to client credentials, %s, then rerun `azd pipeline config %s --auth-type %s`. "+
+			"For GitHub Actions, azd doesn't change an existing workflow, "+
+			"so update its Azure login step to use client credentials.",
+		strings.Join(steps, " and "),
+		envArg,
+		AuthTypeClientCredentials,
+	)
 }
 
 type promptForServiceTreeIdOptions struct {

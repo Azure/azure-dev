@@ -41,3 +41,54 @@ func TestBYOPlanNestedDeploymentName(t *testing.T) {
 		})
 	}
 }
+
+func TestBYOPlanCopyLoops(t *testing.T) {
+	template := map[string]any{
+		"variables": map[string]any{
+			"copy": []any{map[string]any{
+				"name":  "clusterIds",
+				"count": "[length(parameters('clusters'))]",
+				"input": "[parameters('clusters')[copyIndex('clusterIds')]]",
+			}},
+		},
+	}
+	env := (&templatePlanResolver{}).environment(template, map[string]func() any{
+		"clusters": func() any { return []any{offlineClusterID} },
+	}, planScope{}, "root", "test")
+	resolved := env.value(map[string]any{
+		"allowProjectManagement": true,
+		"copy": []any{map[string]any{
+			"name":  "agentHostingConfigurations",
+			"count": "[length(variables('clusterIds'))]",
+			"input": map[string]any{
+				"hostingType":       "ManagedCluster",
+				"clusterResourceId": "[variables('clusterIds')[copyIndex('agentHostingConfigurations')]]",
+				"indexPlusOne":      "[copyIndex('agentHostingConfigurations', 1)]",
+			},
+		}},
+	})
+	object, ok := resolved.(map[string]any)
+	require.True(t, ok)
+	assert.NotContains(t, object, "copy")
+	assert.Equal(t, []any{map[string]any{
+		"hostingType":       "ManagedCluster",
+		"clusterResourceId": offlineClusterID,
+		"indexPlusOne":      float64(1),
+	}}, object["agentHostingConfigurations"])
+
+	unresolvedEnv := (&templatePlanResolver{}).environment(template, nil, planScope{}, "root", "test")
+	unresolvedObj, ok := unresolvedEnv.value(map[string]any{"copy": []any{map[string]any{
+		"name": "agentHostingConfigurations", "count": "[length(parameters('runtimeClusters'))]", "input": map[string]any{},
+	}}}).(map[string]any)
+	require.True(t, ok)
+	assert.IsType(t, planUnknown{}, unresolvedObj["agentHostingConfigurations"])
+
+	merged := env.value("[union(createObject('allowProjectManagement', true(), 'nested', createObject('a', 1)), " +
+		"createObject('nested', createObject('b', 2), 'agentHostingConfigurations', createArray('aks')))]")
+	assert.Equal(t, map[string]any{
+		"allowProjectManagement":     true,
+		"nested":                     map[string]any{"a": float64(1), "b": float64(2)},
+		"agentHostingConfigurations": []any{"aks"},
+	}, merged)
+	assert.IsType(t, planUnknown{}, env.value("[union(createArray('a'), createArray('b'))]"))
+}

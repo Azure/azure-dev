@@ -327,15 +327,30 @@ func (n *planResource) module() *planEnvironment {
 		}
 	}
 	parameters := map[string]func() any{}
+	rawParameters := map[string]planRawParameter{}
 	if supplied, ok := properties["parameters"].(map[string]any); ok {
 		for key, envelope := range supplied {
-			parameters[strings.ToLower(key)] = func() any {
+			lower := strings.ToLower(key)
+			parameters[lower] = func() any {
 				value := n.env.value(envelope)
 				return planField(value, "value")
 			}
+			if envMap, isMap := envelope.(map[string]any); isMap {
+				for field, inner := range envMap {
+					if strings.EqualFold(field, "value") {
+						rawParameters[lower] = planRawParameter{raw: inner, env: n.env}
+						break
+					}
+				}
+			} else if envStr, isStr := envelope.(string); isStr &&
+				!strings.HasPrefix(envStr, "[[") && strings.HasPrefix(envStr, "[") && strings.HasSuffix(envStr, "]") {
+				rawParameters[lower] = planRawParameter{raw: envStr[:len(envStr)-1] + ".value]", env: n.env}
+			}
 		}
 	}
-	n.child = n.resolver.environment(template, parameters, scope, n.path, n.env.value(n.raw["name"]))
+	child := n.resolver.environment(template, parameters, scope, n.path, n.env.value(n.raw["name"]))
+	child.rawParameters = rawParameters
+	n.child = child
 	return n.child
 }
 
@@ -562,6 +577,12 @@ func byoPlanParameters(source *templateSource) (map[string]func() any, error) {
 	return parameters, nil
 }
 
+type planRawSelection struct {
+	raw  any
+	expr *planExpression
+	env  *planEnvironment
+}
+
 func (n *planResource) mentionsHosting() bool {
 	if n == nil || n.env == nil {
 		return false
@@ -570,19 +591,16 @@ func (n *planResource) mentionsHosting() bool {
 }
 
 func (e *planEnvironment) valueMentionsHosting(raw any, seen map[string]bool) bool {
-	key := strings.ToLower("agentHostingConfigurations")
 	switch current := raw.(type) {
 	case string:
-		if strings.Contains(strings.ToLower(current), key) {
-			return true
-		}
-		if !strings.HasPrefix(current, "[") || strings.HasPrefix(current, "[[") || !strings.HasSuffix(current, "]") {
+		if strings.HasPrefix(current, "[[") || !strings.HasPrefix(current, "[") || !strings.HasSuffix(current, "]") {
 			return false
 		}
 		parser := planExpressionParser{text: current[1 : len(current)-1]}
 		expr, err := parser.expression(0)
-		if err != nil {
-			return false
+		parser.space()
+		if err != nil || parser.pos != len(parser.text) {
+			return strings.Contains(strings.ToLower(current), strings.ToLower("agentHostingConfigurations"))
 		}
 		return e.exprMentionsHosting(expr, seen)
 	case []any:
@@ -593,7 +611,35 @@ func (e *planEnvironment) valueMentionsHosting(raw any, seen map[string]bool) bo
 		}
 	case map[string]any:
 		for name, entry := range current {
-			if strings.Contains(strings.ToLower(name), key) || e.valueMentionsHosting(entry, seen) {
+			if strings.EqualFold(name, "copy") {
+				if loops, ok := parseCopyLoops(entry); ok {
+					for _, loop := range loops {
+						loopName, missing := planString(e.value(loop["name"]))
+						if missing != "" || strings.EqualFold(loopName, "agentHostingConfigurations") {
+							count, ok := e.value(loop["count"]).(float64)
+							if !ok || count > 0 {
+								return true
+							}
+							continue
+						}
+						if e.valueMentionsHosting(loop["input"], seen) {
+							return true
+						}
+					}
+					continue
+				}
+			}
+			if strings.EqualFold(name, "agentHostingConfigurations") {
+				evaluated := e.value(entry)
+				if evaluated == nil {
+					continue
+				}
+				if values, ok := evaluated.([]any); ok && len(values) == 0 {
+					continue
+				}
+				return true
+			}
+			if e.valueMentionsHosting(entry, seen) {
 				return true
 			}
 		}
@@ -603,12 +649,48 @@ func (e *planEnvironment) valueMentionsHosting(raw any, seen map[string]bool) bo
 
 func (e *planEnvironment) exprMentionsHosting(expr planExpression, seen map[string]bool) bool {
 	if expr.base != nil {
+		if selected, ok := e.selectRawMember(expr, maps.Clone(seen)); ok {
+			if selected.expr != nil {
+				return selected.env.exprMentionsHosting(*selected.expr, seen)
+			}
+			return selected.env.valueMentionsHosting(selected.raw, seen)
+		}
 		return e.exprMentionsHosting(*expr.base, seen) ||
 			(expr.selector != nil && e.exprMentionsHosting(*expr.selector, seen))
 	}
-	if literal, ok := expr.literal.(string); ok &&
-		strings.Contains(strings.ToLower(literal), strings.ToLower("agentHostingConfigurations")) {
-		return true
+	if strings.EqualFold(expr.name, "if") && len(expr.args) == 3 {
+		if cond, missing := planBool(e.evaluate(expr.args[0], 0)); missing == "" {
+			if cond {
+				return e.exprMentionsHosting(expr.args[1], seen)
+			}
+			return e.exprMentionsHosting(expr.args[2], seen)
+		}
+		return e.exprMentionsHosting(expr.args[1], seen) || e.exprMentionsHosting(expr.args[2], seen)
+	}
+	if strings.EqualFold(expr.name, "createObject") && len(expr.args)%2 == 0 {
+		for i := 0; i+1 < len(expr.args); i += 2 {
+			key, missing := planString(e.evaluate(expr.args[i], 0))
+			if missing != "" {
+				if e.exprMentionsHosting(expr.args[i], seen) || e.exprMentionsHosting(expr.args[i+1], seen) {
+					return true
+				}
+				continue
+			}
+			if strings.EqualFold(key, "agentHostingConfigurations") {
+				evaluated := e.evaluate(expr.args[i+1], 0)
+				if evaluated == nil {
+					continue
+				}
+				if values, ok := evaluated.([]any); ok && len(values) == 0 {
+					continue
+				}
+				return true
+			}
+			if e.exprMentionsHosting(expr.args[i+1], seen) {
+				return true
+			}
+		}
+		return false
 	}
 	for _, arg := range expr.args {
 		if e.exprMentionsHosting(arg, seen) {
@@ -622,11 +704,22 @@ func (e *planEnvironment) exprMentionsHosting(expr planExpression, seen map[stri
 	if !ok {
 		return false
 	}
-	switch strings.ToLower(expr.name) {
+	if target, ok := e.resolveNamedSymbol(expr.name, ref, seen); ok {
+		if target.expr != nil {
+			return target.env.exprMentionsHosting(*target.expr, seen)
+		}
+		return target.env.valueMentionsHosting(target.raw, seen)
+	}
+	return false
+}
+
+func (e *planEnvironment) resolveNamedSymbol(kind, ref string, seen map[string]bool) (planRawSelection, bool) {
+	lower := strings.ToLower(ref)
+	switch strings.ToLower(kind) {
 	case "variables":
-		id := "var:" + strings.ToLower(ref)
+		id := e.path + ":var:" + lower
 		if seen[id] {
-			return false
+			return planRawSelection{}, false
 		}
 		seen[id] = true
 		definitions, _ := e.template["variables"].(map[string]any)
@@ -635,36 +728,147 @@ func (e *planEnvironment) exprMentionsHosting(expr planExpression, seen map[stri
 				if loops, ok := parseCopyLoops(def); ok {
 					for _, loop := range loops {
 						if loopName, missing := planString(e.value(loop["name"])); missing == "" &&
-							strings.EqualFold(loopName, ref) && e.valueMentionsHosting(loop["input"], seen) {
-							return true
+							strings.EqualFold(loopName, ref) {
+							if count, ok := e.value(loop["count"]).(float64); ok && count == 0 {
+								return planRawSelection{raw: []any{}, env: e}, true
+							}
+							return planRawSelection{raw: loop["input"], env: e}, true
 						}
 					}
 					continue
 				}
 			}
-			if strings.EqualFold(name, ref) && e.valueMentionsHosting(def, seen) {
-				return true
+			if strings.EqualFold(name, ref) {
+				return planRawSelection{raw: def, env: e}, true
 			}
 		}
 	case "parameters":
-		id := "param:" + strings.ToLower(ref)
+		id := e.path + ":param:" + lower
 		if seen[id] {
-			return false
+			return planRawSelection{}, false
 		}
 		seen[id] = true
-		if param, found := e.parameters[strings.ToLower(ref)]; found {
-			return e.valueMentionsHosting(param(), seen)
+		if param, found := e.parameters[lower]; found {
+			val := param()
+			if _, unknown := val.(planUnknown); unknown {
+				if rawParam, hasRaw := e.rawParameters[lower]; hasRaw {
+					return planRawSelection{raw: rawParam.raw, env: rawParam.env}, true
+				}
+				return planRawSelection{}, false
+			}
+			return planRawSelection{raw: val, env: e}, true
 		}
 		definitions, _ := e.template["parameters"].(map[string]any)
 		for name, def := range definitions {
 			if strings.EqualFold(name, ref) {
 				if defMap, ok := def.(map[string]any); ok {
-					return e.valueMentionsHosting(defMap["defaultValue"], seen)
+					return planRawSelection{raw: defMap["defaultValue"], env: e}, true
 				}
 			}
 		}
 	}
-	return false
+	return planRawSelection{}, false
+}
+
+func (e *planEnvironment) selectRawMember(expr planExpression, seen map[string]bool) (planRawSelection, bool) {
+	if expr.base == nil || expr.selector == nil {
+		return planRawSelection{}, false
+	}
+	member, missing := planString(e.evaluate(*expr.selector, 0))
+	if missing != "" {
+		return planRawSelection{}, false
+	}
+	base, ok := e.resolveBaseSelection(*expr.base, seen)
+	if !ok {
+		return planRawSelection{}, false
+	}
+	return base.selectMember(member, seen)
+}
+
+func (e *planEnvironment) resolveBaseSelection(base planExpression, seen map[string]bool) (planRawSelection, bool) {
+	if base.base != nil {
+		return e.selectRawMember(base, seen)
+	}
+	if strings.EqualFold(base.name, "if") && len(base.args) == 3 {
+		if cond, missing := planBool(e.evaluate(base.args[0], 0)); missing == "" {
+			if cond {
+				return e.resolveBaseSelection(base.args[1], seen)
+			}
+			return e.resolveBaseSelection(base.args[2], seen)
+		}
+		return planRawSelection{}, false
+	}
+	if strings.EqualFold(base.name, "createObject") && len(base.args)%2 == 0 {
+		return planRawSelection{expr: &base, env: e}, true
+	}
+	if len(base.args) == 1 {
+		if ref, ok := base.args[0].literal.(string); ok {
+			return e.resolveNamedSymbol(base.name, ref, seen)
+		}
+	}
+	return planRawSelection{}, false
+}
+
+func (s planRawSelection) selectMember(member string, seen map[string]bool) (planRawSelection, bool) {
+	if s.expr != nil {
+		if !strings.EqualFold(s.expr.name, "createObject") || len(s.expr.args)%2 != 0 {
+			resolved, ok := s.env.resolveBaseSelection(*s.expr, seen)
+			if !ok {
+				return planRawSelection{}, false
+			}
+			return resolved.selectMember(member, seen)
+		}
+		var matched *planExpression
+		for i := 0; i+1 < len(s.expr.args); i += 2 {
+			key, missing := planString(s.env.evaluate(s.expr.args[i], 0))
+			if missing != "" {
+				return planRawSelection{}, false
+			}
+			if strings.EqualFold(key, member) {
+				arg := s.expr.args[i+1]
+				matched = &arg
+			}
+		}
+		if matched != nil {
+			return planRawSelection{expr: matched, env: s.env}, true
+		}
+		return planRawSelection{raw: nil, env: s.env}, true
+	}
+	switch current := s.raw.(type) {
+	case string:
+		if !strings.HasPrefix(current, "[[") && strings.HasPrefix(current, "[") && strings.HasSuffix(current, "]") {
+			parser := planExpressionParser{text: current[1 : len(current)-1]}
+			parsed, err := parser.expression(0)
+			parser.space()
+			if err == nil && parser.pos == len(parser.text) {
+				if inner, ok := s.env.resolveBaseSelection(parsed, seen); ok {
+					return inner.selectMember(member, seen)
+				}
+			}
+		}
+	case map[string]any:
+		for name, val := range current {
+			if strings.EqualFold(name, "copy") {
+				if loops, ok := parseCopyLoops(val); ok {
+					for _, loop := range loops {
+						if loopName, missing := planString(s.env.value(loop["name"])); missing == "" &&
+							strings.EqualFold(loopName, member) {
+							if count, ok := s.env.value(loop["count"]).(float64); ok && count == 0 {
+								return planRawSelection{raw: []any{}, env: s.env}, true
+							}
+							return planRawSelection{raw: loop["input"], env: s.env}, true
+						}
+					}
+					continue
+				}
+			}
+			if strings.EqualFold(name, member) {
+				return planRawSelection{raw: val, env: s.env}, true
+			}
+		}
+		return planRawSelection{raw: nil, env: s.env}, true
+	}
+	return planRawSelection{}, false
 }
 
 func (p *FoundryProvisioningProvider) localBYOPlan(source *templateSource) (bool, error) {

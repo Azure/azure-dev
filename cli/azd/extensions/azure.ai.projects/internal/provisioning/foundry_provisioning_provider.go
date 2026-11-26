@@ -1507,6 +1507,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
+	if _, err := p.prepareBYOLocal(src); err != nil {
+		return nil, err
+	}
 	if err := p.validateExistingProjectTemplateIdentity(ctx, src); err != nil {
 		return nil, err
 	}
@@ -1902,6 +1905,9 @@ func (p *FoundryProvisioningProvider) Preview(
 
 	src, err := p.resolveTemplate(ctx, progress)
 	if err != nil {
+		return nil, err
+	}
+	if _, err := p.prepareBYOLocal(src); err != nil {
 		return nil, err
 	}
 	if err := p.validateExistingProjectTemplateIdentity(ctx, src); err != nil {

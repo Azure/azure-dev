@@ -460,13 +460,25 @@ func TestBYOCustomTemplateWithoutAgentHosting(t *testing.T) {
 }
 
 func TestBYOCustomTemplateGateAndNonAKSIsolation(t *testing.T) {
+	const registryID = "/subscriptions/target-sub/resourceGroups/shared/providers/" +
+		"Microsoft.ContainerRegistry/registries/registry"
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
+
 	for _, props := range []any{
 		customBYOProperties(offlineClusterID),
 		map[string]any{"agentHostingConfigurations": "[reference('runtimeSource').configs]"},
 		"[union(variables('aksProps'), reference('runtimeSource').properties)]",
 	} {
-		p, fake, _ := customTemplateWithoutAgentHosting(t, 7, props)
+		p, fake, source := customTemplateWithoutAgentHosting(t, 7, props)
 		p.armTemplate["variables"] = map[string]any{"aksProps": customBYOProperties(offlineClusterID)}
+		// Verify the preview gate precedes Deploy's authenticated model-policy and remote-ACR checks (#2).
+		p.acrRemoteBuild = true
+		source.parameters["includeAcr"] = map[string]any{"value": true}
+		source.parameters["existingAcrResourceId"] = map[string]any{"value": registryID}
+		p.acrRequest = func(_ context.Context, method, path, _ string, _ any) error {
+			t.Fatalf("remote-build ACR read must not precede BYO preview gate: %s %s", method, path)
+			return nil
+		}
 		t.Setenv(synthesis.BYOAKSEnvVar, "false")
 		p.credential = nil
 		_, err := p.Deploy(t.Context(), func(string) {})
@@ -475,6 +487,33 @@ func TestBYOCustomTemplateGateAndNonAKSIsolation(t *testing.T) {
 		assert.Empty(t, fake.requests)
 	}
 
+	// Preserve BYO hosting configuration passed through nested module parameters with runtime expressions (#1).
+	p, fake, _ := customTemplateWithoutAgentHosting(t, 7, nil)
+	t.Setenv(synthesis.BYOAKSEnvVar, "false")
+	p.credential = nil
+	p.armTemplate["variables"] = map[string]any{"aksProps": customBYOProperties(offlineClusterID)}
+	p.armTemplate["resources"] = map[string]any{"nested": map[string]any{
+		"type": "Microsoft.Resources/deployments", "name": "child-deployment",
+		"resourceGroup": "[parameters('resourceGroupName')]",
+		"properties": map[string]any{
+			"expressionEvaluationOptions": map[string]any{"scope": "inner"},
+			"parameters": map[string]any{"accountProps": map[string]any{
+				"value": "[union(reference('runtimeSource', '2023-05-01').properties, variables('aksProps'))]",
+			}},
+			"template": map[string]any{
+				"parameters": map[string]any{"accountProps": map[string]any{"type": "object"}},
+				"resources": map[string]any{"childAccount": map[string]any{
+					"type": "Microsoft.CognitiveServices/accounts", "name": "child-acc",
+					"properties": "[parameters('accountProps')]",
+				}},
+			},
+		},
+	}}
+	_, err := p.Deploy(t.Context(), func(string) {})
+	requireBYOFeatureNotEnabled(t, err)
+	assert.Nil(t, p.credential)
+	assert.Empty(t, fake.requests)
+
 	p, fake, source := customTemplateWithoutAgentHosting(t, 7, customBYOProperties("/not-a-cluster"))
 	t.Setenv(synthesis.BYOAKSEnvVar, "false")
 	p.credential = nil
@@ -482,15 +521,23 @@ func TestBYOCustomTemplateGateAndNonAKSIsolation(t *testing.T) {
 		"expected a complete Microsoft.ContainerService/managedClusters resource ID")
 	assert.Empty(t, fake.requests)
 
-	// Inactive BYO accounts, overridden BYO parameter defaults, and zero-count copy loops must not trigger BYO.
+	// Inactive BYO accounts, overridden defaults, zero-count loops, excluded if-branches (#3),
+	// and unselected variant members (#4) must not trigger BYO.
 	p, fake, source = customTemplateWithoutAgentHosting(t, 0, nil)
 	t.Setenv(synthesis.BYOAKSEnvVar, "false")
 	p.credential = nil
-	p.armTemplate["parameters"].(map[string]any)["customProps"] = map[string]any{
-		"type": "object", "defaultValue": customBYOProperties(offlineClusterID),
-	}
+	defs := p.armTemplate["parameters"].(map[string]any)
+	defs["customProps"] = map[string]any{"type": "object", "defaultValue": customBYOProperties(offlineClusterID)}
+	defs["enableAks"] = map[string]any{"type": "bool", "defaultValue": false}
 	source.parameters["customProps"] = map[string]any{"value": map[string]any{"allowProjectManagement": true}}
-	p.armTemplate["variables"] = map[string]any{"baseProps": map[string]any{"allowProjectManagement": true}}
+	p.armTemplate["variables"] = map[string]any{
+		"baseProps": map[string]any{"allowProjectManagement": true},
+		"aksProps":  customBYOProperties(offlineClusterID),
+		"variants": map[string]any{
+			"native": "[reference('runtimeSource', '2023-05-01').properties]",
+			"byo":    customBYOProperties(offlineClusterID),
+		},
+	}
 	p.armTemplate["resources"] = map[string]any{
 		"inactiveBYO": map[string]any{
 			"type": "Microsoft.CognitiveServices/accounts", "name": "aks-cog", "condition": false,
@@ -503,6 +550,22 @@ func TestBYOCustomTemplateGateAndNonAKSIsolation(t *testing.T) {
 		"overriddenDefault": map[string]any{
 			"type": "Microsoft.CognitiveServices/accounts", "name": "cog-override",
 			"properties": "[union(parameters('customProps'), reference('runtimeSource').properties)]",
+		},
+		"excludedIfBranch": map[string]any{
+			"type": "Microsoft.CognitiveServices/accounts", "name": "cog-if-false",
+			"properties": "[union(if(parameters('enableAks'), createObject('agentHostingConfigurations', " +
+				"createArray(createObject('hostingType', 'ManagedCluster', 'clusterResourceId', '" + offlineClusterID +
+				"'))), variables('baseProps')), reference('runtimeSource', '2023-05-01').properties)]",
+		},
+		"selectedNativeVariant": map[string]any{
+			"type": "Microsoft.CognitiveServices/accounts", "name": "cog-variant-var",
+			"properties": "[variables('variants').native]",
+		},
+		"inlinedNativeVariant": map[string]any{
+			"type": "Microsoft.CognitiveServices/accounts", "name": "cog-variant-inline",
+			"properties": "[createObject('native', reference('runtimeSource', '2023-05-01').properties, " +
+				"'byo', createObject('agentHostingConfigurations', createArray(createObject('hostingType', " +
+				"'ManagedCluster', 'clusterResourceId', '" + offlineClusterID + "')))).native]",
 		},
 		"zeroCopy": map[string]any{
 			"type": "Microsoft.CognitiveServices/accounts", "name": "cog-zero-copy",

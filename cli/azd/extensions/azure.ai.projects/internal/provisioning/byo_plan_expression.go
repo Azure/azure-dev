@@ -156,19 +156,25 @@ type planScope struct {
 	missing                                                        string
 }
 
+type planRawParameter struct {
+	raw any
+	env *planEnvironment
+}
+
 type planEnvironment struct {
-	template   map[string]any
-	parameters map[string]func() any
-	scope      planScope
-	path       string
-	deployment any
-	resources  map[string]*planResource
-	variables  map[string]any
-	active     map[string]bool
-	copyIndex  int
-	namedCopy  map[string]int
-	function   func(string, []string) any
-	walked     bool
+	template      map[string]any
+	parameters    map[string]func() any
+	rawParameters map[string]planRawParameter
+	scope         planScope
+	path          string
+	deployment    any
+	resources     map[string]*planResource
+	variables     map[string]any
+	active        map[string]bool
+	copyIndex     int
+	namedCopy     map[string]int
+	function      func(string, []string) any
+	walked        bool
 }
 
 func planField(value any, key string) any {

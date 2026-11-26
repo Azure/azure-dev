@@ -96,11 +96,13 @@ func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	res := contracts.StatusResult{}
 	if err != nil {
 		res.Status = contracts.AuthStatusUnauthenticated
+		res.Reason = authStatusReason(err)
 	} else {
 		res.Status = contracts.AuthStatusAuthenticated
 		token, err := a.verifyLoggedIn(ctx, scopes)
 		if err != nil {
 			res.Status = contracts.AuthStatusUnauthenticated
+			res.Reason = authStatusReason(err)
 			log.Printf("error: verifying logged in status: %v", err)
 		} else if token != nil {
 			expiresOn := contracts.RFC3339Time(token.ExpiresOn)
@@ -154,6 +156,16 @@ func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	}
 
 	return nil, nil
+}
+
+func authStatusReason(err error) contracts.AuthStatusReason {
+	if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
+		return contracts.AuthStatusReasonLoginRequired
+	}
+	if errors.Is(err, auth.ErrNoCurrentUser) {
+		return contracts.AuthStatusReasonNotLoggedIn
+	}
+	return contracts.AuthStatusReasonVerificationFailed
 }
 
 // Verifies that the user has credentials stored,

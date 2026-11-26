@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"io"
 	"testing"
 
@@ -13,9 +15,25 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
+
+func TestAuthStatusReasonDistinguishesLoginAndVerificationFailure(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		err  error
+		want contracts.AuthStatusReason
+	}{
+		{fmt.Errorf("read account: %w", auth.ErrNoCurrentUser), contracts.AuthStatusReasonNotLoggedIn},
+		{fmt.Errorf("verify account: %w", &auth.ReLoginRequiredError{}), contracts.AuthStatusReasonLoginRequired},
+		{errors.New("identity endpoint unavailable"), contracts.AuthStatusReasonVerificationFailed},
+	} {
+		require.Equal(t, tt.want, authStatusReason(tt.err))
+	}
+}
 
 func Test_NewAuthStatusAction_Constructor(t *testing.T) {
 	t.Parallel()

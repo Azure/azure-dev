@@ -34,6 +34,15 @@ const (
 	AuthStatusUnauthenticated AuthStatus = "unauthenticated"
 )
 
+// AuthStatusReason explains an unauthenticated result without exposing error details.
+type AuthStatusReason string
+
+const (
+	AuthStatusReasonNotLoggedIn        AuthStatusReason = "not_logged_in"
+	AuthStatusReasonLoginRequired      AuthStatusReason = "login_required"
+	AuthStatusReasonVerificationFailed AuthStatusReason = "verification_failed"
+)
+
 // AccountType represents the type of account signed in.
 type AccountType string
 
@@ -47,9 +56,10 @@ const (
 // StatusResult is the contract for the output of `azd auth status`.
 type StatusResult struct {
 	// The authentication state.
-	// When value is AuthStatusUnauthenticated, the user is not logged in and no other
-	// properties will be set.
 	Status AuthStatus `json:"status"`
+
+	// Reason is set only when the status is unauthenticated.
+	Reason AuthStatusReason `json:"reason,omitempty"`
 
 	// The type of account signed in.
 	Type AccountType `json:"type,omitempty"`

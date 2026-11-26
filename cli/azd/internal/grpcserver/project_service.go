@@ -22,7 +22,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -199,11 +201,18 @@ func (s *projectService) serviceConfig(cfg config.Config, serviceName string) (c
 func (s *projectService) Get(ctx context.Context, req *azdext.EmptyRequest) (*azdext.GetProjectResponse, error) {
 	projectConfig, err := s.lazyProjectConfig.GetValue()
 	if err != nil {
+		reason := "read_failed"
+		if errors.Is(err, azdcontext.ErrNoProject) {
+			reason = "not_found"
+		}
+		// Keep the legacy status and message for clients that depend on them.
+		_ = grpc.SetTrailer(ctx, metadata.Pairs("azd-project-get-error", reason))
 		return nil, err
 	}
 
 	var project *azdext.ProjectConfig
 	if err := mapper.WithResolver(s.envResolver()).Convert(projectConfig, &project); err != nil {
+		_ = grpc.SetTrailer(ctx, metadata.Pairs("azd-project-get-error", "read_failed"))
 		return nil, fmt.Errorf("converting project config to proto: %w", err)
 	}
 

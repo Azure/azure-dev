@@ -10579,7 +10579,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--auth-type'],
-							description: 'The authentication type used between the pipeline provider and Azure for deployment. Valid values: federated, client-credentials. New pipelines default to federated (OIDC) credentials. Reruns reuse the method saved in the environment; Azure DevOps asks once if none is saved.',
+							description: 'The authentication type used between the pipeline provider and Azure for deployment. Valid values: federated, client-credentials. Defaults to federated (OIDC) for new pipelines. Reruns reuse the saved method.',
 							args: [
 								{
 									name: 'auth-type',

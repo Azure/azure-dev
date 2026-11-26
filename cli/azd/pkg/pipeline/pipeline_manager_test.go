@@ -1579,6 +1579,12 @@ func TestPipelineConfig_AzdoClientCredentials(t *testing.T) {
 					secrets = append(secrets, authConfig.ClientSecret)
 					return nil
 				},
+				// The reminder prints after the remaining setup, so it must not appear before this step.
+				configurePipelineFn: func(_ context.Context, repo *gitRepositoryDetails,
+					_ *configurePipelineOptions) (CiPipeline, error) {
+					assert.NotContains(t, strings.Join(mc.Console.Output(), "\n"), reminder)
+					return &workflow{repoDetails: repo}, nil
+				},
 			}
 
 			runs := 1

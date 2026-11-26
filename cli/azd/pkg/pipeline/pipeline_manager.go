@@ -343,6 +343,8 @@ func (pm *PipelineManager) Configure(
 
 	// Service Principal or MSI are both handled by authConfiguration as a top layer abstraction.
 	var authConfig *authConfiguration
+	// authReminder tells the user how to update an existing pipeline definition after switching methods.
+	var authReminder string
 
 	// *************************** Create or update service principal ***************************
 	if !skipAuth && usingAppRegistration {
@@ -672,12 +674,13 @@ func (pm *PipelineManager) Configure(
 
 		// azd doesn't rewrite an existing pipeline definition. GitHub workflows need a different Azure login step.
 		// Azure DevOps signs in through the service connection, but keepAzSessionActive only works with federation.
+		// The reminder prints after the remaining setup steps so it isn't lost between spinner lines.
 		if previousAuthType != "" && previousAuthType != authType && pm.configOptions.pipelineFileExisted {
 			switch {
 			case pm.ciProviderType == ciProviderGitHubActions:
-				pm.console.Message(ctx, gitHubWorkflowAuthReminder(authType, usesTerraform(infra.Options)))
+				authReminder = gitHubWorkflowAuthReminder(authType, usesTerraform(infra.Options))
 			case pm.ciProviderType == ciProviderAzureDevOps && authType == AuthTypeClientCredentials:
-				pm.console.Message(ctx, output.WithWarningFormat(azdoClientCredentialsReminder))
+				authReminder = output.WithWarningFormat(azdoClientCredentialsReminder)
 			}
 		}
 	}
@@ -781,6 +784,12 @@ func (pm *PipelineManager) Configure(
 	ciPipeline, err := pm.ciProvider.configurePipeline(ctx, gitRepoInfo, pm.configOptions)
 	if err != nil {
 		return result, err
+	}
+
+	if authReminder != "" {
+		pm.console.Message(ctx, "")
+		pm.console.Message(ctx, authReminder)
+		pm.console.Message(ctx, "")
 	}
 
 	// The CI pipeline should be set-up and ready at this point.

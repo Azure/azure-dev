@@ -50,8 +50,16 @@ type authStatusAction struct {
 	formatter   output.Formatter
 	writer      io.Writer
 	console     input.Console
-	authManager *auth.Manager
+	authManager authStatusManager
 	flags       *authStatusFlags
+}
+
+type authStatusManager interface {
+	Mode() (auth.AuthSource, error)
+	LoginScopes() []string
+	LogInDetails(context.Context) (*auth.LogInDetails, error)
+	CredentialForCurrentUser(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error)
+	SetBuiltInAuthMode() error
 }
 
 func newAuthStatusAction(

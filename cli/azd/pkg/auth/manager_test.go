@@ -571,9 +571,80 @@ func TestLogInDetails(t *testing.T) {
 		}
 
 		_, err := m.LogInDetails(t.Context())
-		require.Error(t, err)
-		require.ErrorIs(t, err, ErrNoCurrentUser)
+		require.ErrorContains(t, err, "external auth token did not contain a usable account identifier")
+		require.NotErrorIs(t, err, ErrNoCurrentUser)
 	})
+}
+
+type servicePrincipalReadErrorCache struct {
+	Cache
+	err error
+}
+
+func (c servicePrincipalReadErrorCache) Read(string) ([]byte, error) {
+	return nil, c.err
+}
+
+func TestCredentialForCurrentUser_ServicePrincipalCacheFailures(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name        string
+		data        string
+		readErr     error
+		missing     bool
+		wantMessage string
+	}{
+		{name: "missing", missing: true, wantMessage: "loading secret"},
+		{name: "unreadable", readErr: os.ErrPermission, wantMessage: "loading secret"},
+		{name: "corrupt JSON", data: "{", wantMessage: "loading secret"},
+		{name: "empty credential", data: "{}", wantMessage: "cached service principal credentials are invalid"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			memory := &memoryCache{cache: make(map[string][]byte)}
+			var cache Cache = memory
+			if tt.readErr != nil {
+				cache = servicePrincipalReadErrorCache{Cache: memory, err: tt.readErr}
+			} else if !tt.missing {
+				require.NoError(t, memory.Set(persistedSecretLookupKey("tenant", "client"), []byte(tt.data)))
+			}
+			m := &Manager{
+				configManager:     newMemoryConfigManager(),
+				userConfigManager: newMemoryUserConfigManager(),
+				credentialCache:   cache,
+				cloud:             cloud.AzurePublic(),
+			}
+			require.NoError(t, m.saveUserProperties(&userProperties{TenantID: new("tenant"), ClientID: new("client")}))
+			_, err := m.CredentialForCurrentUser(t.Context(), nil)
+			require.ErrorContains(t, err, tt.wantMessage)
+			if tt.missing {
+				require.ErrorIs(t, err, ErrNoCurrentUser)
+				return
+			}
+			require.NotErrorIs(t, err, ErrNoCurrentUser)
+			if tt.readErr != nil {
+				require.ErrorIs(t, err, tt.readErr)
+			}
+			if tt.data == "{" {
+				require.ErrorAs(t, err, new(*json.SyntaxError))
+			}
+		})
+	}
+}
+
+func TestCredentialForCurrentUser_InvalidStoredCertificate(t *testing.T) {
+	t.Parallel()
+	m := &Manager{
+		configManager:     newMemoryConfigManager(),
+		userConfigManager: newMemoryUserConfigManager(),
+		credentialCache:   &memoryCache{cache: make(map[string][]byte)},
+		cloud:             cloud.AzurePublic(),
+	}
+	require.NoError(t, m.saveUserProperties(&userProperties{TenantID: new("tenant"), ClientID: new("client")}))
+	require.NoError(t, m.saveSecret("tenant", "client", &persistedSecret{ClientCertificate: new("not base64!")}))
+	_, err := m.CredentialForCurrentUser(t.Context(), nil)
+	require.ErrorContains(t, err, "decoding certificate")
+	require.NotErrorIs(t, err, ErrNoCurrentUser)
 }
 
 func newMemoryUserConfigManager() *memoryUserConfigManager {

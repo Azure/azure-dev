@@ -41,6 +41,19 @@ func remoteCredentialError(err string, w error) error {
 	return fmt.Errorf("RemoteCredential: %w", fmt.Errorf("%s: %w", err, w))
 }
 
+type remoteTokenError struct {
+	code    string
+	message string
+}
+
+func (e *remoteTokenError) Error() string {
+	return fmt.Sprintf("code: %s message: %s", e.code, e.message)
+}
+
+func (e *remoteTokenError) Is(target error) bool {
+	return target == ErrNoCurrentUser && e.code == "NotSignedInError"
+}
+
 // GetToken implements azcore.TokenCredential.
 func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
 	tenantID := rc.tenantID
@@ -85,8 +98,8 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 		ExpiresOn *time.Time `json:"expiresOn,omitempty"`
 
 		// These fields are set when the status "error"
-		Code    *string `json:"code,omitempty"`
-		Message *string `json:"message,omitempty"`
+		Code    string `json:"code,omitempty"`
+		Message string `json:"message,omitempty"`
 	}
 
 	if err := json.NewDecoder(res.Body).Decode(&tokenResp); err != nil {
@@ -95,14 +108,17 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 
 	switch tokenResp.Status {
 	case "success":
+		if tokenResp.Token == nil || *tokenResp.Token == "" || tokenResp.ExpiresOn == nil {
+			return azcore.AccessToken{}, errors.New("RemoteCredential: token response missing token or expiration")
+		}
 		return azcore.AccessToken{
 			Token:     *tokenResp.Token,
 			ExpiresOn: *tokenResp.ExpiresOn,
 		}, nil
 	case "error":
-		return azcore.AccessToken{}, remoteCredentialError("failed to acquire token", fmt.Errorf("code: %s message: %s",
-			*tokenResp.Code,
-			*tokenResp.Message))
+		return azcore.AccessToken{}, remoteCredentialError("failed to acquire token", &remoteTokenError{
+			code: tokenResp.Code, message: tokenResp.Message,
+		})
 	default:
 		return azcore.AccessToken{}, remoteCredentialError("unexpected status", errors.New(tokenResp.Status))
 	}

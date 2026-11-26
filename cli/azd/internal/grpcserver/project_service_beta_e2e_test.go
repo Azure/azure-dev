@@ -39,6 +39,11 @@ func newRealProjectServiceServer(t *testing.T) (azdext.ProjectServiceServer, *pr
 func newProjectE2EServer(t *testing.T, options ...ServerOption) (*ServerInfo, *projectService) {
 	t.Helper()
 	projectServer, ps := newRealProjectServiceServer(t)
+	return startProjectE2EServer(t, projectServer, options...), ps
+}
+
+func startProjectE2EServer(t *testing.T, projectServer azdext.ProjectServiceServer, options ...ServerOption) *ServerInfo {
+	t.Helper()
 	server := NewServer(
 		projectServer,
 		azdext.UnimplementedEnvironmentServiceServer{},
@@ -64,7 +69,7 @@ func newProjectE2EServer(t *testing.T, options ...ServerOption) (*ServerInfo, *p
 	serverInfo, err := server.Start()
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, server.Stop()) })
-	return serverInfo, ps
+	return serverInfo
 }
 
 func dialProjectSDK(t *testing.T, serverInfo *ServerInfo) (*azdext.AzdClient, context.Context) {
@@ -76,6 +81,51 @@ func dialProjectSDK(t *testing.T, serverInfo *ServerInfo) (*azdext.AzdClient, co
 	require.NoError(t, err)
 	t.Cleanup(client.Close)
 	return client, azdext.WithAccessToken(t.Context(), accessToken)
+}
+
+func TestServerE2E_ProjectGetErrorTrailer(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name     string
+		manifest string
+		reason   string
+		message  string
+	}{
+		{name: "missing project", reason: "not_found", message: azdcontext.ErrNoProject.Error()},
+		{name: "invalid project", manifest: "name: [", reason: "read_failed", message: "parsing project file"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			if tt.manifest != "" {
+				require.NoError(t, os.WriteFile(azdcontext.NewAzdContextWithDirectory(dir).ProjectPath(),
+					[]byte(tt.manifest), 0600))
+			}
+			projectContext := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
+				return azdcontext.NewAzdContextFromWd(dir)
+			})
+			projectConfig := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+				projectCtx, err := projectContext.GetValue()
+				if err != nil {
+					return nil, err
+				}
+				return project.Load(t.Context(), projectCtx.ProjectPath())
+			})
+			server := NewProjectService(projectContext, nil, nil, projectConfig, nil, nil)
+			client, ctx := dialProjectSDK(t, startProjectE2EServer(t, server))
+
+			var stableTrailers, betaTrailers metadata.MD
+			_, stableErr := client.Project().Get(ctx, &azdext.EmptyRequest{}, grpc.Trailer(&stableTrailers))
+			_, betaErr := client.ProjectBeta().Get(ctx, &v1beta.EmptyRequest{}, grpc.Trailer(&betaTrailers))
+			for _, err := range []error{stableErr, betaErr} {
+				require.Equal(t, codes.Unknown, status.Code(err))
+				require.Contains(t, status.Convert(err).Message(), tt.message)
+			}
+			require.Equal(t, status.Convert(stableErr).Message(), status.Convert(betaErr).Message())
+			require.Equal(t, []string{tt.reason}, stableTrailers.Get("azd-project-get-error"))
+			require.Equal(t, []string{tt.reason}, betaTrailers.Get("azd-project-get-error"))
+		})
+	}
 }
 
 func TestServerE2E_BetaProjectServiceAddServiceSucceeds(t *testing.T) {

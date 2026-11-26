@@ -389,8 +389,11 @@ func (m *Manager) CredentialForCurrentUser(
 		}
 
 		ps, err := m.loadSecret(*currentUser.TenantID, *currentUser.ClientID)
-		if err != nil {
+		if errors.Is(err, errCacheKeyNotFound) {
 			return nil, fmt.Errorf("loading secret: %w: %w", err, ErrNoCurrentUser)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("loading secret: %w", err)
 		}
 
 		if ps.ClientSecret != nil {
@@ -401,6 +404,7 @@ func (m *Manager) CredentialForCurrentUser(
 			return m.newCredentialFromFederatedTokenProvider(
 				tenantID, *currentUser.ClientID, *ps.FederatedAuth.TokenProvider, ps.FederatedAuth.ServiceConnectionID)
 		}
+		return nil, errors.New("cached service principal credentials are invalid")
 	}
 
 	return nil, ErrNoCurrentUser
@@ -428,7 +432,7 @@ func (m *Manager) azCliCredentialForTenant(tenantID string) (azcore.TokenCredent
 		TenantID: tenantID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create credential: %w: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("failed to create credential: %w", err)
 	}
 
 	cred := newCachingCredential(azCred)
@@ -571,7 +575,7 @@ func (m *Manager) newCredentialFromClientSecret(
 	}
 	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, options)
 	if err != nil {
-		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("creating credential: %w", err)
 	}
 
 	return cred, nil
@@ -584,12 +588,12 @@ func (m *Manager) newCredentialFromClientCertificate(
 ) (azcore.TokenCredential, error) {
 	certData, err := base64.StdEncoding.DecodeString(clientCertificate)
 	if err != nil {
-		return nil, fmt.Errorf("decoding certificate: %w: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("decoding certificate: %w", err)
 	}
 
 	certs, key, err := azidentity.ParseCertificates(certData, nil)
 	if err != nil {
-		return nil, fmt.Errorf("parsing certificate: %w: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("parsing certificate: %w", err)
 	}
 
 	options := &azidentity.ClientCertificateCredentialOptions{
@@ -599,7 +603,7 @@ func (m *Manager) newCredentialFromClientCertificate(
 		tenantID, clientID, certs, key, options)
 
 	if err != nil {
-		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("creating credential: %w", err)
 	}
 
 	return cred, nil
@@ -664,7 +668,7 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 			},
 		)
 		if err != nil {
-			return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
+			return nil, fmt.Errorf("creating credential: %w", err)
 		}
 
 		return cred, nil
@@ -1497,7 +1501,7 @@ func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 
 		accountName := strings.TrimSpace(claims.DisplayUsername())
 		if accountName == "" {
-			return nil, fmt.Errorf("external auth token did not contain a usable account identifier: %w", ErrNoCurrentUser)
+			return nil, errors.New("external auth token did not contain a usable account identifier")
 		}
 
 		// TODO: External auth could theoretically serve service principal tokens, but we always

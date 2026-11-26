@@ -1029,7 +1029,7 @@
       "description": "Extension for Azure Content Understanding. (Preview)",
       "versions": [
         {
-          "version": "0.1.2-preview.nightly.7113351",
+          "version": "0.1.2-preview.nightly.7117676",
           "requiredAzdVersion": ">=1.37.0",
           "capabilities": [
             "custom-commands",
@@ -1041,7 +1041,7 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "b6f60d2a6291c6c38711fda2eded3b5495786f121711bbd9c2a0c44640fddf26"
+                "value": "0d4d7b2f63e68097fdf87ddd13a78393d740cd1d20a7565a9e896986e0a1ddb0"
               },
               "entryPoint": "azure-ai-content-understanding-darwin-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-content-understanding/nightly/azure-ai-content-understanding-darwin-amd64.zip"
@@ -1049,7 +1049,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "dead3ca1a15815ce3480108433696344bc84cb6909277702516412cb62b938dd"
+                "value": "2c673c68ced8cf978316a81097f0ecb5fa8db556d628ba08cafeab853bf24072"
               },
               "entryPoint": "azure-ai-content-understanding-darwin-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-content-understanding/nightly/azure-ai-content-understanding-darwin-arm64.zip"
@@ -1057,7 +1057,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "8d114f3f45c9681857148fe5ddb6e0bc19ea5eb24f407cec5442cebf87bb827e"
+                "value": "ea9821947c15a65028341dc91cb7501ab4ea6390ee4a2e800b42a4bd6d01f2c5"
               },
               "entryPoint": "azure-ai-content-understanding-linux-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-content-understanding/nightly/azure-ai-content-understanding-linux-amd64.tar.gz"
@@ -1065,7 +1065,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "429aad1d807e362d86cf508184a71a01fac0b9b0ad7be083a5c22eb3f44cb264"
+                "value": "1d1665b6c66f210085b748b1c54d5eca0c5c3db798486bbebed68927bdd6271c"
               },
               "entryPoint": "azure-ai-content-understanding-linux-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-content-understanding/nightly/azure-ai-content-understanding-linux-arm64.tar.gz"
@@ -1073,7 +1073,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "9808904a11c290b2bfd97ba138d8aa8f6886bbb17289351da6546babf24f1c9a"
+                "value": "3475372fc863bde9c4add435f6bcd03978d8063be34b8364d358cb6b0c06a3b9"
               },
               "entryPoint": "azure-ai-content-understanding-windows-amd64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-content-understanding/nightly/azure-ai-content-understanding-windows-amd64.zip"
@@ -1081,7 +1081,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "f84bfec1fc6f52ea22d2a29fff6f781b394c6fb676a1fdbeb2f5b7aab32fb0fb"
+                "value": "81f4f8338e06d72a0ff9ff382af2bdc479c7393616c098b60b4f89a3abbed5cb"
               },
               "entryPoint": "azure-ai-content-understanding-windows-arm64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-content-understanding/nightly/azure-ai-content-understanding-windows-arm64.zip"

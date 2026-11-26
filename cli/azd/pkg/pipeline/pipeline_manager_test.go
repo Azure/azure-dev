@@ -1502,33 +1502,53 @@ func TestPipelineConfig_FailedMsiSetupClearsSavedMethod(t *testing.T) {
 }
 
 // Azure DevOps Configure runs use mock providers so the tests don't depend on the Azure DevOps SDK.
-func TestPipelineConfig_AzdoClientCredentials(t *testing.T) {
+func TestPipelineConfig_AzdoAuthSwitch(t *testing.T) {
 	t.Setenv("AZD_GH_TOOL_PATH", "gh")
-	const reminder = "Remove `keepAzSessionActive: true`"
-	const authPrompt = "Select the authentication method for this Azure DevOps pipeline:"
+	const (
+		removeReminder = "Remove `keepAzSessionActive: true`"
+		addReminder    = "Add `keepAzSessionActive: true` back"
+		authPrompt     = "Select the authentication method for this Azure DevOps pipeline:"
+	)
 	for _, tc := range []struct {
 		name             string
 		flag             string
 		env              map[string]string
 		existingPipeline bool
 		wantPrompts      int
-		wantReminder     bool
+		wantAuthType     PipelineAuthType
+		// wantReminders holds the reminder expected on each run, or "" for none.
+		wantReminders []string
 	}{
 		{
-			// Two runs: the legacy prompt picks client credentials, then the unflagged rerun reuses it.
-			name: "legacy prompt then unflagged rerun", existingPipeline: true, wantPrompts: 1,
+			// The legacy prompt picks client credentials, then the unflagged rerun reuses it without a reminder.
+			name:             "legacy prompt then unflagged rerun",
+			existingPipeline: true,
+			wantPrompts:      1,
+			wantAuthType:     AuthTypeClientCredentials,
+			wantReminders:    []string{removeReminder, ""},
 		},
 		{
 			name:             "switch from federated with existing pipeline",
 			flag:             string(AuthTypeClientCredentials),
 			env:              map[string]string{AzurePipelineAuthTypeEnvVarName: string(AuthTypeFederated)},
 			existingPipeline: true,
-			wantReminder:     true,
+			wantAuthType:     AuthTypeClientCredentials,
+			wantReminders:    []string{removeReminder},
 		},
 		{
-			name: "switch from federated with new pipeline",
-			flag: string(AuthTypeClientCredentials),
-			env:  map[string]string{AzurePipelineAuthTypeEnvVarName: string(AuthTypeFederated)},
+			name:          "switch from federated with new pipeline",
+			flag:          string(AuthTypeClientCredentials),
+			env:           map[string]string{AzurePipelineAuthTypeEnvVarName: string(AuthTypeFederated)},
+			wantAuthType:  AuthTypeClientCredentials,
+			wantReminders: []string{""},
+		},
+		{
+			name:             "switch from client credentials with existing pipeline",
+			flag:             string(AuthTypeFederated),
+			env:              map[string]string{AzurePipelineAuthTypeEnvVarName: string(AuthTypeClientCredentials)},
+			existingPipeline: true,
+			wantAuthType:     AuthTypeFederated,
+			wantReminders:    []string{addReminder},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1567,6 +1587,8 @@ func TestPipelineConfig_AzdoClientCredentials(t *testing.T) {
 			})
 			require.NoError(t, err)
 			var secrets []string
+			runOutput := func(start int) string { return strings.Join(mc.Console.Output()[start:], "\n") }
+			start := 0
 			pm.ciProviderType = ciProviderAzureDevOps
 			pm.scmProvider = &mockScmProvider{}
 			pm.ciProvider = &mockCiProvider{
@@ -1582,26 +1604,30 @@ func TestPipelineConfig_AzdoClientCredentials(t *testing.T) {
 				// The reminder prints after the remaining setup, so it must not appear before this step.
 				configurePipelineFn: func(_ context.Context, repo *gitRepositoryDetails,
 					_ *configurePipelineOptions) (CiPipeline, error) {
-					assert.NotContains(t, strings.Join(mc.Console.Output(), "\n"), reminder)
+					out := runOutput(start)
+					assert.NotContains(t, out, removeReminder)
+					assert.NotContains(t, out, addReminder)
 					return &workflow{repoDetails: repo}, nil
 				},
 			}
 
-			runs := 1
-			if tc.wantPrompts > 0 {
-				runs = 2
-			}
-			for range runs {
+			for i, wantReminder := range tc.wantReminders {
+				start = len(mc.Console.Output())
 				_, err = pm.Configure(t.Context(), "test", &project.Infra{})
 				require.NoError(t, err)
+				out := runOutput(start)
+				for _, reminder := range []string{removeReminder, addReminder} {
+					assert.Equal(t, reminder == wantReminder, strings.Contains(out, reminder), "run %d: %s", i+1, reminder)
+				}
 			}
 			assert.Equal(t, tc.wantPrompts, prompts)
-			require.Len(t, secrets, runs)
-			for _, secret := range secrets {
-				assert.NotEmpty(t, secret)
+			require.Len(t, secrets, len(tc.wantReminders))
+			if tc.wantAuthType == AuthTypeClientCredentials {
+				for _, secret := range secrets {
+					assert.NotEmpty(t, secret)
+				}
 			}
-			assert.Equal(t, string(AuthTypeClientCredentials), env.Getenv(AzurePipelineAuthTypeEnvVarName))
-			assert.Equal(t, tc.wantReminder, strings.Contains(strings.Join(mc.Console.Output(), "\n"), reminder))
+			assert.Equal(t, string(tc.wantAuthType), env.Getenv(AzurePipelineAuthTypeEnvVarName))
 		})
 	}
 }

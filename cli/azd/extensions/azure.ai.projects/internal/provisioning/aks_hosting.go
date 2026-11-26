@@ -373,14 +373,9 @@ func byoHostingParameter(source *templateSource) (byoHostingParameters, error) {
 
 func (p *FoundryProvisioningProvider) validateBYOHostingTemplate(source *templateSource) error {
 	if source.mode == templateModeEmbedded || p.brownfieldEndpoint != "" ||
-		p.synthResult == nil || p.synthResult.Hosting == nil {
+		p.synthResult == nil || p.synthResult.Hosting == nil ||
+		templateDeclaresParameter(source, "agentHosting") {
 		return nil
-	}
-	if templateDeclaresParameter(source, "agentHosting") {
-		hosting, err := byoHostingParameter(source)
-		if err != nil || !hosting.Enabled || p.templateSupportsBYOHosting(source) {
-			return err
-		}
 	}
 	label := "on-disk Bicep template"
 	if strings.TrimSpace(source.sourcePath) != "" {
@@ -388,7 +383,7 @@ func (p *FoundryProvisioningProvider) validateBYOHostingTemplate(source *templat
 	}
 	return exterrors.Validation(
 		exterrors.CodeInvalidServiceConfig,
-		fmt.Sprintf("%s does not support the agentHosting configuration in azure.yaml", label),
+		fmt.Sprintf("%s does not declare agentHosting for the AKS hosting configuration in azure.yaml", label),
 		"regenerate or update the exported Foundry Bicep templates with AKS hosting support, "+
 			"preserving any custom edits",
 	)

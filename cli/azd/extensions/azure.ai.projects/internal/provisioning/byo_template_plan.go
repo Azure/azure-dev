@@ -28,7 +28,6 @@ type templatePlanResolver struct {
 	ctx                 context.Context
 	provider            *FoundryProvisioningProvider
 	evidence            *onboarding.AuthorizationEvidence
-	offline             bool
 	scopes              map[string]planScope
 	functions           map[string]any
 	references          map[*planResource]bool
@@ -59,18 +58,7 @@ func (r *templatePlanResolver) scope(subscription, group string) planScope {
 	scope := planScope{subscriptionID: subscription, group: group}
 	if subscription == "" || strings.ContainsAny(subscription+group, "/\\?#%@:\x00 \t\r\n") {
 		scope.missing = "template deployment subscription/resource-group scope is not resolved"
-		if !r.offline {
-			r.err = errors.Join(r.err,
-				fmt.Errorf("resource-plan: actual template subscription/resource-group scope is invalid"))
-		}
-		return scope
-	}
-	if r.offline {
-		scope.subscriptionARMID = "/subscriptions/" + subscription
-		if group != "" {
-			scope.groupARMID = scope.subscriptionARMID + "/resourceGroups/" + group
-		}
-		r.scopes[key] = scope
+		r.err = errors.Join(r.err, fmt.Errorf("resource-plan: actual template subscription/resource-group scope is invalid"))
 		return scope
 	}
 	subKey := strings.ToLower(subscription + "/")
@@ -131,9 +119,6 @@ func (r *templatePlanResolver) scope(subscription, group string) planScope {
 }
 
 func (r *templatePlanResolver) function(name string, args []string) any {
-	if r.offline {
-		return planUnknown{"local Bicep function evaluation skipped"}
-	}
 	raw, err := json.Marshal(args)
 	if err != nil {
 		r.err = errors.Join(r.err, err)
@@ -534,93 +519,6 @@ func (r *templatePlanResolver) recordOwningSubscription(kind, subscription strin
 	}
 }
 
-func byoPlanParameters(source *templateSource) (map[string]func() any, error) {
-	if len(source.parameters) == 0 {
-		return nil, nil
-	}
-	encoded, err := json.Marshal(source.parameters)
-	if err != nil {
-		return nil, fmt.Errorf("encode actual merged BYO plan parameters: %w", err)
-	}
-	var merged map[string]any
-	if err := json.Unmarshal(encoded, &merged); err != nil {
-		return nil, fmt.Errorf("decode actual merged BYO plan parameters: %w", err)
-	}
-	parameters := make(map[string]func() any, len(merged))
-	for key, envelope := range merged {
-		parameters[strings.ToLower(key)] = func() any {
-			if value, ok := envelope.(map[string]any); ok {
-				if literal, present := value["value"]; present {
-					return literal
-				}
-			}
-			return planUnknown{"parameter " + key + " requires a runtime parameter reference"}
-		}
-	}
-	return parameters, nil
-}
-
-func (p *FoundryProvisioningProvider) templateSupportsBYOHosting(source *templateSource) bool {
-	parameters, err := byoPlanParameters(source)
-	if err != nil {
-		return true
-	}
-	resolver := &templatePlanResolver{
-		offline: true, scopes: map[string]planScope{}, functions: map[string]any{},
-		references: map[*planResource]bool{}, owningSubscriptions: map[string]bool{},
-	}
-	scope := resolver.scope(p.subID, "")
-	env := resolver.environment(source.armTemplate, parameters, scope, "compiled template", p.deploymentName())
-	resolver.walk(env, "", 0)
-	if len(resolver.unresolved) > 0 {
-		return true
-	}
-	var plan onboarding.Plan
-	resolver.bindResources(&plan, env)
-	if resolver.account != nil {
-		return true
-	}
-	for _, node := range resolver.nodes {
-		if node.inactive || !strings.EqualFold(node.kind, "Microsoft.CognitiveServices/accounts") {
-			continue
-		}
-		props := node.env.value(node.raw["properties"])
-		if _, unknown := props.(planUnknown); unknown {
-			return true
-		}
-		if obj, ok := props.(map[string]any); ok {
-			for name, val := range obj {
-				if strings.EqualFold(name, "copy") && hasPropertyCopyHosting(val) {
-					return true
-				}
-				if !strings.EqualFold(name, "agentHostingConfigurations") || val == nil {
-					continue
-				}
-				if _, unknown := val.(planUnknown); unknown {
-					return true
-				}
-				if items, ok := val.([]any); ok && len(items) > 0 {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-func hasPropertyCopyHosting(copyVal any) bool {
-	copies, ok := copyVal.([]any)
-	return ok && slices.ContainsFunc(copies, func(item any) bool {
-		entry, ok := item.(map[string]any)
-		if !ok {
-			return false
-		}
-		name, _ := planField(entry, "name").(string)
-		count, isNum := planField(entry, "count").(float64)
-		return strings.EqualFold(name, "agentHostingConfigurations") && (!isNum || count > 0)
-	})
-}
-
 func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	ctx context.Context, source *templateSource, evidence *onboarding.AuthorizationEvidence,
 ) (onboarding.Plan, error) {
@@ -631,9 +529,24 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 		ctx: ctx, provider: p, evidence: evidence, scopes: map[string]planScope{}, functions: map[string]any{},
 		references: map[*planResource]bool{}, owningSubscriptions: map[string]bool{},
 	}
-	parameters, err := byoPlanParameters(source)
+	encoded, err := json.Marshal(source.parameters)
 	if err != nil {
-		return onboarding.Plan{}, err
+		return onboarding.Plan{}, fmt.Errorf("encode actual merged BYO plan parameters: %w", err)
+	}
+	var merged map[string]any
+	if err := json.Unmarshal(encoded, &merged); err != nil {
+		return onboarding.Plan{}, fmt.Errorf("decode actual merged BYO plan parameters: %w", err)
+	}
+	parameters := map[string]func() any{}
+	for key, envelope := range merged {
+		parameters[strings.ToLower(key)] = func() any {
+			if value, ok := envelope.(map[string]any); ok {
+				if literal, present := value["value"]; present {
+					return literal
+				}
+			}
+			return planUnknown{"parameter " + key + " requires a runtime parameter reference"}
+		}
 	}
 	scope := resolver.scope(p.subID, "")
 	env := resolver.environment(source.armTemplate, parameters, scope, "compiled template", p.deploymentName())

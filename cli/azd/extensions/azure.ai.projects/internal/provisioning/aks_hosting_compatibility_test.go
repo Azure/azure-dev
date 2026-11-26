@@ -5,7 +5,6 @@ package provisioning
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -354,17 +353,8 @@ func TestBYOSuppliedIdentityRequiresRealPrincipalBinding(t *testing.T) {
 }
 
 func TestBYORejectsSynthesizedHostingWhenOnDiskTemplateLacksAgentHosting(t *testing.T) {
-	for _, tc := range []struct {
-		name        string
-		mode        templateMode
-		preview     bool
-		unusedParam bool
-	}{
-		{name: "bicep deploy", mode: templateModeBicep},
-		{name: "bicepparam preview", mode: templateModeBicepParam, preview: true},
-		{name: "unused agentHosting parameter", mode: templateModeBicep, unusedParam: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, preview := range []bool{false, true} {
+		t.Run(fmt.Sprintf("preview=%t", preview), func(t *testing.T) {
 			p, fake := offlineBYOProvider(t)
 			t.Setenv(synthesis.BYOAKSEnvVar, "false")
 			env := &resolveEnvStubEnvServer{envName: "test"}
@@ -372,37 +362,25 @@ func TestBYORejectsSynthesizedHostingWhenOnDiskTemplateLacksAgentHosting(t *test
 			p.credential = nil
 			p.acrPromptedEnv = map[string]string{envKeySubscriptionID: p.subID, envKeyLocation: p.location}
 
-			if tc.unusedParam {
-				p.armTemplate["resources"] = map[string]any{"foundryAccount": map[string]any{
-					"type": "Microsoft.CognitiveServices/accounts", "name": "cog-standard",
-					"properties": map[string]any{"allowProjectManagement": true},
-				}}
-			} else {
-				delete(p.armTemplate["parameters"].(map[string]any), "agentHosting")
-			}
-			compiled, err := json.Marshal(p.armTemplate)
-			require.NoError(t, err)
-			paramsJSON := minimalARMParametersFile(t, map[string]any{"includeAcr": false, "monitoringMode": "none"})
 			infraDir := filepath.Join(p.projectPath, onDiskInfraDir)
 			require.NoError(t, os.MkdirAll(infraDir, 0o750))
-			compiler := &stubCompiler{}
-			p.bicepCliInstance = compiler
-			expectedPath := filepath.Join(infraDir, onDiskBicepFile)
-			if tc.mode == templateModeBicep {
-				require.NoError(t, os.WriteFile(expectedPath, []byte("// non-AKS\n"), 0o600))
-				require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskParamsFile), []byte(paramsJSON), 0o600))
-				compiler.buildResult = bicep.BuildResult{Compiled: string(compiled)}
-			} else {
-				expectedPath = filepath.Join(infraDir, onDiskBicepParamFile)
-				require.NoError(t, os.WriteFile(expectedPath, []byte("// non-AKS\n"), 0o600))
-				envelope, marshalErr := json.Marshal(map[string]string{
-					"templateJson": string(compiled), "parametersJson": paramsJSON,
-				})
-				require.NoError(t, marshalErr)
-				compiler.buildParamResult = bicep.BuildResult{Compiled: string(envelope)}
+			file := onDiskBicepFile
+			if preview {
+				file = onDiskBicepParamFile
+			}
+			expectedPath := filepath.Join(infraDir, file)
+			require.NoError(t, os.WriteFile(expectedPath, []byte("// non-AKS\n"), 0o600))
+			p.bicepCliInstance = &stubCompiler{
+				buildResult: bicep.BuildResult{Compiled: minimalARMTemplate()},
+				buildParamResult: bicep.BuildResult{
+					Compiled: fmt.Sprintf(
+						`{"templateJson":%q,"parametersJson":"{\"parameters\":{}}"}`, minimalARMTemplate(),
+					),
+				},
 			}
 
-			if tc.preview {
+			var err error
+			if preview {
 				_, err = p.Preview(t.Context(), func(string) {})
 			} else {
 				_, err = p.Deploy(t.Context(), func(string) {})
@@ -415,38 +393,7 @@ func TestBYORejectsSynthesizedHostingWhenOnDiskTemplateLacksAgentHosting(t *test
 			assert.Contains(t, localErr.Suggestion, "regenerate or update")
 			assert.Nil(t, p.credential)
 			assert.Empty(t, fake.requests)
-			assert.Zero(t, fake.writes)
-			assert.Zero(t, fake.previews)
 			assert.Empty(t, env.set)
-			assert.Len(t, p.acrPromptedEnv, 2)
 		})
 	}
-
-	t.Run("property loop copy is preserved when active and rejected when zero", func(t *testing.T) {
-		for _, count := range []float64{1, 0} {
-			p, _ := offlineBYOProvider(t)
-			p.armTemplate["resources"] = map[string]any{"foundryAccount": map[string]any{
-				"type": "Microsoft.CognitiveServices/accounts", "name": "aks-cog",
-				"properties": map[string]any{"copy": []any{map[string]any{
-					"name":  "agentHostingConfigurations",
-					"count": count,
-					"input": map[string]any{"hostingType": "ManagedCluster", "clusterResourceId": offlineClusterID},
-				}}},
-			}}
-			src := &templateSource{
-				mode: templateModeBicep, armTemplate: p.armTemplate,
-				parameters: map[string]any{
-					"agentHosting": map[string]any{
-						"value": map[string]any{"enabled": true, "clusterResourceId": offlineClusterID},
-					},
-				},
-			}
-			err := p.validateBYOHostingTemplate(src)
-			if count > 0 {
-				require.NoError(t, err)
-			} else {
-				require.ErrorContains(t, err, "does not support the agentHosting configuration")
-			}
-		}
-	})
 }

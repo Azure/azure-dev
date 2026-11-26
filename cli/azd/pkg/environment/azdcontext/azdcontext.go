@@ -247,17 +247,24 @@ func NewAzdContextFromWd(wd string) (*AzdContext, error) {
 		for _, fileName := range ProjectFileNames {
 			projectFilePath := filepath.Join(searchDir, fileName)
 			stat, err := os.Stat(projectFilePath)
-			if os.IsNotExist(err) || (err == nil && stat.IsDir()) {
-				// File doesn't exist or is a directory, try next file name
-				continue
-			} else if err == nil {
-				// We found a valid project file
-				foundProjectFilePath = projectFilePath
-				break
-			} else {
-				// An unexpected error occurred
+			switch {
+			case os.IsNotExist(err):
+				// Stat follows links, so check the entry itself before treating the path as absent.
+				_, entryErr := os.Lstat(projectFilePath)
+				if os.IsNotExist(entryErr) {
+					continue
+				}
+				if entryErr != nil {
+					return nil, fmt.Errorf("searching for project file: %w", entryErr)
+				}
+				return nil, fmt.Errorf("resolving project file: %w", err)
+			case err != nil:
 				return nil, fmt.Errorf("searching for project file: %w", err)
+			case stat.IsDir():
+				continue
 			}
+			foundProjectFilePath = projectFilePath
+			break
 		}
 
 		if foundProjectFilePath != "" {

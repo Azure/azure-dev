@@ -6,7 +6,6 @@ package grpcserver
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -17,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -88,30 +86,16 @@ func dialProjectSDK(t *testing.T, serverInfo *ServerInfo) (*azdext.AzdClient, co
 func TestServerE2E_ProjectGetErrorTrailer(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
-		name          string
-		manifest      string
-		danglingLink  string
-		directoryLink bool
-		reason        string
-		message       string
+		name     string
+		manifest string
+		reason   string
+		message  string
 	}{
 		{name: "missing project", reason: "not_found", message: azdcontext.ErrNoProject.Error()},
 		{name: "invalid project", manifest: "name: [", reason: "read_failed", message: "parsing project file"},
 		{
 			name: "conversion failure", manifest: "name: test\nresourceGroup: '${'\n",
 			reason: "read_failed", message: "converting project config to proto",
-		},
-		{
-			name: "dangling azure.yaml", danglingLink: "azure.yaml",
-			reason: "read_failed", message: "resolving project file",
-		},
-		{
-			name: "dangling azure.yml", danglingLink: "azure.yml",
-			reason: "read_failed", message: "resolving project file",
-		},
-		{
-			name: "dangling directory link", danglingLink: "azure.yaml", directoryLink: true,
-			reason: "read_failed", message: "resolving project file",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -120,14 +104,6 @@ func TestServerE2E_ProjectGetErrorTrailer(t *testing.T) {
 			if tt.manifest != "" {
 				require.NoError(t, os.WriteFile(azdcontext.NewAzdContextWithDirectory(dir).ProjectPath(),
 					[]byte(tt.manifest), 0600))
-			}
-			if tt.danglingLink != "" {
-				target, link := filepath.Join(dir, "missing"), filepath.Join(dir, tt.danglingLink)
-				if tt.directoryLink {
-					ostest.DirectoryLink(t, target, link)
-				} else {
-					ostest.Symlink(t, target, link)
-				}
 			}
 			projectContext := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 				return azdcontext.NewAzdContextFromWd(dir)

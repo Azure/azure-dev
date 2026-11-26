@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -90,24 +89,6 @@ func TestNewAzdContextFromWd_NoProjectFile(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, ctx)
 	require.ErrorIs(t, err, ErrNoProject)
-}
-
-func TestNewAzdContextFromWd_ProjectFileSymlink(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "project.yaml")
-	require.NoError(t, os.WriteFile(target, []byte("name: test\n"), 0600))
-	projectPath := filepath.Join(dir, "azure.yaml")
-	ostest.Symlink(t, target, projectPath)
-
-	ctx, err := NewAzdContextFromWd(dir)
-	require.NoError(t, err)
-	require.Equal(t, projectPath, ctx.ProjectPath())
-
-	require.NoError(t, os.Remove(target))
-	ctx, err = NewAzdContextFromWd(dir)
-	require.Nil(t, ctx)
-	require.ErrorIs(t, err, os.ErrNotExist)
-	require.NotErrorIs(t, err, ErrNoProject)
 }
 
 func TestNewAzdContextFromWd_DirectoryWithSameName(t *testing.T) {

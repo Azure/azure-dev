@@ -128,11 +128,16 @@ selectors fail closed because source inspection cannot prove their behavior.
 
 The extension accepts only the current project and environment's successful
 root deployment and verifies live resource membership rather than trusting
-saved environment values. Database, identity, Container App environment,
-registry, application, and endpoint values must agree with the verified live
-resources.
+saved environment values. Verified outputs (`AZURE_POSTGRES_SERVER_ID`,
+`AZURE_POSTGRES_SERVER_NAME`, `AZURE_POSTGRES_HOST`, `AZURE_POSTGRES_DATABASE`,
+`AZURE_POSTGRES_ADMINISTRATOR`, `AZURE_CONTAINER_APP_ID`, and per-service
+`SERVICE_<KEY>_IDENTITY_*`, plus the original single-service outputs
+`DATABASE_SERVER_ID`, `DATABASE_HOST`, `APPLICATION_IDENTITY_ID`,
+`APPLICATION_IDENTITY_CLIENT_ID`, `APPLICATION_PRINCIPAL_ID`, and
+`CONTAINER_APP_ENVIRONMENT_ID`) must agree with the live resources.
 
-The authored service module remains project-owned. The extension supplies the
+The authored service module remains project-owned. Publishing persists the
+pushed image reference in `SERVICE_<KEY>_IMAGE_NAME`; deployment supplies that
 published image, deploys the module through the azd extension contract, and
 waits for the live Container App. Endpoint outputs support `_URI`, `_URL`,
 `_ENDPOINT`, and `_ENDPOINT_URL`. A selected endpoint must:
@@ -192,9 +197,14 @@ SQL connections close before cleanup. Firewall and temporary administrator
 cleanup both run even after failure or cancellation, each with a separate
 bounded context. ARM absence is verified, but firewall enforcement may lag
 resource deletion. Cleanup failure keeps recovery state and prevents a ready
-marker. Readiness is invalidated before bootstrap/recovery, including repeat
-provisioning. Only complete SQL, runtime firewall verification and cleanup
-permit readiness to become successful again.
+marker. Readiness (`SPRING_DATABASE_ACCESS_CONFIGURED`) is set to `pending`
+before bootstrap/recovery, including repeat provisioning, and is updated with
+extension-owned selection and access fingerprints
+(`SPRING_DATABASE_PROVISIONED_TYPE`, `SPRING_DATABASE_PROVISIONED_ACCESS`,
+per-service `SERVICE_<KEY>_SPRING_DATABASE_PROVISIONED_ACCESS`, and discovered
+`SPRING_DATABASE_TYPE`, `SPRING_DATABASE_AUTHENTICATION`,
+`SPRING_DATABASE_NAME`, and `SPRING_DATABASE_USERNAME`) only after SQL, runtime
+firewall verification, and cleanup all succeed.
 
 `predeploy` verifies the successful provisioning marker and fingerprint,
 current root deployment, datasource binding and runtime network policy. It

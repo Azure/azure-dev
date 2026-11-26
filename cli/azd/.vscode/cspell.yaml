@@ -649,10 +649,6 @@ overrides:
     words:
       - HKLM
       - norestart
-  - filename: docs/environment-variables.md
-    words:
-      - springboot
-      - springbootapp
   - filename: docs/extensions/extension-telemetry.md
     words:
       - dcount

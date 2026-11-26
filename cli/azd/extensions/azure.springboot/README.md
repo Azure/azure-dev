@@ -140,10 +140,13 @@ bypass their respective prompts. A name alone never selects another principal.
 The existing
 `SPRING_DATABASE_ADMINISTRATOR_NAME`/`SPRING_DATABASE_ADMINISTRATOR_OBJECT_ID`
 aliases remain supported; supplied aliases and process/environment values must
-agree. Empty/zero/malformed IDs, empty names, placeholders and conflicting
-configured inputs fail before identity lookup or extension environment writes.
-Invalid prompt responses can be corrected; cancellation saves no partial
-administrator selection. Accepted values are persisted for later operations.
+agree. Unsupported password variables (`SPRING_DATABASE_PASSWORD` and
+`SPRING_DATABASE_APP_PASSWORD`) are rejected so credentials never silently
+coexist with Entra managed-identity authentication. Empty/zero/malformed IDs,
+empty names, placeholders and conflicting configured inputs fail before identity
+lookup or extension environment writes. Invalid prompt responses can be
+corrected; cancellation saves no partial administrator selection. Accepted
+values are persisted for later operations.
 
 The extension does not obtain a name from access-token claims, Microsoft Graph,
 Azure CLI, or the object ID. `principalName` is required on the tested PostgreSQL
@@ -164,7 +167,9 @@ templates must not duplicate it in `preup` or provision hooks. Normal azd
 subscription/location selection remains host-owned. Identity and credential
 tenant resolution use host account APIs and the existing azd User login, not a
 second Azure CLI login. Saved administrator inputs survive a different deployer;
-host-resolved user-access tenant state is refreshed for that deployer's login.
+host-resolved user-access tenant state (`SPRING_DATABASE_USER_ACCESS_TENANT_ID`)
+is refreshed for that deployer's login and must not be set manually or copied
+across environments.
 Live verification checks the exact ARM resource/object ID, User type, server
 authentication tenant and supplied name; name matching alone is not identity
 proof. The template owns resources, sizing and parameter bindings. Fresh

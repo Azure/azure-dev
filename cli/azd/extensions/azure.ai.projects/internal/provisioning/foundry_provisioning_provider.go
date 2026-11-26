@@ -1507,7 +1507,8 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	if _, err := p.prepareBYOLocal(src); err != nil {
+	byoLocal, err := p.prepareBYOLocal(src)
+	if err != nil {
 		return nil, err
 	}
 	if err := p.validateExistingProjectTemplateIdentity(ctx, src); err != nil {
@@ -1536,7 +1537,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err := p.validateACRRemoteBuild(ctx, src); err != nil {
 		return nil, err
 	}
-	if err := p.prepareBYO(ctx, src, progress); err != nil {
+	if err := p.prepareBYOWithLocal(ctx, src, byoLocal, progress); err != nil {
 		return nil, err
 	}
 	if err := p.recoverDeployedACRBinding(ctx); err != nil {
@@ -1907,13 +1908,14 @@ func (p *FoundryProvisioningProvider) Preview(
 	if err != nil {
 		return nil, err
 	}
-	if _, err := p.prepareBYOLocal(src); err != nil {
+	byoLocal, err := p.prepareBYOLocal(src)
+	if err != nil {
 		return nil, err
 	}
 	if err := p.validateExistingProjectTemplateIdentity(ctx, src); err != nil {
 		return nil, err
 	}
-	if err := p.prepareBYO(ctx, src, progress); err != nil {
+	if err := p.prepareBYOWithLocal(ctx, src, byoLocal, progress); err != nil {
 		return nil, err
 	}
 	if p.greenfieldAcrMode == "reuse-connect" {

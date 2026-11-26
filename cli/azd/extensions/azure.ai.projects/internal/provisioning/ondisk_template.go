@@ -59,6 +59,7 @@ type templateSource struct {
 	armTemplate map[string]any
 	parameters  map[string]any // ARM-shape: {name: {"value": ...}}
 	sourcePath  string         // absolute path; "" when embedded
+	byoHosting  *bool
 }
 
 // bicepCompiler is the seam between the on-disk loader and the bicep CLI.

@@ -90,20 +90,51 @@ func TestBYOPlanCopyLoops(t *testing.T) {
 	assert.IsType(t, planUnknown{}, unresolvedObj["agentHostingConfigurations"])
 }
 
+func assertModuleVariantDetection(t *testing.T, tmpl map[string]any) {
+	t.Helper()
+	p := &FoundryProvisioningProvider{subID: "target-sub"}
+	for _, tc := range []struct {
+		name      string
+		enableAks bool
+		mode      string
+		wantBYO   bool
+	}{
+		{name: "native variant and false if branch", enableAks: false, mode: "native", wantBYO: false},
+		{name: "safe native variant", enableAks: false, mode: "safeNative", wantBYO: false},
+		{name: "true if branch", enableAks: true, mode: "native", wantBYO: true},
+		{name: "nested module union BYO", enableAks: false, mode: "moduleByo", wantBYO: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, planErr := p.localBYOPlan(&templateSource{
+				mode:        templateModeBicep,
+				armTemplate: tmpl,
+				parameters: map[string]any{
+					"enableAks": map[string]any{"value": tc.enableAks},
+					"mode":      map[string]any{"value": tc.mode},
+				},
+			})
+			require.NoError(t, planErr)
+			assert.Equal(t, tc.wantBYO, got)
+		})
+	}
+}
+
 func TestBYOModuleConditionalParameterEnvelopeAndVariantDetection(t *testing.T) {
-	// Matches the ARM envelope emitted by Bicep when a module parameter combines conditionals, union(), and variants.
+	hostingExpr := "createObject('agentHostingConfigurations', createArray(createObject(" +
+		"'hostingType', 'ManagedCluster', 'clusterResourceId', '" + offlineClusterID + "', " +
+		"'storageAccountResourceId', '" + suppliedStorageID + "', " +
+		"'hostingManagementIdentityResourceId', '" + suppliedHostingID + "', " +
+		"'workloadIdentityResourceId', '" + suppliedWorkloadID + "')))"
+	rgRef := "reference(subscriptionResourceId('Microsoft.Resources/resourceGroups', 'target-rg'), '2021-04-01')"
+	variantsExpr := "createObject('native', " + rgRef + ", 'byo', " + hostingExpr + ")"
 	paramExpr := "[if(equals(parameters('mode'), 'moduleByo'), " +
-		"createObject('value', union(reference(subscriptionResourceId('Microsoft.Resources/resourceGroups', " +
-		"'target-rg'), '2021-04-01'), createObject('agentHostingConfigurations', createArray(createObject(" +
-		"'hostingType', 'ManagedCluster', 'clusterResourceId', '" + offlineClusterID + "'))))), " +
-		"if(parameters('enableAks'), createObject('value', union(createObject('agentHostingConfigurations', " +
-		"createArray(createObject('hostingType', 'ManagedCluster', 'clusterResourceId', '" + offlineClusterID +
-		"'))), reference(subscriptionResourceId('Microsoft.Resources/resourceGroups', 'target-rg'), '2021-04-01'))), " +
-		"createObject('value', createObject('native', reference(subscriptionResourceId(" +
-		"'Microsoft.Resources/resourceGroups', 'target-rg'), '2021-04-01'), 'byo', createObject(" +
-		"'agentHostingConfigurations', createArray(createObject('hostingType', 'ManagedCluster', " +
-		"'clusterResourceId', '" + offlineClusterID + "')))).native)))]"
-	tmpl := map[string]any{
+		"createObject('value', union(" + rgRef + ", " + hostingExpr + ")), " +
+		"if(equals(parameters('mode'), 'safeNative'), " +
+		"createObject('value', tryGet(" + variantsExpr + ", 'native')), " +
+		"if(parameters('enableAks'), " +
+		"createObject('value', union(" + hostingExpr + ", " + rgRef + ")), " +
+		"createObject('value', " + variantsExpr + ".native))))]"
+	assertModuleVariantDetection(t, map[string]any{
 		"parameters": map[string]any{
 			"enableAks": map[string]any{"type": "bool", "defaultValue": false},
 			"mode":      map[string]any{"type": "string", "defaultValue": "native"},
@@ -122,31 +153,7 @@ func TestBYOModuleConditionalParameterEnvelopeAndVariantDetection(t *testing.T) 
 				},
 			},
 		}},
-	}
-	p := &FoundryProvisioningProvider{subID: "target-sub"}
-	for _, tc := range []struct {
-		name      string
-		enableAks bool
-		mode      string
-		wantBYO   bool
-	}{
-		{name: "native variant and false if branch", enableAks: false, mode: "native", wantBYO: false},
-		{name: "true if branch", enableAks: true, mode: "native", wantBYO: true},
-		{name: "nested module union BYO", enableAks: false, mode: "moduleByo", wantBYO: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got, planErr := p.localBYOPlan(&templateSource{
-				mode:        templateModeBicep,
-				armTemplate: tmpl,
-				parameters: map[string]any{
-					"enableAks": map[string]any{"value": tc.enableAks},
-					"mode":      map[string]any{"value": tc.mode},
-				},
-			})
-			require.NoError(t, planErr)
-			assert.Equal(t, tc.wantBYO, got)
-		})
-	}
+	})
 }
 
 func TestBYOCompiledBicepModuleIfAndVariantDetection(t *testing.T) {
@@ -162,6 +169,15 @@ resource acc 'Microsoft.CognitiveServices/accounts@2026-07-15-preview' = {
   properties: accountProps
 }
 `), 0o600))
+	hostingBlock := `{
+    agentHostingConfigurations: [{
+      hostingType: 'ManagedCluster'
+      clusterResourceId: '` + offlineClusterID + `'
+      storageAccountResourceId: '` + suppliedStorageID + `'
+      hostingManagementIdentityResourceId: '` + suppliedHostingID + `'
+      workloadIdentityResourceId: '` + suppliedWorkloadID + `'
+    }]
+  }`
 	mainPath := filepath.Join(dir, "main.bicep")
 	require.NoError(t, os.WriteFile(mainPath, []byte(`
 targetScope = 'subscription'
@@ -172,24 +188,22 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' existing = {
   name: 'target-rg'
 }
 
+var variants = {
+  native: any(rg.properties)
+  byo: `+hostingBlock+`
+}
+
 module mod './child.bicep' = {
   name: 'mod'
   scope: rg
   params: {
     accountProps: mode == 'moduleByo'
-      ? union(any(rg.properties), {
-          agentHostingConfigurations: [{ hostingType: 'ManagedCluster', clusterResourceId: '`+offlineClusterID+`' }]
-        })
-      : (enableAks
-          ? union({
-              agentHostingConfigurations: [{ hostingType: 'ManagedCluster', clusterResourceId: '`+offlineClusterID+`' }]
-            }, any(rg.properties))
-          : {
-              native: any(rg.properties)
-              byo: {
-                agentHostingConfigurations: [{ hostingType: 'ManagedCluster', clusterResourceId: '`+offlineClusterID+`' }]
-              }
-            }.native)
+      ? union(any(rg.properties), `+hostingBlock+`)
+      : (mode == 'safeNative'
+          ? variants.?native
+          : (enableAks
+              ? union(`+hostingBlock+`, any(rg.properties))
+              : variants.native))
   }
 }
 `), 0o600))
@@ -202,29 +216,5 @@ module mod './child.bicep' = {
 	require.NoError(t, err, stderr.String())
 	tmpl, err := unmarshalARMTemplate(string(compiled), mainPath)
 	require.NoError(t, err)
-
-	p := &FoundryProvisioningProvider{subID: "target-sub"}
-	for _, tc := range []struct {
-		name      string
-		enableAks bool
-		mode      string
-		wantBYO   bool
-	}{
-		{name: "native variant and false if branch", enableAks: false, mode: "native", wantBYO: false},
-		{name: "true if branch", enableAks: true, mode: "native", wantBYO: true},
-		{name: "nested module union BYO", enableAks: false, mode: "moduleByo", wantBYO: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got, planErr := p.localBYOPlan(&templateSource{
-				mode:        templateModeBicep,
-				armTemplate: tmpl,
-				parameters: map[string]any{
-					"enableAks": map[string]any{"value": tc.enableAks},
-					"mode":      map[string]any{"value": tc.mode},
-				},
-			})
-			require.NoError(t, planErr)
-			assert.Equal(t, tc.wantBYO, got)
-		})
-	}
+	assertModuleVariantDetection(t, tmpl)
 }

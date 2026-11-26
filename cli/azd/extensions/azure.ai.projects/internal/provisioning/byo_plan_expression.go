@@ -29,6 +29,11 @@ type planPartialID struct {
 	components           []any
 }
 
+type planPartialObject struct {
+	missing string
+	known   map[string]any
+}
+
 type planExpression struct {
 	name     string
 	literal  any
@@ -156,30 +161,32 @@ type planScope struct {
 	missing                                                        string
 }
 
-type planRawParameter struct {
-	raw any
-	env *planEnvironment
-}
-
 type planEnvironment struct {
-	template      map[string]any
-	parameters    map[string]func() any
-	rawParameters map[string]planRawParameter
-	scope         planScope
-	path          string
-	deployment    any
-	resources     map[string]*planResource
-	variables     map[string]any
-	active        map[string]bool
-	copyIndex     int
-	namedCopy     map[string]int
-	function      func(string, []string) any
-	walked        bool
+	template   map[string]any
+	parameters map[string]func() any
+	scope      planScope
+	path       string
+	deployment any
+	resources  map[string]*planResource
+	variables  map[string]any
+	active     map[string]bool
+	copyIndex  int
+	namedCopy  map[string]int
+	function   func(string, []string) any
+	walked     bool
 }
 
 func planField(value any, key string) any {
 	if unknown, ok := value.(planUnknown); ok {
 		return unknown
+	}
+	if partial, ok := value.(planPartialObject); ok {
+		for name, field := range partial.known {
+			if strings.EqualFold(name, key) {
+				return field
+			}
+		}
+		return planUnknown{partial.missing}
 	}
 	object, ok := value.(map[string]any)
 	if !ok {
@@ -203,6 +210,9 @@ func planString(value any) (string, string) {
 	if partial, ok := value.(planPartialID); ok {
 		return "", partial.missing
 	}
+	if partial, ok := value.(planPartialObject); ok {
+		return "", partial.missing
+	}
 	return "", "value is not a locally resolved string"
 }
 
@@ -212,6 +222,9 @@ func planBool(value any) (bool, string) {
 	}
 	if result, ok := value.(bool); ok {
 		return result, ""
+	}
+	if partial, ok := value.(planPartialObject); ok {
+		return false, partial.missing
 	}
 	return false, "condition is not a locally resolved boolean"
 }
@@ -445,6 +458,18 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 						break
 					}
 				}
+			case planPartialObject:
+				key, missing := planString(selector)
+				if missing != "" {
+					return planUnknown{missing}
+				}
+				value = planUnknown{current.missing}
+				for name, item := range current.known {
+					if strings.EqualFold(name, key) {
+						value = item
+						break
+					}
+				}
 			case []any:
 				index, ok := selector.(float64)
 				if !ok || index != math.Trunc(index) {
@@ -463,7 +488,14 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 	if name == "if" && len(expression.args) == 3 {
 		condition, missing := planBool(eval(expression.args[0]))
 		if missing != "" {
-			return planUnknown{"if condition cannot be resolved: " + missing}
+			reason := "if condition cannot be resolved: " + missing
+			if valueHasBYOHosting(eval(expression.args[1])) || valueHasBYOHosting(eval(expression.args[2])) {
+				return planPartialObject{
+					missing: reason,
+					known:   map[string]any{"agentHostingConfigurations": planUnknown{reason}},
+				}
+			}
+			return planUnknown{reason}
 		}
 		if condition {
 			return eval(expression.args[1])
@@ -503,6 +535,14 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 		}
 		return result
 	}
+	if name == "union" && len(args) > 0 {
+		return planUnion(args)
+	}
+	if name == "shallowmerge" && len(args) == 1 {
+		if values, ok := args[0].([]any); ok {
+			return planMergeObjects(values, false)
+		}
+	}
 	if name == "resourceid" || name == "subscriptionresourceid" || name == "extensionresourceid" {
 		return e.resourceID(name, args)
 	}
@@ -516,6 +556,9 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 			return unknown
 		}
 		if partial, ok := arg.(planPartialID); ok {
+			return planUnknown{partial.missing}
+		}
+		if partial, ok := arg.(planPartialObject); ok {
 			return planUnknown{partial.missing}
 		}
 	}
@@ -620,18 +663,6 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 				if err := json.Unmarshal([]byte(value), &decoded); err == nil {
 					return decoded
 				}
-			}
-		case "shallowmerge":
-			if values, ok := args[0].([]any); ok {
-				result := map[string]any{}
-				for _, value := range values {
-					object, ok := value.(map[string]any)
-					if !ok {
-						return planUnknown{"shallowMerge input is not a resolved object"}
-					}
-					maps.Copy(result, object)
-				}
-				return result
 			}
 		}
 	}
@@ -847,4 +878,129 @@ func (e *planEnvironment) resourceID(function string, args []any) any {
 		result.WriteString("/" + types[i+1] + "/" + name)
 	}
 	return result.String()
+}
+
+func planConcreteValue(value any) bool {
+	switch current := value.(type) {
+	case planUnknown, planPartialID, planPartialObject:
+		return false
+	case []any:
+		return !slices.ContainsFunc(current, func(item any) bool { return !planConcreteValue(item) })
+	case map[string]any:
+		for _, item := range current {
+			if !planConcreteValue(item) {
+				return false
+			}
+		}
+		return true
+	default:
+		return true
+	}
+}
+
+func planUnion(args []any) any {
+	for _, arg := range args {
+		if _, isSlice := arg.([]any); isSlice {
+			result := []any{}
+			seen := map[string]bool{}
+			for _, entry := range args {
+				if unknown, ok := entry.(planUnknown); ok {
+					return unknown
+				}
+				if partial, ok := entry.(planPartialObject); ok {
+					return planUnknown{partial.missing}
+				}
+				items, ok := entry.([]any)
+				if !ok {
+					return planUnknown{"union array input is not a resolved array"}
+				}
+				for _, item := range items {
+					if planConcreteValue(item) {
+						if raw, err := json.Marshal(item); err == nil {
+							key := string(raw)
+							if seen[key] {
+								continue
+							}
+							seen[key] = true
+						}
+					}
+					result = append(result, item)
+				}
+			}
+			return result
+		}
+		if _, isMap := arg.(map[string]any); isMap {
+			break
+		}
+		if _, isPartial := arg.(planPartialObject); isPartial {
+			break
+		}
+	}
+	return planMergeObjects(args, true)
+}
+
+func planMergeObjects(args []any, deep bool) any {
+	known := map[string]any{}
+	missing := ""
+	taintKnown := func(reason string) {
+		if missing == "" {
+			missing = reason
+		}
+		for key, val := range known {
+			if strings.EqualFold(key, "agentHostingConfigurations") && configsIndicateBYOHosting(val) {
+				known[key] = planUnknown{reason}
+				continue
+			}
+			delete(known, key)
+		}
+	}
+	for _, arg := range args {
+		switch current := arg.(type) {
+		case map[string]any:
+			mergeKnownMap(known, current, deep, missing)
+		case planPartialObject:
+			taintKnown(current.missing)
+			mergeKnownMap(known, current.known, deep, missing)
+		case planUnknown:
+			taintKnown(current.reason)
+		default:
+			if deep {
+				return planUnknown{"union input is not a resolved object or array"}
+			}
+			return planUnknown{"shallowMerge input is not a resolved object"}
+		}
+	}
+	if missing != "" {
+		if len(known) == 0 {
+			return planUnknown{missing}
+		}
+		return planPartialObject{missing: missing, known: known}
+	}
+	return known
+}
+
+func mergeKnownMap(dst, src map[string]any, deep bool, priorMissing string) {
+	for key, val := range src {
+		if deep {
+			if srcMap, isMap := val.(map[string]any); isMap {
+				if dstMap, hasDst := dst[key].(map[string]any); hasDst {
+					cloned := maps.Clone(dstMap)
+					mergeKnownMap(cloned, srcMap, true, priorMissing)
+					dst[key] = cloned
+					continue
+				}
+				if dstPartial, hasPartial := dst[key].(planPartialObject); hasPartial {
+					cloned := maps.Clone(dstPartial.known)
+					mergeKnownMap(cloned, srcMap, true, dstPartial.missing)
+					dst[key] = planPartialObject{missing: dstPartial.missing, known: cloned}
+					continue
+				}
+				if priorMissing != "" {
+					dst[key] = planPartialObject{missing: priorMissing, known: maps.Clone(srcMap)}
+					continue
+				}
+			}
+		}
+		dst[key] = val
+	}
 }

@@ -12,20 +12,51 @@ import (
 	"azure.ai.projects/internal/onboarding"
 )
 
-func accountHostingConfigs(node *planResource, properties any) (any, bool) {
+func accountHostingConfigs(properties any) (any, bool) {
+	var object map[string]any
 	switch current := properties.(type) {
 	case map[string]any:
-		for name, value := range current {
-			if strings.EqualFold(name, "agentHostingConfigurations") {
-				return value, value != nil
-			}
-		}
-	case planUnknown:
-		if node.mentionsHosting() {
-			return current, true
+		object = current
+	case planPartialObject:
+		object = current.known
+	}
+	for name, value := range object {
+		if strings.EqualFold(name, "agentHostingConfigurations") {
+			return value, value != nil
 		}
 	}
 	return nil, false
+}
+
+func configsIndicateBYOHosting(configs any) bool {
+	if configs == nil {
+		return false
+	}
+	values, ok := configs.([]any)
+	if !ok {
+		_, unknown := configs.(planUnknown)
+		return unknown
+	}
+	for _, item := range values {
+		if item == nil {
+			continue
+		}
+		if entry, isMap := item.(map[string]any); isMap {
+			if configIndicatesBYOHosting(entry) {
+				return true
+			}
+			continue
+		}
+		if _, unknown := item.(planUnknown); unknown {
+			return true
+		}
+	}
+	return false
+}
+
+func valueHasBYOHosting(value any) bool {
+	configs, present := accountHostingConfigs(value)
+	return present && configsIndicateBYOHosting(configs)
 }
 
 func configIndicatesBYOHosting(config map[string]any) bool {
@@ -66,7 +97,7 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 			continue
 		}
 		properties := node.env.value(node.raw["properties"])
-		configs, present := accountHostingConfigs(node, properties)
+		configs, present := accountHostingConfigs(properties)
 		if !present {
 			continue
 		}

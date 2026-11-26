@@ -62,12 +62,14 @@ func (p *FoundryProvisioningProvider) prepareBYOLocal(
 	if !hosting.Enabled {
 		templateEnabled, planErr := p.localBYOPlan(source)
 		if !templateEnabled {
+			source.byoHosting = new(false)
 			return nil, nil
 		}
 		if planErr != nil {
 			return nil, planErr
 		}
 	}
+	source.byoHosting = new(true)
 	if include, _ := parameterValue(source, "includeAcr").(bool); include &&
 		!templateDeclaresParameter(source, "acrPullPrincipalId") {
 		return nil, errors.New("the ejected Bicep registry access contract is outdated; " +
@@ -179,10 +181,19 @@ func (p *FoundryProvisioningProvider) prepareBYOLocal(
 
 func (p *FoundryProvisioningProvider) prepareBYO(
 	ctx context.Context, source *templateSource, progress grpcbroker.ProgressFunc,
-) (prepareErr error) {
+) error {
 	local, err := p.prepareBYOLocal(source)
-	if err != nil || local == nil {
+	if err != nil {
 		return err
+	}
+	return p.prepareBYOWithLocal(ctx, source, local, progress)
+}
+
+func (p *FoundryProvisioningProvider) prepareBYOWithLocal(
+	ctx context.Context, source *templateSource, local *byoLocalPreparation, progress grpcbroker.ProgressFunc,
+) (prepareErr error) {
+	if local == nil {
+		return nil
 	}
 	defer func() { prepareErr = redactBYOPreparationError(prepareErr) }()
 	hostBindings := local.hostBindings
@@ -441,6 +452,9 @@ func byoHostingParameter(source *templateSource) (byoHostingParameters, error) {
 }
 
 func (p *FoundryProvisioningProvider) effectiveBYOHosting(source *templateSource) (bool, error) {
+	if source != nil && source.byoHosting != nil {
+		return *source.byoHosting, nil
+	}
 	hosting, err := byoHostingParameter(source)
 	if err != nil || hosting.Enabled {
 		return hosting.Enabled, err

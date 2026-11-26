@@ -405,7 +405,8 @@ func TestBYOCustomTemplateWithoutAgentHosting(t *testing.T) {
 	customClusterID := offlineClusterID + "-custom"
 	for _, preview := range []bool{false, true} {
 		for _, scenario := range []string{
-			"renamed parameter", "property loop", "disabled agentHosting parameter", "preflight failure",
+			"renamed parameter", "property loop", "union properties", "union preflight failure",
+			"disabled agentHosting parameter", "preflight failure",
 		} {
 			t.Run(fmt.Sprintf("preview=%t/%s", preview, scenario), func(t *testing.T) {
 				props := any(customBYOProperties("[parameters('aksClusterId')]"))
@@ -417,11 +418,17 @@ func TestBYOCustomTemplateWithoutAgentHosting(t *testing.T) {
 							"[createArray(parameters('aksClusterId'))[copyIndex('agentHostingConfigurations')]]",
 						)["agentHostingConfigurations"].([]any)[0],
 					}}}
+				} else if strings.HasPrefix(scenario, "union ") {
+					props = "[union(variables('baseProps'), variables('aksProps'))]"
 				}
 				p, fake, source := customTemplateWithoutAgentHosting(t, 7, props)
+				p.armTemplate["variables"] = map[string]any{
+					"baseProps": map[string]any{"allowProjectManagement": true},
+					"aksProps":  customBYOProperties("[parameters('aksClusterId')]"),
+				}
 				fake.base.clusterID = customClusterID
 				source.parameters["aksClusterId"] = map[string]any{"value": customClusterID}
-				if scenario == "preflight failure" {
+				if strings.HasSuffix(scenario, "preflight failure") {
 					fake.base.clusterVersion = "1.30.0"
 				}
 				if scenario == "disabled agentHosting parameter" {
@@ -439,7 +446,7 @@ func TestBYOCustomTemplateWithoutAgentHosting(t *testing.T) {
 				}
 
 				assert.Contains(t, fake.requests, "GET "+customClusterID)
-				if scenario == "preflight failure" {
+				if strings.HasSuffix(scenario, "preflight failure") {
 					require.ErrorContains(t, err, "The running Kubernetes version is below the required minimum")
 					assert.Zero(t, fake.base.writes)
 					assert.Zero(t, fake.base.previews)
@@ -560,6 +567,10 @@ func TestBYOCustomTemplateGateAndNonAKSIsolation(t *testing.T) {
 		"selectedNativeVariant": map[string]any{
 			"type": "Microsoft.CognitiveServices/accounts", "name": "cog-variant-var",
 			"properties": "[variables('variants').native]",
+		},
+		"safeSelectedNativeVariant": map[string]any{
+			"type": "Microsoft.CognitiveServices/accounts", "name": "cog-variant-safe",
+			"properties": "[tryGet(variables('variants'), 'native')]",
 		},
 		"inlinedNativeVariant": map[string]any{
 			"type": "Microsoft.CognitiveServices/accounts", "name": "cog-variant-inline",

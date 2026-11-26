@@ -7,9 +7,11 @@ package provisioning
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"testing"
@@ -17,6 +19,7 @@ import (
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -27,12 +30,591 @@ import (
 const hostingDestroyGroupID = "/subscriptions/sub/resourceGroups/foundry"
 const hostingDestroyAccountA = hostingDestroyGroupID + "/providers/Microsoft.CognitiveServices/accounts/custom-account-a"
 const hostingDestroyAccountB = hostingDestroyGroupID + "/providers/Microsoft.CognitiveServices/accounts/custom-account-b"
+const hostingDestroyAccountC = hostingDestroyGroupID + "/providers/Microsoft.CognitiveServices/accounts/ordinary-account"
 const hostingDestroyProjectA = hostingDestroyAccountA + "/projects/custom-project-a"
 const hostingDestroyProjectB = hostingDestroyAccountA + "/projects/custom-project-b"
 const hostingDestroyIdentity = "/subscriptions/SUB/resourceGroups/FOUNDRY/" +
 	"providers/Microsoft.ManagedIdentity/userAssignedIdentities/custom-hosting"
 const hostingDestroyExternalIdentity = "/subscriptions/sub/resourceGroups/external/" +
 	"providers/Microsoft.ManagedIdentity/userAssignedIdentities/supplied-hosting"
+const hostingDestroyPurgeKey = "extensions.ai-projects.accountPurge"
+
+type hostingDestroyRecoveryFixture struct {
+	env                    *resolveEnvStubEnvServer
+	live, softDeleted      map[string]bool
+	projectGone, groupGone bool
+	failAt, failureMode    string
+	lookupMode             string
+	ordinary, layer        bool
+	onRequest              func(string)
+	events, purged         []string
+}
+
+func newHostingDestroyRecoveryFixture() *hostingDestroyRecoveryFixture {
+	return &hostingDestroyRecoveryFixture{
+		env: &resolveEnvStubEnvServer{envName: "test", get: map[string]string{
+			envKeySubscriptionID: "sub", envKeyLocation: "eastus2", envKeyResourceGroup: "foundry",
+		}},
+		live:        map[string]bool{hostingDestroyAccountA: true, hostingDestroyAccountB: true},
+		softDeleted: map[string]bool{},
+	}
+}
+
+func (f *hostingDestroyRecoveryFixture) provider(t *testing.T) *FoundryProvisioningProvider {
+	t.Helper()
+	p := &FoundryProvisioningProvider{
+		azdClient: newResolveEnvTestClient(t, f.env, &resolveEnvStubPromptServer{}),
+		envName:   "test", credential: acrTestCredential{}, isLayer: f.layer,
+	}
+	if f.layer {
+		p.infraName = "foundry"
+	}
+	require.NoError(t, p.resolveEnv(t.Context()))
+	require.NoError(t, p.loadACRLifecycle(t.Context()))
+	p.synthesisEnv = maps.Clone(f.env.get)
+	deploymentID := "/subscriptions/sub/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+	p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+		Retry: policy.RetryOptions{MaxRetries: -1},
+		Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
+			path := request.URL.Path
+			if strings.EqualFold(path, hostingDestroyGroupID) {
+				path = hostingDestroyGroupID
+			}
+			event := request.Method + " " + path
+			f.events = append(f.events, event)
+			if f.onRequest != nil {
+				f.onRequest(event)
+			}
+			reply := func(code int, body any) (*http.Response, error) {
+				return acrTestHTTPReply(t, request, code, body)
+			}
+			missing := func() (*http.Response, error) {
+				return reply(http.StatusNotFound, map[string]any{
+					"error": map[string]any{"code": "ResourceNotFound", "message": "resource is absent"},
+				})
+			}
+			if event == f.failAt {
+				switch f.failureMode {
+				case "canceled":
+					return nil, context.Canceled
+				case "deadline":
+					return nil, context.DeadlineExceeded
+				case "notfound":
+					return missing()
+				default:
+					return reply(http.StatusForbidden, map[string]any{
+						"error": map[string]any{"code": "AuthorizationFailed", "message": "cleanup denied"},
+					})
+				}
+			}
+			switch {
+			case strings.EqualFold(path, hostingDestroyGroupID):
+				if f.groupGone {
+					return missing()
+				}
+				if request.Method == http.MethodGet {
+					return reply(http.StatusOK, map[string]any{"tags": map[string]any{"azd-env-name": "test"}})
+				}
+				require.Equal(t, http.MethodDelete, request.Method)
+				f.groupGone = true
+				for id, live := range f.live {
+					if live {
+						f.softDeleted[id], f.live[id] = true, false
+					}
+				}
+				return reply(http.StatusOK, nil)
+			case path == deploymentID:
+				if request.Method == http.MethodGet {
+					return missing()
+				}
+				require.Equal(t, http.MethodDelete, request.Method)
+				require.True(t, f.groupGone)
+				return reply(http.StatusNoContent, nil)
+			case path == hostingDestroyGroupID+"/providers/Microsoft.CognitiveServices/accounts":
+				require.Equal(t, http.MethodGet, request.Method)
+				if f.groupGone {
+					return missing()
+				}
+				var accounts []any
+				for _, id := range []string{hostingDestroyAccountA, hostingDestroyAccountB, hostingDestroyAccountC} {
+					if !f.live[id] {
+						continue
+					}
+					location := "eastus2"
+					if id == hostingDestroyAccountB {
+						location = "westus2"
+					} else if id == hostingDestroyAccountC {
+						location = "centralus"
+					}
+					account := map[string]any{
+						"id": id, "name": id[strings.LastIndex(id, "/")+1:], "location": location, "kind": "AIServices",
+					}
+					if id != hostingDestroyAccountC {
+						account["identity"] = map[string]any{"userAssignedIdentities": map[string]any{hostingDestroyIdentity: map[string]any{}}}
+					}
+					accounts = append(accounts, account)
+				}
+				return reply(http.StatusOK, map[string]any{"value": accounts})
+			case path == hostingDestroyAccountA || path == hostingDestroyAccountB:
+				if !f.live[path] {
+					return missing()
+				}
+				if request.Method == http.MethodGet {
+					var configs []any
+					if !f.ordinary {
+						configs = []any{map[string]any{
+							"hostingType": "ManagedCluster", "hostingManagementIdentityResourceId": hostingDestroyIdentity,
+						}}
+					}
+					return reply(http.StatusOK, map[string]any{"properties": map[string]any{
+						"agentHostingConfigurations": configs,
+					}})
+				}
+				require.Equal(t, http.MethodDelete, request.Method)
+				if path == hostingDestroyAccountA {
+					require.True(t, f.projectGone)
+				}
+				f.live[path], f.softDeleted[path] = false, true
+				return reply(http.StatusOK, nil)
+			case path == hostingDestroyProjectA:
+				require.Equal(t, http.MethodDelete, request.Method)
+				f.projectGone = true
+				return reply(http.StatusOK, nil)
+			case path == hostingDestroyAccountA+"/projects":
+				require.Equal(t, http.MethodGet, request.Method)
+				var projects []any
+				if !f.projectGone {
+					projects = []any{map[string]any{"id": hostingDestroyProjectA}}
+				}
+				return reply(http.StatusOK, map[string]any{"value": projects})
+			case path == hostingDestroyAccountB+"/projects" ||
+				path == hostingDestroyAccountA+"/deployments" || path == hostingDestroyAccountB+"/deployments" ||
+				path == hostingDestroyAccountC+"/deployments":
+				require.Equal(t, http.MethodGet, request.Method)
+				return reply(http.StatusOK, map[string]any{"value": []any{}})
+			case strings.Contains(path, "/deletedAccounts/"):
+				require.True(t, f.groupGone)
+				id := hostingDestroyAccountA
+				location := "eastus2"
+				if strings.HasSuffix(path, "/custom-account-b") {
+					id, location = hostingDestroyAccountB, "westus2"
+				} else if strings.HasSuffix(path, "/ordinary-account") {
+					id, location = hostingDestroyAccountC, "centralus"
+				}
+				require.Equal(t, "/subscriptions/sub/providers/Microsoft.CognitiveServices/locations/"+location+
+					"/resourceGroups/foundry/deletedAccounts/"+id[strings.LastIndex(id, "/")+1:], path)
+				if request.Method == http.MethodGet && f.lookupMode != "" {
+					code, status := "AuthorizationFailed", http.StatusForbidden
+					if f.lookupMode == "unexpected404" {
+						code, status = "EndpointNotFound", http.StatusNotFound
+					}
+					return reply(status, map[string]any{"error": map[string]any{"code": code}})
+				}
+				if !f.softDeleted[id] {
+					return missing()
+				}
+				if request.Method == http.MethodGet {
+					return reply(http.StatusOK, map[string]any{"id": path, "location": location})
+				}
+				require.Equal(t, http.MethodDelete, request.Method)
+				f.softDeleted[id] = false
+				f.purged = append(f.purged, id)
+				return reply(http.StatusNoContent, nil)
+			default:
+				t.Fatalf("unexpected ARM request: %s", event)
+				return nil, fmt.Errorf("unexpected ARM request: %s", event)
+			}
+		}),
+	}}
+	return p
+}
+
+func TestDestroyBYOAKSPurgeRecoversAcrossExecutions(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "false")
+	t.Setenv(synthesis.BYOAKSEnvVar, "false")
+	for _, failAt := range []string{
+		"DELETE " + hostingDestroyAccountB,
+		"DELETE " + hostingDestroyGroupID,
+		"DELETE /subscriptions/sub/providers/Microsoft.CognitiveServices/locations/westus2/" +
+			"resourceGroups/foundry/deletedAccounts/custom-account-b",
+		"DELETE /subscriptions/sub/providers/Microsoft.Resources/deployments/azd-foundry-test-811c9dc5",
+	} {
+		t.Run(failAt, func(t *testing.T) {
+			f := newHostingDestroyRecoveryFixture()
+			f.failAt = failAt
+			first := f.provider(t)
+			result, err := first.Destroy(t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+			require.ErrorContains(t, err, "cleanup denied")
+			require.Nil(t, result)
+			require.False(t, f.live[hostingDestroyAccountA], "the first account was already deleted")
+			retry := f.provider(t)
+			require.NotSame(t, first, retry)
+			f.failAt = ""
+			result, err = retry.Destroy(t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Equal(t, []string{hostingDestroyAccountA, hostingDestroyAccountB}, f.purged,
+				"retry must purge both already-deleted and remaining accounts")
+			assert.NotContains(t, f.env.config, hostingDestroyPurgeKey)
+		})
+	}
+}
+
+func TestDestroyBYOAKSPurgePreservesAndMergesAccountScope(t *testing.T) {
+	for _, ordinaryAtStart := range []bool{false, true} {
+		t.Run(fmt.Sprint(ordinaryAtStart), func(t *testing.T) {
+			f := newHostingDestroyRecoveryFixture()
+			f.live[hostingDestroyAccountC] = ordinaryAtStart
+			f.failAt = "DELETE " + hostingDestroyAccountB
+			f.onRequest = func(event string) {
+				if event == "DELETE "+hostingDestroyProjectA {
+					var saved struct {
+						EnvironmentName string `json:"environmentName"`
+						ResourceGroupID string `json:"resourceGroupId"`
+						Accounts        []struct {
+							ResourceID string `json:"resourceId"`
+							Name       string `json:"name"`
+							Location   string `json:"location"`
+						} `json:"accounts"`
+					}
+					require.NoError(t, json.Unmarshal(f.env.config[hostingDestroyPurgeKey], &saved),
+						"the complete purge scope must be durable before the first Project deletion")
+					require.Equal(t, "test", saved.EnvironmentName)
+					require.Equal(t, hostingDestroyGroupID, saved.ResourceGroupID)
+					if ordinaryAtStart {
+						require.Len(t, saved.Accounts, 3, "ordinary accounts remain in the original group purge scope")
+						require.Equal(t, hostingDestroyAccountC, saved.Accounts[2].ResourceID)
+					} else {
+						require.Len(t, saved.Accounts, 2)
+					}
+					require.Equal(t, hostingDestroyAccountA, saved.Accounts[0].ResourceID)
+					require.Equal(t, "custom-account-a", saved.Accounts[0].Name)
+					require.Equal(t, "eastus2", saved.Accounts[0].Location)
+				}
+			}
+			result, err := f.provider(t).Destroy(t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+			require.Error(t, err)
+			require.Nil(t, result)
+			var record accountPurgeRecord
+			require.NoError(t, json.Unmarshal(f.env.config[hostingDestroyPurgeKey], &record))
+			duplicate := record.Accounts[0]
+			duplicate.ResourceID, duplicate.Location = strings.ToUpper(duplicate.ResourceID), strings.ToUpper(duplicate.Location)
+			record.Accounts = append(record.Accounts, duplicate)
+			f.env.config[hostingDestroyPurgeKey], err = json.Marshal(record)
+			require.NoError(t, err)
+			f.live[hostingDestroyAccountC] = true
+			f.failAt, f.onRequest = "", nil
+			result, err = f.provider(t).Destroy(t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Equal(t, []string{hostingDestroyAccountA, hostingDestroyAccountB, hostingDestroyAccountC}, f.purged)
+			assert.Empty(t, f.env.config)
+		})
+	}
+}
+
+func TestDestroyBYOAKSNoPurgeRetainsTargetForLaterPurge(t *testing.T) {
+	for _, layer := range []bool{false, true} {
+		t.Run(fmt.Sprint(layer), func(t *testing.T) {
+			f := newHostingDestroyRecoveryFixture()
+			f.layer = layer
+			if layer {
+				f.env.get[envKeyFoundryRG], f.env.get[envKeyFoundryRGOwner] = "foundry", hostingDestroyGroupID
+				f.env.get[envKeyResourceGroup] = "sibling-group"
+			}
+			f.failAt = "DELETE " + hostingDestroyAccountB
+			result, err := f.provider(t).Destroy(t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+			require.Error(t, err)
+			require.Nil(t, result)
+			f.failAt = ""
+			result, err = f.provider(t).Destroy(t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.NotEmpty(t, f.env.config[hostingDestroyPurgeKey])
+			assert.Empty(t, f.purged)
+			assert.NotContains(t, result.InvalidatedEnvKeys, envKeyFoundryRG)
+			assert.NotContains(t, result.InvalidatedEnvKeys, envKeyFoundryRGOwner)
+			for _, key := range result.InvalidatedEnvKeys {
+				delete(f.env.get, key)
+			}
+			for _, event := range f.events {
+				assert.NotContains(t, event, "/deletedAccounts/", "without --purge no permanent cleanup or reads are authorized")
+			}
+			f.events = nil
+			result, err = f.provider(t).Destroy(t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Equal(t, []string{hostingDestroyAccountA, hostingDestroyAccountB}, f.purged)
+			assert.NotContains(t, f.env.config, hostingDestroyPurgeKey)
+			assert.Contains(t, result.InvalidatedEnvKeys, envKeyFoundryRGOwner)
+			assert.NotContains(t, f.events, "GET "+hostingDestroyAccountA, "the deleted Account need not be identified again")
+			assert.NotContains(t, f.events, "DELETE /subscriptions/sub/resourceGroups/sibling-group")
+		})
+	}
+}
+
+func TestDestroyBYOAKSNoPurgeRetryPreservesFailedPurge(t *testing.T) {
+	f := newHostingDestroyRecoveryFixture()
+	f.failAt = "DELETE /subscriptions/sub/providers/Microsoft.CognitiveServices/locations/westus2/" +
+		"resourceGroups/foundry/deletedAccounts/custom-account-b"
+	result, err := f.provider(t).Destroy(t.Context(),
+		&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, []string{hostingDestroyAccountA}, f.purged)
+	f.failAt, f.events = "", nil
+	result, err = f.provider(t).Destroy(t.Context(),
+		&azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, []string{hostingDestroyAccountA}, f.purged)
+	require.NotEmpty(t, f.env.config[hostingDestroyPurgeKey])
+	for _, event := range f.events {
+		assert.NotContains(t, event, "/deletedAccounts/")
+	}
+	result, err = f.provider(t).Destroy(t.Context(),
+		&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, []string{hostingDestroyAccountA, hostingDestroyAccountB}, f.purged)
+	assert.Empty(t, f.env.config)
+}
+
+func TestDestroyBYOAKSPurgeRecoveryRetainsCancellationAndTimeout(t *testing.T) {
+	for _, mode := range []string{"canceled", "deadline"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newHostingDestroyRecoveryFixture()
+			f.failAt, f.failureMode = "DELETE "+hostingDestroyAccountB, mode
+			result, err := f.provider(t).Destroy(t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+			require.Error(t, err)
+			require.Nil(t, result)
+			require.False(t, f.live[hostingDestroyAccountA])
+			require.NotEmpty(t, f.env.config[hostingDestroyPurgeKey])
+			assert.NotContains(t, f.events, "DELETE "+hostingDestroyGroupID)
+			f.failAt = ""
+			result, err = f.provider(t).Destroy(t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Equal(t, []string{hostingDestroyAccountA, hostingDestroyAccountB}, f.purged)
+		})
+	}
+}
+
+func TestDestroyBYOAKSPurgeSaveFailurePreventsAccountDeletion(t *testing.T) {
+	f := newHostingDestroyRecoveryFixture()
+	f.onRequest = func(event string) {
+		if event == "GET "+hostingDestroyAccountA {
+			f.env.configErr = errors.New("cannot save purge scope")
+		}
+	}
+	result, err := f.provider(t).Destroy(t.Context(),
+		&azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+	require.ErrorContains(t, err, "cannot save purge scope")
+	require.Nil(t, result)
+	for _, event := range f.events {
+		assert.False(t, strings.HasPrefix(event, "DELETE "), "save failure must precede Project, Account and group deletion")
+	}
+	assert.True(t, f.live[hostingDestroyAccountA])
+	assert.Empty(t, f.env.config)
+	f.env.configErr, f.onRequest = nil, nil
+	result, err = f.provider(t).Destroy(t.Context(),
+		&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, []string{hostingDestroyAccountA, hostingDestroyAccountB}, f.purged)
+}
+
+func TestDestroyBYOAKSPurgeClearFailureRemainsRecoverable(t *testing.T) {
+	f := newHostingDestroyRecoveryFixture()
+	f.onRequest = func(event string) {
+		if strings.HasPrefix(event, "DELETE /subscriptions/sub/providers/Microsoft.Resources/deployments/") {
+			f.env.configErr = errors.New("cannot clear purge scope")
+		}
+	}
+	result, err := f.provider(t).Destroy(t.Context(),
+		&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+	require.ErrorContains(t, err, "cannot clear purge scope")
+	require.Nil(t, result)
+	require.True(t, f.groupGone)
+	require.NotEmpty(t, f.env.config[hostingDestroyPurgeKey])
+	f.env.configErr, f.onRequest = nil, nil
+	result, err = f.provider(t).Destroy(t.Context(),
+		&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, []string{hostingDestroyAccountA, hostingDestroyAccountB}, f.purged)
+	assert.Empty(t, f.env.config)
+}
+
+func TestDestroyBYOAKSPurge404RequiresDeletedAccountAbsence(t *testing.T) {
+	for _, mode := range []string{"denied", "unexpected404", "record still present"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newHostingDestroyRecoveryFixture()
+			f.failAt = "DELETE /subscriptions/sub/providers/Microsoft.CognitiveServices/locations/westus2/" +
+				"resourceGroups/foundry/deletedAccounts/custom-account-b"
+			result, err := f.provider(t).Destroy(t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+			require.Error(t, err)
+			require.Nil(t, result)
+			if mode == "record still present" {
+				f.failureMode = "notfound"
+			} else {
+				f.failAt, f.lookupMode = "", mode
+			}
+			result, err = f.provider(t).Destroy(t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+			require.Error(t, err, "a purge 404 alone cannot certify completed cleanup")
+			require.Nil(t, result)
+			assert.True(t, f.softDeleted[hostingDestroyAccountB])
+			require.NotEmpty(t, f.env.config[hostingDestroyPurgeKey])
+			f.failAt, f.lookupMode = "", ""
+			result, err = f.provider(t).Destroy(t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Equal(t, []string{hostingDestroyAccountA, hostingDestroyAccountB}, f.purged)
+		})
+	}
+}
+
+func TestDestroyBYOAKSPurgeRecoveryRejectsOtherScopes(t *testing.T) {
+	for _, change := range []string{"environment", "layer", "subscription", "group", "account", "location", "version"} {
+		t.Run(change, func(t *testing.T) {
+			f := newHostingDestroyRecoveryFixture()
+			record := accountPurgeRecord{
+				Version: 1, EnvironmentName: "test", ResourceGroupID: hostingDestroyGroupID,
+				Accounts: []accountPurgeTarget{{ResourceID: hostingDestroyAccountA, Name: "custom-account-a", Location: "eastus2"}},
+			}
+			switch change {
+			case "environment":
+				record.EnvironmentName = "another-environment"
+			case "layer":
+				record.IsLayer, record.LayerName = true, "another-layer"
+			case "subscription":
+				record.ResourceGroupID = strings.Replace(record.ResourceGroupID, "/sub/", "/other-sub/", 1)
+			case "group":
+				record.ResourceGroupID = strings.Replace(record.ResourceGroupID, "/foundry", "/other-group", 1)
+			case "account":
+				record.Accounts[0].ResourceID = strings.Replace(record.Accounts[0].ResourceID, "/foundry/", "/other-group/", 1)
+			case "location":
+				record.Accounts[0].Location = "eastus2/other"
+			case "version":
+				record.Version = 2
+			}
+			data, err := json.Marshal(record)
+			require.NoError(t, err)
+			f.env.config = map[string][]byte{hostingDestroyPurgeKey: data}
+			result, err := f.provider(t).Destroy(t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+			require.ErrorContains(t, err, "account purge recovery state")
+			require.Nil(t, result)
+			assert.Empty(t, f.events, "invalid scope must be rejected before Azure operations")
+			assert.Equal(t, data, f.env.config[hostingDestroyPurgeKey])
+			assert.Zero(t, f.env.configSetN)
+			assert.Zero(t, f.env.configUnsetN)
+		})
+	}
+}
+
+func TestDestroyBYOAKSPurgeOrdinaryFoundryKeepsExistingPath(t *testing.T) {
+	for _, purge404 := range []bool{false, true} {
+		t.Run(fmt.Sprint(purge404), func(t *testing.T) {
+			f := newHostingDestroyRecoveryFixture()
+			f.ordinary = true
+			if purge404 {
+				f.failAt = "DELETE /subscriptions/sub/providers/Microsoft.CognitiveServices/locations/eastus2/" +
+					"resourceGroups/foundry/deletedAccounts/custom-account-a"
+				f.failureMode = "notfound"
+			}
+			result, err := f.provider(t).Destroy(t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+			if purge404 {
+				require.Error(t, err)
+				require.Nil(t, result)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+				assert.Equal(t, []string{hostingDestroyAccountA, hostingDestroyAccountB}, f.purged)
+			}
+			assert.Zero(t, f.env.configSetN, "ordinary Foundry without recovery state requires no new state writes")
+			assert.Zero(t, f.env.configUnsetN)
+			assert.NotContains(t, f.events, "DELETE "+hostingDestroyProjectA)
+			assert.NotContains(t, f.events, "DELETE "+hostingDestroyAccountA)
+			for _, event := range f.events {
+				assert.False(t, strings.HasPrefix(event, "GET ") && strings.Contains(event, "/deletedAccounts/"))
+			}
+		})
+	}
+}
+
+func TestDestroyBYOAKSPurgeRetainsRecoveredCreateACRWithoutPreview(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "false")
+	f := newHostingDestroyRecoveryFixture()
+	registryID := strings.Replace(testACRID, "/shared/", "/foundry/", 1)
+	f.env.get["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = registryID
+	f.env.get["AZD_FOUNDRY_ACR_MODE"] = "create"
+	f.env.get["AZURE_AI_PROJECT_ID"] = hostingDestroyProjectA
+	f.env.get["AZURE_CONTAINER_REGISTRY_ENDPOINT"] = "registry.azurecr.io"
+	f.failAt = "DELETE " + hostingDestroyAccountB
+	first := f.provider(t)
+	deploymentID := "/subscriptions/sub/providers/Microsoft.Resources/deployments/" + first.deploymentName()
+	identityReads := 0
+	request := func(_ context.Context, method, path, _ string, out any) error {
+		switch {
+		case method == http.MethodGet && path == deploymentID:
+			return acrTestReply(out, map[string]any{"properties": map[string]any{
+				"provisioningState": "Succeeded", "outputs": map[string]any{
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"value": registryID},
+					"AZURE_AI_PROJECT_ID":                  map[string]any{"value": hostingDestroyProjectA},
+				},
+			}})
+		case method == http.MethodGet && path == deploymentID+"/operations":
+			return acrTestReply(out, map[string]any{"value": []any{map[string]any{
+				"properties": map[string]any{
+					"provisioningOperation": "Create", "provisioningState": "Succeeded",
+					"targetResource": map[string]any{"id": registryID, "resourceType": "Microsoft.ContainerRegistry/registries"},
+				},
+			}}})
+		case method == http.MethodGet && path == hostingDestroyProjectA:
+			require.False(t, f.projectGone, "a new execution must not depend on the deleted Project identity")
+			identityReads++
+			return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "project-principal"}})
+		case method == http.MethodDelete && path == deploymentID:
+			require.True(t, f.groupGone)
+			return nil
+		default:
+			t.Fatalf("unexpected ACR recovery request: %s %s", method, path)
+			return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+		}
+	}
+	first.acrRequest = request
+	result, err := first.Destroy(t.Context(),
+		&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+	require.ErrorContains(t, err, "cleanup denied")
+	require.Nil(t, result)
+	require.False(t, f.live[hostingDestroyAccountA])
+	require.NotEmpty(t, f.env.config[synthesis.ACRBindingConfigKey])
+	require.NotEmpty(t, f.env.config[hostingDestroyPurgeKey])
+	f.failAt = ""
+	retry := f.provider(t)
+	retry.acrRequest = request
+	result, err = retry.Destroy(t.Context(),
+		&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 1, identityReads)
+	assert.Equal(t, []string{hostingDestroyAccountA, hostingDestroyAccountB}, f.purged)
+	assert.Empty(t, f.env.config)
+}
 
 func newBYOAKSDestroyTestProvider(
 	t *testing.T, failAt, failureMode string, deleteStatus int,

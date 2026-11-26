@@ -73,6 +73,7 @@ type FoundryProvisioningProvider struct {
 	projectYAML      []byte
 	infraPath        string
 	infraModule      string
+	infraName        string
 	isLayer          bool
 	virtualEnv       map[string]string
 	synthesisEnv     map[string]string
@@ -113,6 +114,7 @@ type FoundryProvisioningProvider struct {
 	acrExistingProjectID      string
 	acrExistingPrincipalID    string
 	acrExistingProjectSalt    string
+	accountPurge              *accountPurgeRecord
 	acrRemoteBuild            bool
 	acrDeferPromptedEnv       bool
 	acrPromptedEnv            map[string]string
@@ -297,6 +299,10 @@ func (p *FoundryProvisioningProvider) Initialize(
 		)
 	}
 	p.isLayer = config.hasFoundryLayer(strings.TrimSpace(options.GetName()))
+	p.infraName = ""
+	if p.isLayer {
+		p.infraName = strings.TrimSpace(options.GetName())
+	}
 	p.projectYAML = rawYAML
 	env, err := p.synthesisEnvMap(ctx)
 	if err != nil {
@@ -1999,14 +2005,18 @@ func (p *FoundryProvisioningProvider) Preview(
 //
 // Hard-fails on purge errors: if the user asked to purge and we can't, the
 // silent alternative is to leave a leftover that reproduces this same bug
-// on the next provision. If the RG is already gone at Destroy time the
-// enumeration step is skipped (idempotent re-run).
+// on the next provision. BYO AKS ordered deletion saves the account purge scope
+// before deleting Projects or accounts, so retries can also purge accounts that
+// are no longer live, including after the resource group has gone.
 func (p *FoundryProvisioningProvider) Destroy(
 	ctx context.Context,
 	options *azdext.ProvisioningDestroyOptions,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDestroyResult, error) {
 	if err := p.requireACRReuse(); err != nil {
+		return nil, err
+	}
+	if err := p.loadAccountPurge(ctx); err != nil {
 		return nil, err
 	}
 	if p.brownfieldEndpoint != "" {
@@ -2031,7 +2041,18 @@ func (p *FoundryProvisioningProvider) Destroy(
 		p.isLayer = true
 	}
 
-	if p.brownfieldEndpoint == "" {
+	recordedGroupMissing := false
+	if p.accountPurge != nil {
+		if err := p.ensureCredential(ctx); err != nil {
+			return nil, err
+		}
+		exists, err := p.resourceGroupExists(ctx)
+		if err != nil {
+			return nil, err
+		}
+		recordedGroupMissing = !exists
+	}
+	if p.brownfieldEndpoint == "" && !recordedGroupMissing {
 		mode, recorded, err := synthesis.ResolveGreenfieldACRSelection(synthesis.Input{
 			RawAzureYAML: p.projectYAML, Env: p.synthesisEnv, ResourceGroupName: p.rgName, ACRBinding: p.acrBinding,
 		})
@@ -2120,6 +2141,15 @@ func (p *FoundryProvisioningProvider) Destroy(
 	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err
 	}
+	if recordedGroupMissing {
+		if err := p.persistAccountPurge(ctx, nil); err != nil {
+			return nil, err
+		}
+		if err := p.cleanupACRAccess(ctx); err != nil {
+			return nil, err
+		}
+		return p.completeAccountCleanup(ctx, options, progress, p.recordedPurgeAccounts())
+	}
 	existingProjectMissing := false
 	if err := p.validateExistingProjectIdentity(ctx); err != nil {
 		if !isNotFound(err) {
@@ -2160,6 +2190,11 @@ func (p *FoundryProvisioningProvider) Destroy(
 	if err != nil {
 		return nil, err
 	}
+	if p.accountPurge != nil {
+		if err := p.persistAccountPurge(ctx, accounts); err != nil {
+			return nil, err
+		}
+	}
 
 	// Delete model deployments before the RG delete; otherwise the account
 	// delete fails with CannotDeleteAccountWithDeployments and rolls the
@@ -2176,11 +2211,17 @@ func (p *FoundryProvisioningProvider) Destroy(
 	if err := p.deleteAccountsBeforeHostingIdentities(ctx, progress, accounts, factory.NewClient()); err != nil {
 		return nil, err
 	}
+	if p.accountPurge != nil {
+		toPurge = p.recordedPurgeAccounts()
+	}
 
 	progress(fmt.Sprintf("Deleting resource group %s...", p.rgName))
 	poller, err := rgClient.BeginDelete(ctx, p.rgName, nil)
 	if err != nil {
 		if isNotFound(err) {
+			if p.accountPurge != nil {
+				return p.completeAccountCleanup(ctx, options, progress, toPurge)
+			}
 			// Already gone; treat as success so re-runs are idempotent. If
 			// --purge was requested but the RG never existed there's nothing
 			// to purge (we never enumerated anything). A soft-deleted
@@ -2199,13 +2240,7 @@ func (p *FoundryProvisioningProvider) Destroy(
 
 	// After the RG is gone the accounts are in the soft-deleted state.
 	// Purge each one so the next `azd provision` can re-use the same name.
-	if len(toPurge) > 0 {
-		if err := p.purgeCognitiveAccounts(ctx, progress, toPurge); err != nil {
-			return nil, err
-		}
-	}
-
-	return p.completeDestroy(ctx)
+	return p.completeAccountCleanup(ctx, options, progress, toPurge)
 }
 
 func (p *FoundryProvisioningProvider) deleteExistingProjectAcrConnection(
@@ -2375,12 +2410,13 @@ func (p *FoundryProvisioningProvider) confirmDestroy(ctx context.Context) (bool,
 // was created in (the soft-delete record is keyed by location, not by
 // resource group alone).
 type purgeableAccount struct {
-	name     string
-	location string
+	resourceID string
+	name       string
+	location   string
 }
 
 // collectPurgeableAccounts filters live Cognitive Services account models
-// down to the {name, location} pairs needed for a post-RG-delete purge.
+// down to the {resource ID, name, location} needed for a post-RG-delete purge.
 // Entries with a nil Name or Location are skipped (defensive against
 // partial SDK responses); duplicates are not de-duplicated since the SDK
 // list-by-RG call doesn't return them.
@@ -2392,7 +2428,11 @@ func collectPurgeableAccounts(accounts []*armcognitiveservices.Account) []purgea
 		if a == nil || a.Name == nil || a.Location == nil {
 			continue
 		}
-		out = append(out, purgeableAccount{name: *a.Name, location: *a.Location})
+		account := purgeableAccount{name: *a.Name, location: *a.Location}
+		if a.ID != nil {
+			account.resourceID = *a.ID
+		}
+		out = append(out, account)
 	}
 	return out
 }
@@ -2579,6 +2619,13 @@ func (p *FoundryProvisioningProvider) deleteAccountsBeforeHostingIdentities(
 		if !sameGroupHosting {
 			continue
 		}
+		if account.Name == nil || account.Location == nil {
+			return exterrors.Internal(exterrors.CodeInvalidServiceConfig,
+				"listed BYO AKS account is missing its name or location; cannot save purge recovery state")
+		}
+		if err := p.persistAccountPurge(ctx, accounts); err != nil {
+			return err
+		}
 
 		projectsClient, err := armcognitiveservices.NewProjectsClient(p.subID, p.credential, p.armClientOptions)
 		if err != nil {
@@ -2662,12 +2709,19 @@ func (p *FoundryProvisioningProvider) purgeCognitiveAccounts(
 	for _, a := range accounts {
 		progress(fmt.Sprintf("Purging soft-deleted Cognitive Services account %s...", a.name))
 		poller, err := deletedClient.BeginPurge(ctx, a.location, p.rgName, a.name, nil)
-		if err != nil {
-			return exterrors.ServiceFromAzure(err, exterrors.OpCognitiveAccountPurge)
+		if err == nil {
+			_, err = pollWithProgress(ctx, poller, progress,
+				fmt.Sprintf("Purging Cognitive Services account %s (this can take a minute)", a.name),
+			)
 		}
-		if _, err := pollWithProgress(ctx, poller, progress,
-			fmt.Sprintf("Purging Cognitive Services account %s (this can take a minute)", a.name),
-		); err != nil {
+		if err != nil {
+			absent, lookupErr := p.confirmPurgedAccountAbsent(ctx, deletedClient, a, err)
+			if lookupErr != nil {
+				return lookupErr
+			}
+			if absent {
+				continue
+			}
 			return exterrors.ServiceFromAzure(err, exterrors.OpCognitiveAccountPurge)
 		}
 	}

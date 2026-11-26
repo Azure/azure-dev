@@ -1158,7 +1158,8 @@ func (p *FoundryProvisioningProvider) persistRecoveredACRBinding(ctx context.Con
 	if err := p.requireACRReuse(); err != nil {
 		return err
 	}
-	if !p.acrBindingRecovered || !synthesis.ACRReuseEnabled() {
+	if !p.acrBindingRecovered || !synthesis.ACRReuseEnabled() &&
+		(p.accountPurge == nil || p.acrBinding.Mode != "create") {
 		return nil
 	}
 	if err := p.writeACRConfig(ctx, synthesis.ACRBindingConfigKey, p.acrBinding); err != nil {

@@ -20,13 +20,46 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 )
 
+type planBindingMask uint8
+
+const (
+	planBindingHostingPrincipal planBindingMask = 1 << iota
+	planBindingWorkloadPrincipal
+)
+
 // This adapter evaluates only the local expressions needed to identify a deployment plan.
 // Runtime reference properties and unsupported ARM constructs remain explicit unknown values.
-type planUnknown struct{ reason string }
+type planUnknown struct {
+	reason   string
+	bindings planBindingMask
+	nonEmpty bool
+}
 
 type planPartialID struct {
 	kind, scope, missing string
 	components           []any
+	bindings             planBindingMask
+}
+
+func planBindings(values ...any) planBindingMask {
+	var mask planBindingMask
+	for _, value := range values {
+		switch current := value.(type) {
+		case planUnknown:
+			mask |= current.bindings
+		case planPartialID:
+			mask |= current.bindings
+		case map[string]any:
+			for _, field := range current {
+				mask |= planBindings(field)
+			}
+		case []any:
+			for _, item := range current {
+				mask |= planBindings(item)
+			}
+		}
+	}
+	return mask
 }
 
 type planExpression struct {
@@ -164,26 +197,42 @@ type planEnvironment struct {
 	deployment any
 	resources  map[string]*planResource
 	variables  map[string]any
+	outputs    map[string]any
 	active     map[string]bool
 	copyIndex  int
 	function   func(string, []string) any
+	resolver   *templatePlanResolver
 	walked     bool
+}
+
+func (e *planEnvironment) scanBindings(evals ...func() any) planBindingMask {
+	if e.resolver != nil {
+		prev := e.resolver.skipFunctions
+		e.resolver.skipFunctions = true
+		defer func() { e.resolver.skipFunctions = prev }()
+	}
+	var mask planBindingMask
+	for _, fn := range evals {
+		mask |= planBindings(fn())
+	}
+	return mask
 }
 
 func planField(value any, key string) any {
 	if unknown, ok := value.(planUnknown); ok {
+		unknown.nonEmpty = false
 		return unknown
 	}
 	object, ok := value.(map[string]any)
 	if !ok {
-		return planUnknown{"expected an object when selecting " + key}
+		return planUnknown{reason: "expected an object when selecting " + key, bindings: planBindings(value)}
 	}
 	for name, field := range object {
 		if strings.EqualFold(name, key) {
 			return field
 		}
 	}
-	return planUnknown{"object has no " + key + " property"}
+	return planUnknown{reason: "object has no " + key + " property"}
 }
 
 func planString(value any) (string, string) {
@@ -231,20 +280,39 @@ func (e *planEnvironment) value(raw any) any {
 		expression, err := parser.expression(0)
 		parser.space()
 		if err != nil {
-			return planUnknown{err.Error()}
+			return planUnknown{reason: err.Error()}
 		}
 		if parser.pos != len(parser.text) {
-			return planUnknown{"ARM expression contains unsupported trailing syntax"}
+			return planUnknown{reason: "ARM expression contains unsupported trailing syntax"}
 		}
 		return e.evaluate(expression, 0)
 	case map[string]any:
 		result := make(map[string]any, len(value))
+		var keyMissing string
+		var mask planBindingMask
 		for _, key := range slices.Sorted(maps.Keys(value)) {
-			name, missing := planString(e.value(key))
-			if missing != "" {
-				return planUnknown{"object key cannot be resolved: " + missing}
+			entry := value[key]
+			if keyMissing != "" {
+				k := key
+				mask |= e.scanBindings(
+					func() any { return e.value(k) },
+					func() any { return e.value(entry) },
+				)
+				continue
 			}
-			result[name] = e.value(value[key])
+			keyValue := e.value(key)
+			name, missing := planString(keyValue)
+			if missing != "" {
+				keyMissing = missing
+				mask |= planBindings(keyValue) | e.scanBindings(func() any { return e.value(entry) })
+				continue
+			}
+			fieldValue := e.value(entry)
+			mask |= planBindings(fieldValue)
+			result[name] = fieldValue
+		}
+		if keyMissing != "" {
+			return planUnknown{reason: "object key cannot be resolved: " + keyMissing, bindings: mask}
 		}
 		return result
 	case []any:
@@ -264,25 +332,31 @@ func (e *planEnvironment) variable(name string) any {
 		return result
 	}
 	if e.active[key] || len(e.active) >= 64 {
-		return planUnknown{"variable " + name + " is cyclic or exceeds the local dependency limit"}
+		return planUnknown{reason: "variable " + name + " is cyclic or exceeds the local dependency limit"}
 	}
 	definitions, _ := e.template["variables"].(map[string]any)
 	e.active[key] = true
 	defer delete(e.active, key)
+	var beforeSkipped int
+	if e.resolver != nil {
+		beforeSkipped = e.resolver.skippedCount
+	}
 	for variable, raw := range definitions {
 		if strings.EqualFold(variable, name) {
 			result := e.value(raw)
-			e.variables[key] = result
+			if e.resolver == nil || e.resolver.skippedCount == beforeSkipped {
+				e.variables[key] = result
+			}
 			return result
 		}
 	}
-	return planUnknown{"variable " + name + " is not defined in " + e.path}
+	return planUnknown{reason: "variable " + name + " is not defined in " + e.path}
 }
 
 func (e *planEnvironment) parameter(name string) any {
 	key := strings.ToLower(name)
 	if e.active["parameter:"+key] {
-		return planUnknown{"parameter " + name + " has a cyclic default expression"}
+		return planUnknown{reason: "parameter " + name + " has a cyclic default expression"}
 	}
 	e.active["parameter:"+key] = true
 	defer delete(e.active, "parameter:"+key)
@@ -299,29 +373,33 @@ func (e *planEnvironment) parameter(name string) any {
 			}
 		}
 	}
-	return planUnknown{"parameter " + name + " has no resolved value/default in " + e.path}
+	return planUnknown{reason: "parameter " + name + " has no resolved value/default in " + e.path}
 }
 
 func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 	if depth > 64 {
-		return planUnknown{"ARM expression evaluation exceeds the local nesting limit"}
+		return planUnknown{reason: "ARM expression evaluation exceeds the local nesting limit"}
 	}
 	eval := func(arg planExpression) any { return e.evaluate(arg, depth+1) }
 	if expression.base != nil {
 		base, selector := eval(*expression.base), eval(*expression.selector)
 		if index, ok := selector.(float64); ok {
 			if unknown, ok := base.(planUnknown); ok {
+				unknown.nonEmpty = false
 				return unknown
 			}
 			values, ok := base.([]any)
 			if !ok || index < 0 || index != math.Trunc(index) || index >= float64(len(values)) {
-				return planUnknown{"array index cannot be resolved from the actual plan"}
+				return planUnknown{
+					reason:   "array index cannot be resolved from the actual plan",
+					bindings: planBindings(base, selector),
+				}
 			}
 			return values[int(index)]
 		}
 		key, missing := planString(selector)
 		if missing != "" {
-			return planUnknown{missing}
+			return planUnknown{reason: missing, bindings: planBindings(base, selector)}
 		}
 		return planField(base, key)
 	}
@@ -330,28 +408,72 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 	}
 	name := strings.ToLower(expression.name)
 	if name == "coalesce" && len(expression.args) > 0 {
+		var firstUnknown *planUnknown
+		var mask planBindingMask
 		for _, arg := range expression.args {
-			if value := eval(arg); value != nil {
+			var value any
+			if firstUnknown != nil {
+				next := arg
+				e.scanBindings(func() any {
+					value = eval(next)
+					return nil
+				})
+			} else {
+				value = eval(arg)
+			}
+			if unknown, ok := value.(planUnknown); ok {
+				mask |= unknown.bindings
+				if firstUnknown == nil {
+					first := unknown
+					firstUnknown = &first
+				}
+				if unknown.nonEmpty {
+					return planUnknown{
+						reason:   firstUnknown.reason,
+						bindings: mask,
+						nonEmpty: firstUnknown.nonEmpty,
+					}
+				}
+				continue
+			}
+			if value != nil {
+				if firstUnknown != nil {
+					return planUnknown{
+						reason:   firstUnknown.reason,
+						bindings: mask | planBindings(value),
+					}
+				}
 				return value
 			}
+		}
+		if firstUnknown != nil {
+			return planUnknown{reason: firstUnknown.reason, bindings: mask}
 		}
 		return nil
 	}
 	if name == "tryget" && len(expression.args) >= 2 {
 		value := eval(expression.args[0])
-		for _, arg := range expression.args[1:] {
+		var selectorMask planBindingMask
+		for i, arg := range expression.args[1:] {
 			if value == nil {
 				return nil
 			}
 			if unknown, ok := value.(planUnknown); ok {
+				for _, remaining := range expression.args[i+1:] {
+					next := remaining
+					selectorMask |= e.scanBindings(func() any { return eval(next) })
+				}
+				unknown.bindings |= selectorMask
+				unknown.nonEmpty = false
 				return unknown
 			}
 			selector := eval(arg)
+			selectorMask |= planBindings(selector)
 			switch current := value.(type) {
 			case map[string]any:
 				key, missing := planString(selector)
 				if missing != "" {
-					return planUnknown{missing}
+					return planUnknown{reason: missing, bindings: planBindings(value) | selectorMask}
 				}
 				value = nil
 				for name, item := range current {
@@ -363,22 +485,33 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 			case []any:
 				index, ok := selector.(float64)
 				if !ok || index != math.Trunc(index) {
-					return planUnknown{"tryGet array index is not a resolved integer"}
+					return planUnknown{
+						reason:   "tryGet array index is not a resolved integer",
+						bindings: planBindings(value) | selectorMask,
+					}
 				}
 				value = nil
 				if index >= 0 && index < float64(len(current)) {
 					value = current[int(index)]
 				}
 			default:
-				return planUnknown{"tryGet input is not a locally resolved object or array"}
+				return planUnknown{
+					reason:   "tryGet input is not a locally resolved object or array",
+					bindings: planBindings(value) | selectorMask,
+				}
 			}
 		}
 		return value
 	}
 	if name == "if" && len(expression.args) == 3 {
-		condition, missing := planBool(eval(expression.args[0]))
+		condVal := eval(expression.args[0])
+		condition, missing := planBool(condVal)
 		if missing != "" {
-			return planUnknown{"if condition cannot be resolved: " + missing}
+			mask := planBindings(condVal) | e.scanBindings(
+				func() any { return eval(expression.args[1]) },
+				func() any { return eval(expression.args[2]) },
+			)
+			return planUnknown{reason: "if condition cannot be resolved: " + missing, bindings: mask}
 		}
 		if condition {
 			return eval(expression.args[1])
@@ -387,16 +520,21 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 	}
 	if (name == "and" || name == "or") && len(expression.args) >= 2 {
 		var unresolved string
+		var mask planBindingMask
 		for _, arg := range expression.args {
-			value, missing := planBool(eval(arg))
+			argVal := eval(arg)
+			value, missing := planBool(argVal)
 			if missing != "" {
-				unresolved = missing
+				if unresolved == "" {
+					unresolved = missing
+				}
+				mask |= planBindings(argVal)
 			} else if value == (name == "or") {
 				return value
 			}
 		}
 		if unresolved != "" {
-			return planUnknown{unresolved}
+			return planUnknown{reason: unresolved, bindings: mask}
 		}
 		return name == "and"
 	}
@@ -404,6 +542,7 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 	for i, arg := range expression.args {
 		args[i] = eval(arg)
 	}
+	argBindings := planBindings(args...)
 	if name == "createarray" {
 		return args
 	}
@@ -412,26 +551,43 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 		for i := 0; i < len(args); i += 2 {
 			key, ok := args[i].(string)
 			if !ok {
-				return planUnknown{"createObject key is not a resolved string"}
+				return planUnknown{reason: "createObject key is not a resolved string", bindings: argBindings}
 			}
 			result[key] = args[i+1]
 		}
 		return result
 	}
 	if name == "resourceid" || name == "subscriptionresourceid" || name == "extensionresourceid" {
-		return e.resourceID(name, args)
+		resolved := e.resourceID(name, args)
+		switch current := resolved.(type) {
+		case planUnknown:
+			current.bindings |= argBindings
+			return current
+		case planPartialID:
+			current.bindings |= argBindings
+			return current
+		default:
+			return resolved
+		}
 	}
 	if name == "split" && len(args) == 2 && args[1] == "/" {
 		if partial, ok := args[0].(planPartialID); ok && partial.components != nil {
 			return slices.Clone(partial.components)
 		}
 	}
+	if name == "empty" && len(args) == 1 {
+		if unknown, ok := args[0].(planUnknown); ok && unknown.nonEmpty && unknown.bindings == 0 {
+			return false
+		}
+	}
 	for _, arg := range args {
 		if unknown, ok := arg.(planUnknown); ok {
+			unknown.bindings = argBindings
+			unknown.nonEmpty = false
 			return unknown
 		}
 		if partial, ok := arg.(planPartialID); ok {
-			return planUnknown{partial.missing}
+			return planUnknown{reason: partial.missing, bindings: argBindings}
 		}
 	}
 	if len(args) == 0 {
@@ -444,16 +600,16 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 			return nil
 		case "subscription":
 			if e.scope.missing != "" {
-				return planUnknown{e.scope.missing}
+				return planUnknown{reason: e.scope.missing}
 			}
 			return map[string]any{"id": e.scope.subscriptionARMID, "subscriptionId": e.scope.subscriptionID}
 		case "resourcegroup":
 			if e.scope.missing != "" || e.scope.groupARMID == "" {
-				return planUnknown{"resource-group context is not resolved in " + e.path}
+				return planUnknown{reason: "resource-group context is not resolved in " + e.path}
 			}
 			var location any = e.scope.location
 			if e.scope.location == "" {
-				location = planUnknown{"actual resource-group location has not been resolved"}
+				location = planUnknown{reason: "actual resource-group location has not been resolved"}
 			}
 			return map[string]any{"id": e.scope.groupARMID, "name": e.scope.group, "location": location}
 		case "deployment":
@@ -481,7 +637,10 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 			switch value := args[0].(type) {
 			case string:
 				if name == "length" && strings.ContainsFunc(value, func(r rune) bool { return r > 127 }) {
-					return planUnknown{"non-ASCII string length is not evaluated by the local plan adapter"}
+					return planUnknown{
+						reason:   "non-ASCII string length is not evaluated by the local plan adapter",
+						bindings: argBindings,
+					}
 				}
 				length = len(value)
 			case []any:
@@ -530,7 +689,7 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 				for _, value := range values {
 					object, ok := value.(map[string]any)
 					if !ok {
-						return planUnknown{"shallowMerge input is not a resolved object"}
+						return planUnknown{reason: "shallowMerge input is not a resolved object", bindings: argBindings}
 					}
 					maps.Copy(result, object)
 				}
@@ -543,7 +702,10 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 		if name == "reference" && len(args) == 3 {
 			mode, ok := args[2].(string)
 			if !ok || !strings.EqualFold(mode, "Full") {
-				return planUnknown{"reference mode is not supported by the local plan adapter"}
+				return planUnknown{
+					reason:   "reference mode is not supported by the local plan adapter",
+					bindings: argBindings,
+				}
 			}
 			full = true
 		}
@@ -562,7 +724,10 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 						}
 					}
 				}
-				return planUnknown{"runtime reference " + symbol + " is not a local resource/module"}
+				return planUnknown{
+					reason:   "runtime reference " + symbol + " is not a local resource/module",
+					bindings: argBindings,
+				}
 			}
 		}
 	}
@@ -570,7 +735,10 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 		switch name {
 		case "equals":
 			if !planScalar(args[0]) || !planScalar(args[1]) {
-				return planUnknown{"structured or runtime-symbolic equality is not locally resolved"}
+				return planUnknown{
+					reason:   "structured or runtime-symbolic equality is not locally resolved",
+					bindings: argBindings,
+				}
 			}
 			a, errA := json.Marshal(args[0])
 			b, errB := json.Marshal(args[1])
@@ -581,7 +749,10 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 			switch value := args[0].(type) {
 			case []any:
 				if !planScalar(args[1]) {
-					return planUnknown{"contains requires a locally resolved scalar search value"}
+					return planUnknown{
+						reason:   "contains requires a locally resolved scalar search value",
+						bindings: argBindings,
+					}
 				}
 				var unresolved bool
 				expected, _ := json.Marshal(args[1])
@@ -596,7 +767,10 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 					}
 				}
 				if unresolved {
-					return planUnknown{"contains has unresolved or structured array entries"}
+					return planUnknown{
+						reason:   "contains has unresolved or structured array entries",
+						bindings: argBindings,
+					}
 				}
 				return false
 			case string:
@@ -621,7 +795,10 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 	for i, arg := range args {
 		value, ok := arg.(string)
 		if !ok {
-			return planUnknown{"ARM function " + expression.name + " has unsupported plan argument types"}
+			return planUnknown{
+				reason:   "ARM function " + expression.name + " has unsupported plan argument types",
+				bindings: argBindings,
+			}
 		}
 		stringsOnly[i] = value
 	}
@@ -635,7 +812,7 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 				result = strings.ReplaceAll(result, "{"+strconv.Itoa(i)+"}", value)
 			}
 			if strings.ContainsAny(result, "{}") {
-				return planUnknown{"format uses unsupported placeholders"}
+				return planUnknown{reason: "format uses unsupported placeholders", bindings: argBindings}
 			}
 			return result
 		}
@@ -648,7 +825,10 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 			return e.function(name, stringsOnly)
 		}
 	}
-	return planUnknown{"ARM function " + expression.name + " is not supported by the local plan adapter"}
+	return planUnknown{
+		reason:   "ARM function " + expression.name + " is not supported by the local plan adapter",
+		bindings: argBindings,
+	}
 }
 
 func (e *planEnvironment) resourceID(function string, args []any) any {
@@ -662,7 +842,7 @@ func (e *planEnvironment) resourceID(function string, args []any) any {
 		}
 	}
 	if typeIndex < 0 || typeIndex == len(args)-1 {
-		return planUnknown{"resourceId has no resolved type/name"}
+		return planUnknown{reason: "resourceId has no resolved type/name"}
 	}
 	scope := e.scope.groupARMID
 	prefix := make([]string, typeIndex)
@@ -681,7 +861,7 @@ func (e *planEnvironment) resourceID(function string, args []any) any {
 	switch function {
 	case "extensionresourceid":
 		if typeIndex != 1 {
-			return planUnknown{"extensionResourceId scope cannot be resolved"}
+			return planUnknown{reason: "extensionResourceId scope cannot be resolved"}
 		}
 		scope = prefix[0]
 	case "subscriptionresourceid":
@@ -689,7 +869,7 @@ func (e *planEnvironment) resourceID(function string, args []any) any {
 		if typeIndex == 1 {
 			scope = "/subscriptions/" + prefix[0]
 		} else if typeIndex != 0 {
-			return planUnknown{"subscriptionResourceId scope cannot be resolved"}
+			return planUnknown{reason: "subscriptionResourceId scope cannot be resolved"}
 		}
 	case "resourceid":
 		if typeIndex == 1 {
@@ -697,11 +877,11 @@ func (e *planEnvironment) resourceID(function string, args []any) any {
 		} else if typeIndex == 2 {
 			scope = "/subscriptions/" + prefix[0] + "/resourceGroups/" + prefix[1]
 		} else if typeIndex != 0 {
-			return planUnknown{"resourceId scope cannot be resolved"}
+			return planUnknown{reason: "resourceId scope cannot be resolved"}
 		}
 	}
 	if scope == "" || e.scope.missing != "" && typeIndex == 0 {
-		return planUnknown{"resourceId deployment scope cannot be resolved"}
+		return planUnknown{reason: "resourceId deployment scope cannot be resolved"}
 	}
 	kind, _ := planString(args[typeIndex])
 	var parts []string
@@ -733,7 +913,7 @@ func (e *planEnvironment) resourceID(function string, args []any) any {
 	}
 	names := strings.Split(strings.Join(parts, "/"), "/")
 	if len(types)-1 != len(names) {
-		return planUnknown{"resourceId type/name hierarchy cannot be resolved"}
+		return planUnknown{reason: "resourceId type/name hierarchy cannot be resolved"}
 	}
 	var result strings.Builder
 	result.WriteString(scope + "/providers/" + types[0])

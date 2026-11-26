@@ -59,24 +59,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	if _, err := onboarding.ParseID(clusterID, "Microsoft.ContainerService/managedClusters"); err != nil {
 		return err
 	}
-	hostBindings := map[string]any{
-		"federatedIdentityRoleDefinitionId": nil,
-		"hostingPrincipalId":                nil,
-		"workloadPrincipalId":               nil,
-		"byoAksExistingRoleAssignmentKeys":  nil,
-	}
-	if includeAcr, _ := byoParameterValue(source, "includeAcr").(bool); includeAcr {
-		hostBindings["kubeletObjectId"] = nil
-	}
-	hostBindings = parametersDeclaredByTemplate(hostBindings, source.armTemplate)
-	for name := range hostBindings {
-		for supplied := range source.parameters {
-			if strings.EqualFold(name, supplied) {
-				delete(hostBindings, name)
-				break
-			}
-		}
-	}
+	hostBindings := automaticBYOBindings(source)
 	_, resolveFederationRole := hostBindings["federatedIdentityRoleDefinitionId"]
 	identities := []struct {
 		field, binding, id string
@@ -151,11 +134,11 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	if err != nil {
 		return err
 	}
-	// Explicit selectors still need bindings when their effective identities are also ARM deployment targets.
+	// Automatic bindings follow the compiled plan's effective selection and binding usage.
 	for i, resource := range []*onboarding.Resource{&plan.Hosting, &plan.Workload} {
 		identity := &identities[i]
 		_, automatic := hostBindings[identity.binding]
-		resource.PrincipalRequired = automatic && (resource.Supplied || identity.id != "")
+		resource.PrincipalRequired = automatic && resource.PrincipalRequired
 		if !resource.PrincipalRequired {
 			delete(hostBindings, identity.binding)
 		}
@@ -399,4 +382,40 @@ func byoParameterValue(source *templateSource, key string) any {
 		}
 	}
 	return parameterValue(source, key)
+}
+
+func automaticBYOBindings(source *templateSource) map[string]any {
+	candidates := map[string]any{
+		"federatedIdentityRoleDefinitionId": planUnknown{
+			reason:   "automatic deployment binding federatedIdentityRoleDefinitionId",
+			nonEmpty: true,
+		},
+		"hostingPrincipalId": planUnknown{
+			reason:   "automatic deployment binding hostingPrincipalId",
+			bindings: planBindingHostingPrincipal,
+		},
+		"workloadPrincipalId": planUnknown{
+			reason:   "automatic deployment binding workloadPrincipalId",
+			bindings: planBindingWorkloadPrincipal,
+		},
+		"byoAksExistingRoleAssignmentKeys": planUnknown{
+			reason: "automatic deployment binding byoAksExistingRoleAssignmentKeys",
+		},
+	}
+	if includeAcr, _ := byoParameterValue(source, "includeAcr").(bool); includeAcr {
+		candidates["kubeletObjectId"] = planUnknown{
+			reason:   "automatic deployment binding kubeletObjectId",
+			nonEmpty: true,
+		}
+	}
+	bindings := parametersDeclaredByTemplate(candidates, source.armTemplate)
+	for name := range bindings {
+		for supplied := range source.parameters {
+			if strings.EqualFold(name, supplied) {
+				delete(bindings, name)
+				break
+			}
+		}
+	}
+	return bindings
 }

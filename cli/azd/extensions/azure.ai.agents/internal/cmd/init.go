@@ -219,17 +219,12 @@ func ensureLoggedIn(ctx context.Context, getAuthStatusJSON func(ctx context.Cont
 	// exit code (ExitError). azd auth status writes JSON to stdout regardless of
 	// exit code, so the output may still be usable.
 	if len(out) > 0 {
-		authStatus, parseErr := parseAuthStatusJSON(out)
+		authStatus, parseErr := parseInitAuthStatus(out)
 		if parseErr == nil {
-			if authStatus == "unauthenticated" {
-				return exterrors.Auth(
-					exterrors.CodeNotLoggedIn,
-					"not logged in",
-					"run `azd auth login` to authenticate before running init",
-				)
-			}
-
-			if authStatus == "authenticated" {
+			switch authStatus.Status {
+			case "unauthenticated":
+				return initAuthStatusError(authStatus.Reason)
+			case "authenticated":
 				return nil
 			}
 
@@ -252,18 +247,41 @@ func authStatusFromCLI(ctx context.Context) ([]byte, error) {
 	return osExec.CommandContext(ctx, "azd", "auth", "status", "--output", "json", "--no-prompt").Output()
 }
 
-// parseAuthStatusJSON extracts the "status" field from `azd auth status --output json`.
-func parseAuthStatusJSON(data []byte) (string, error) {
-	var result struct {
-		Status string `json:"status"`
-	}
+type initAuthStatus struct {
+	Status string `json:"status"`
+	Reason string `json:"reason"`
+}
+
+func parseInitAuthStatus(data []byte) (initAuthStatus, error) {
+	var result initAuthStatus
 	if err := json.Unmarshal(data, &result); err != nil {
-		return "", fmt.Errorf("unmarshal auth status: %w", err)
+		return initAuthStatus{}, fmt.Errorf("unmarshal auth status: %w", err)
 	}
 	if result.Status == "" {
-		return "", fmt.Errorf("missing \"status\" field in auth status output")
+		return initAuthStatus{}, fmt.Errorf("missing \"status\" field in auth status output")
 	}
-	return result.Status, nil
+	return result, nil
+}
+
+func initAuthStatusError(reason string) error {
+	switch reason {
+	case "", "not_logged_in":
+		// Older core versions omit the reason.
+		return exterrors.Auth(
+			exterrors.CodeNotLoggedIn, "not logged in",
+			"run `azd auth login` to authenticate before running init",
+		)
+	case "login_required":
+		return exterrors.Auth(
+			exterrors.CodeLoginExpired, "Azure sign-in needs to be renewed",
+			"run `azd auth login` to renew your session before running init",
+		)
+	default:
+		return exterrors.Auth(
+			exterrors.CodeAuthFailed, "could not verify Azure sign-in",
+			"check `azd auth status` for details and retry after resolving the reported issue",
+		)
+	}
 }
 
 func resolveInitAgentName(
@@ -992,8 +1010,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			var projectResponse *azdext.GetProjectResponse
 			var projectErr error
 			if !userProvidedTemplate {
-				projectResponse, projectErr = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-				if projectErr == nil && projectResponse.GetProject() != nil {
+				var discovered *azdext.ProjectConfig
+				discovered, projectErr = probeInitProject(ctx, azdClient)
+				if projectErr != nil {
+					return projectErr
+				}
+				projectResponse = &azdext.GetProjectResponse{Project: discovered}
+				if discovered != nil {
 					if err := requireBYOAKSProjectFeature(projectResponse.GetProject(), noticeWriter); err != nil {
 						return err
 					}
@@ -1717,8 +1740,12 @@ func ensureProject(
 	azdClient *azdext.AzdClient,
 	targetDir string,
 ) (*azdext.ProjectConfig, error) {
-	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	config, err := probeInitProject(ctx, azdClient)
 	if err != nil {
+		return nil, err
+	}
+	var projectResponse *azdext.GetProjectResponse
+	if config == nil {
 		defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
 
 		fmt.Println("Let's get your project initialized.")
@@ -1760,7 +1787,8 @@ func ensureProject(
 		}
 
 		fmt.Println()
-	} else if projectResponse.Project != nil {
+	} else {
+		projectResponse = &azdext.GetProjectResponse{Project: config}
 		fmt.Println(output.WithGrayFormat(
 			"Found existing azd project at %q. Adding agent to it.", projectResponse.Project.Path,
 		))
@@ -1845,14 +1873,7 @@ func scaffoldProject(
 	if _, err := azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
 		Workflow: workflow,
 	}); err != nil {
-		if exterrors.IsCancellation(err) {
-			return exterrors.Cancelled("project initialization was cancelled")
-		}
-		return exterrors.Dependency(
-			exterrors.CodeProjectInitFailed,
-			fmt.Sprintf("failed to initialize project: %s", err),
-			"",
-		)
+		return initScaffoldError(err)
 	}
 
 	// Best-effort: generate a salt so uniqueString()-based resource names
@@ -1896,7 +1917,7 @@ func writeFoundryProvider(ctx context.Context, azdClient *azdext.AzdClient) erro
 			return exterrors.Cancelled("writing infra.provider was cancelled")
 		}
 		return exterrors.Dependency(
-			exterrors.CodeProjectInitFailed,
+			exterrors.CodeProjectConfigurationFailed,
 			fmt.Sprintf(
 				"failed to set infra.provider=%s on azure.yaml: %s",
 				project.FoundryProviderName, err,
@@ -1909,9 +1930,12 @@ func writeFoundryProvider(ctx context.Context, azdClient *azdext.AzdClient) erro
 	_, err = azdClient.Project().UnsetConfig(ctx, &azdext.UnsetProjectConfigRequest{
 		Path: "infra.path",
 	})
-	if err != nil && !exterrors.IsCancellation(err) {
+	if exterrors.IsCancellation(err) {
+		return exterrors.Cancelled("removing infra.path was cancelled")
+	}
+	if err != nil {
 		return exterrors.Dependency(
-			exterrors.CodeProjectInitFailed,
+			exterrors.CodeProjectConfigurationFailed,
 			fmt.Sprintf("failed to unset infra.path on azure.yaml: %s", err),
 			"check that azure.yaml is writable and re-run the command",
 		)

@@ -164,9 +164,14 @@ func TestInitStepTimingGeneratedProjectOnlyRecordsScaffolding(t *testing.T) {
 						Path: root, Infra: &azdext.InfraOptions{Provider: "microsoft.foundry"},
 					}}, &helpersPromptServer{})
 				} else {
-					client = newTestAzdClient(t, &testEnvironmentServiceServer{}, &testWorkflowServiceServer{
-						runErr: status.Error(codes.Internal, "scaffolding stopped"),
-					})
+					host := &initScopeHost{project: helpersProjectServer{
+						err: status.Error(codes.NotFound, initScopeNoProject),
+					}}
+					host.start(t)
+					var err error
+					client, err = azdext.NewAzdClient()
+					require.NoError(t, err)
+					t.Cleanup(client.Close)
 				}
 				ctx, timing := inittelemetry.NewContext(t.Context())
 				action := &InitFromCodeAction{azdClient: client, flags: &initFlags{}, projectTargetDir: target}
@@ -174,7 +179,7 @@ func TestInitStepTimingGeneratedProjectOnlyRecordsScaffolding(t *testing.T) {
 				if existing {
 					require.NoError(t, err)
 				} else {
-					require.ErrorContains(t, err, "scaffolding stopped")
+					require.ErrorContains(t, err, "fixture stopped before init writes")
 				}
 				recorder := &initTimingRecorder{}
 				timing.Flush(ctx, recorder)

@@ -2141,6 +2141,26 @@ func TestEnsureLoggedIn(t *testing.T) {
 			wantMsg:  "not logged in",
 		},
 		{
+			name:    "host explicitly reports no login",
+			output:  []byte(`{"status":"unauthenticated","reason":"not_logged_in"}`),
+			wantErr: true, wantCode: exterrors.CodeNotLoggedIn,
+		},
+		{
+			name:    "host explicitly requests reauthentication",
+			output:  []byte(`{"status":"unauthenticated","reason":"login_required"}`),
+			wantErr: true, wantCode: exterrors.CodeLoginExpired,
+		},
+		{
+			name:    "host verification failure is not reported as no login",
+			output:  []byte(`{"status":"unauthenticated","reason":"verification_failed"}`),
+			wantErr: true, wantCode: exterrors.CodeAuthFailed,
+		},
+		{
+			name:    "unknown reason is not reported as no login",
+			output:  []byte(`{"status":"unauthenticated","reason":"future_reason"}`),
+			wantErr: true, wantCode: exterrors.CodeAuthFailed,
+		},
+		{
 			name:     "unauthenticated with non-zero exit still detected",
 			output:   []byte(`{"status":"unauthenticated"}`),
 			runErr:   errors.New("exit status 1"),
@@ -2267,7 +2287,7 @@ func TestParseAuthStatusJSON(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := parseAuthStatusJSON(tt.data)
+			got, err := parseInitAuthStatus(tt.data)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -2277,8 +2297,8 @@ func TestParseAuthStatusJSON(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if got != tt.want {
-				t.Errorf("got %q, want %q", got, tt.want)
+			if got.Status != tt.want {
+				t.Errorf("got %q, want %q", got.Status, tt.want)
 			}
 		})
 	}

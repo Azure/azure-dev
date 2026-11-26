@@ -68,22 +68,7 @@ The server should take this request and fetch a token using the given configurat
 
 `NotSignedInError` is the code that is returned when the auth server detects that the user is not signed in, and can be used by the client to provide a better error experience.  Other failures are returned as a `GetTokenError` and the message can match the error message returned by `GetToken` on the server.
 
-The response code and message are preserved in the error returned by `GetToken`.
-
-## CLI reference: `azd auth status --output json`
-
-Check `status` to determine whether azd could verify the current Azure login.
-The command reports an unauthenticated result in JSON rather than using a
-nonzero exit code to indicate it.
-
-| `reason` when `status` is `unauthenticated` | Meaning |
-|---|---|
-| `not_logged_in` | No current login was found, or the external auth host explicitly reported `NotSignedInError`. |
-| `login_required` | The current login needs to be renewed. |
-| `verification_failed` | azd could not verify the login, for example because the credential cache was unreadable or token retrieval failed. This does not confirm that the user is signed out. |
-
-Authenticated results omit `reason`. Older azd versions may omit `reason` even
-when the status is `unauthenticated`; scripts should handle that case.
+The message is returned as is as the `error` for the `GetToken` call on the client side.
 
 ## Transport selection via URL scheme
 

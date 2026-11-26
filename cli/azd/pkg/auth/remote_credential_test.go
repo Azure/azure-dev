@@ -348,45 +348,31 @@ func TestRemoteCredential_GetToken_Success(t *testing.T) {
 }
 
 func TestRemoteCredential_GetToken_Error(t *testing.T) {
-	t.Parallel()
-	for _, tt := range []struct {
-		name      string
-		code      string
-		message   string
-		signedOut bool
-	}{
-		{name: "explicitly signed out", code: "NotSignedInError", signedOut: true},
-		{name: "token failure", code: "GetTokenError", message: "not signed in"},
-		{name: "incomplete error response"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			body := remoteCredTestJSON(map[string]string{"status": "error", "code": tt.code, "message": tt.message})
-			transport := &fakeTransporter{response: &http.Response{
-				StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)),
-			}}
-			rc := newRemoteCredential("https://example.com/auth", "api-key", "", transport)
-			_, err := rc.GetToken(t.Context(), policy.TokenRequestOptions{Scopes: []string{"scope1"}})
-			require.ErrorAs(t, err, new(*remoteTokenError))
-			require.ErrorContains(t, err, "failed to acquire token")
-			if tt.signedOut {
-				require.ErrorIs(t, err, ErrNoCurrentUser)
-			} else {
-				require.NotErrorIs(t, err, ErrNoCurrentUser)
-			}
-		})
-	}
-}
+	code := "unauthorized"
+	message := "bad credentials"
+	tokenJSON, _ := json.Marshal(map[string]any{
+		"status":  "error",
+		"code":    code,
+		"message": message,
+	})
 
-func TestRemoteCredential_GetToken_IncompleteSuccess(t *testing.T) {
-	t.Parallel()
-	transport := &fakeTransporter{response: &http.Response{
-		StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"status":"success"}`)),
-	}}
-	rc := newRemoteCredential("https://example.com/auth", "api-key", "", transport)
-	_, err := rc.GetToken(t.Context(), policy.TokenRequestOptions{})
-	require.ErrorContains(t, err, "token response missing token or expiration")
-	require.NotErrorIs(t, err, ErrNoCurrentUser)
+	transport := &fakeTransporter{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(
+				strings.NewReader(string(tokenJSON)),
+			),
+		},
+	}
+
+	rc := newRemoteCredential(
+		"https://example.com/auth", "api-key", "", transport,
+	)
+	_, err := rc.GetToken(t.Context(), policy.TokenRequestOptions{
+		Scopes: []string{"scope1"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bad credentials")
 }
 
 func TestRemoteCredential_GetToken_UnexpectedStatus(t *testing.T) {

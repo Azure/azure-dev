@@ -815,19 +815,23 @@ type unifiedModelTestServer struct {
 	azdext.UnimplementedPromptServiceServer
 	azdext.UnimplementedAiModelServiceServer
 
-	catalogModels           []*azdext.AiModel
-	promptedModel           *azdext.AiModel
-	resolvedCandidates      map[string][]*azdext.AiModelDeployment
-	resolveErr              error
-	promptDeployment        *azdext.AiModelDeployment
-	promptDeploymentErr     error
-	selectResponses         []int32
-	locationWithQuotaResult string
+	catalogModels              []*azdext.AiModel
+	promptedModel              *azdext.AiModel
+	promptedModels             []*azdext.AiModel
+	resolvedCandidates         map[string][]*azdext.AiModelDeployment
+	resolveErr                 error
+	resolveErrByModel          map[string]error
+	promptDeployment           *azdext.AiModelDeployment
+	promptDeploymentErr        error
+	promptDeploymentErrByModel map[string]error
+	selectResponses            []int32
+	locationWithQuotaResult    string
 
 	selectRequests            []*azdext.SelectRequest
 	textPromptRequests        []*azdext.PromptRequest
 	promptAiModelRequests     []*azdext.PromptAiModelRequest
 	promptDeploymentRequests  []*azdext.PromptAiDeploymentRequest
+	resolveDeploymentRequests []*azdext.ResolveModelDeploymentsRequest
 	locationWithQuotaRequests []*azdext.PromptAiModelLocationWithQuotaRequest
 	listModelsCalls           int
 	resolveCalls              int
@@ -857,8 +861,14 @@ func (s *unifiedModelTestServer) PromptAiModel(
 	_ context.Context,
 	req *azdext.PromptAiModelRequest,
 ) (*azdext.PromptAiModelResponse, error) {
+	idx := len(s.promptAiModelRequests)
 	s.promptAiModelRequests = append(s.promptAiModelRequests, req)
-	model := s.promptedModel
+	var model *azdext.AiModel
+	if idx < len(s.promptedModels) {
+		model = s.promptedModels[idx]
+	} else {
+		model = s.promptedModel
+	}
 	if model == nil {
 		model = &azdext.AiModel{
 			Name:      defaultAgentModel,
@@ -874,6 +884,9 @@ func (s *unifiedModelTestServer) PromptAiDeployment(
 	req *azdext.PromptAiDeploymentRequest,
 ) (*azdext.PromptAiDeploymentResponse, error) {
 	s.promptDeploymentRequests = append(s.promptDeploymentRequests, req)
+	if err, ok := s.promptDeploymentErrByModel[req.GetModelName()]; ok && err != nil {
+		return nil, err
+	}
 	if s.promptDeploymentErr != nil {
 		return nil, s.promptDeploymentErr
 	}
@@ -913,6 +926,10 @@ func (s *unifiedModelTestServer) ResolveModelDeployments(
 	req *azdext.ResolveModelDeploymentsRequest,
 ) (*azdext.ResolveModelDeploymentsResponse, error) {
 	s.resolveCalls++
+	s.resolveDeploymentRequests = append(s.resolveDeploymentRequests, req)
+	if err, ok := s.resolveErrByModel[req.GetModelName()]; ok && err != nil {
+		return nil, err
+	}
 	if s.resolveErr != nil {
 		return nil, s.resolveErr
 	}
@@ -1395,34 +1412,67 @@ func TestConfigureAgentModelDeployment_UnavailableLocationRecoveryUpdatesScopeLo
 func TestConfigureAgentModelDeployment_RecoveryCatalogPromptsDefaultToDefaultAgentModel(t *testing.T) {
 	const envName = "alt-model-env"
 
-	t.Run("not-in-catalog alternative model prompt defaults to gpt-5.4-mini", func(t *testing.T) {
-		envSrv := &testEnvironmentServiceServer{
-			values: map[string]map[string]string{envName: {}},
-		}
-		aiSrv := &unifiedModelTestServer{
-			catalogModels: []*azdext.AiModel{},
-			// 0: "Select a different model", 0: "Models available in my current region"
-			selectResponses: []int32{0, 0},
-		}
-		client := newUnifiedModelAzdClient(t, envSrv, aiSrv)
-		azureCtx := &azdext.AzureContext{
-			Scope: &azdext.AzureScope{SubscriptionId: "sub", Location: "eastus2"},
-		}
+	for _, tc := range []struct {
+		name              string
+		regionChoiceIndex int32
+		wantLocations     []string
+	}{
+		{
+			name:              "current region filter",
+			regionChoiceIndex: 0, // "Models available in my current region (eastus2)"
+			wantLocations:     []string{"eastus2"},
+		},
+		{
+			name:              "all available models leaves locations unfiltered",
+			regionChoiceIndex: 1, // "All available models"
+			wantLocations:     nil,
+		},
+	} {
+		t.Run("not-in-catalog alternative model prompt defaults to gpt-5.4-mini ("+tc.name+")", func(t *testing.T) {
+			envSrv := &testEnvironmentServiceServer{
+				values: map[string]map[string]string{envName: {}},
+			}
+			aiSrv := &unifiedModelTestServer{
+				catalogModels: []*azdext.AiModel{},
+				// 0: "Select a different model", tc.regionChoiceIndex: "Which models would you like to explore?"
+				selectResponses: []int32{0, tc.regionChoiceIndex},
+			}
+			client := newUnifiedModelAzdClient(t, envSrv, aiSrv)
+			azureCtx := &azdext.AzureContext{
+				Scope: &azdext.AzureScope{SubscriptionId: "sub", Location: "eastus2"},
+			}
 
-		_, err := captureStdout(t, func() error {
-			_, _, runErr := configureAgentModelDeployment(t.Context(), agentModelConfigOptions{
-				AzdClient:    client,
-				AzureContext: azureCtx,
-				Env:          &azdext.Environment{Name: envName},
-				Flags:        &initFlags{model: "missing-model"},
-				AllowSkip:    false,
+			_, err := captureStdout(t, func() error {
+				_, _, runErr := configureAgentModelDeployment(t.Context(), agentModelConfigOptions{
+					AzdClient:    client,
+					AzureContext: azureCtx,
+					Env:          &azdext.Environment{Name: envName},
+					Flags:        &initFlags{model: "missing-model"},
+					AllowSkip:    false,
+				})
+				return runErr
 			})
-			return runErr
+			require.NoError(t, err)
+			require.Len(t, aiSrv.selectRequests, 2)
+			assert.Equal(
+				t,
+				"Would you like to select a different model or exit?",
+				aiSrv.selectRequests[0].GetOptions().GetMessage(),
+			)
+			assert.Equal(
+				t,
+				"Which models would you like to explore?",
+				aiSrv.selectRequests[1].GetOptions().GetMessage(),
+			)
+			require.Len(t, aiSrv.promptAiModelRequests, 1)
+			assert.Equal(t, defaultAgentModel, aiSrv.promptAiModelRequests[0].GetDefaultValue())
+			if len(tc.wantLocations) == 0 {
+				assert.Empty(t, aiSrv.promptAiModelRequests[0].GetFilter().GetLocations())
+			} else {
+				assert.Equal(t, tc.wantLocations, aiSrv.promptAiModelRequests[0].GetFilter().GetLocations())
+			}
 		})
-		require.NoError(t, err)
-		require.Len(t, aiSrv.promptAiModelRequests, 1)
-		require.Equal(t, defaultAgentModel, aiSrv.promptAiModelRequests[0].GetDefaultValue())
-	})
+	}
 
 	t.Run("unavailable-location same-region catalog prompt defaults to gpt-5.4-mini", func(t *testing.T) {
 		envSrv := &testEnvironmentServiceServer{
@@ -1692,5 +1742,236 @@ func TestConfigureAgentModelDeployment_ExistingDeploymentDiscoveryFailures(t *te
 		require.ErrorContains(t, err, "deployments/read permission denied")
 		require.Empty(t, aiSrv.selectRequests)
 		require.Empty(t, aiSrv.promptAiModelRequests)
+	})
+}
+
+func assertFixedLocationRecoverySelect(t *testing.T, req *azdext.SelectRequest, location string) {
+	t.Helper()
+
+	opts := req.GetOptions()
+	require.NotNil(t, opts)
+	assert.Equal(t, "What would you like to do?", opts.GetMessage())
+	require.NotNil(t, opts.SelectedIndex)
+	assert.Equal(t, int32(1), opts.GetSelectedIndex())
+
+	choices := opts.GetChoices()
+	require.Len(t, choices, 2)
+	assert.Equal(t, "Choose a different model in "+location, choices[0].GetLabel())
+	assert.Equal(t, "model", choices[0].GetValue())
+	assert.Equal(t, "Exit setup", choices[1].GetLabel())
+	assert.Equal(t, "exit", choices[1].GetValue())
+}
+
+func TestConfigureAgentModelDeployment_SelectedProjectLocksLocation(t *testing.T) {
+	const (
+		envName         = "fixed-loc-env"
+		projectLocation = "swedencentral"
+	)
+	selectedProject := &FoundryProjectInfo{
+		SubscriptionId:    "sub",
+		ResourceGroupName: "rg",
+		AccountName:       "acct",
+		ProjectName:       "proj",
+		Location:          projectLocation,
+	}
+	inRegionReplacement := &azdext.AiModel{
+		Name:      defaultAgentModel,
+		Locations: []string{projectLocation},
+		Versions:  []*azdext.AiModelVersion{{Version: "2026-01-01", IsDefault: true}},
+	}
+	exhaustedModel := &azdext.AiModel{
+		Name:      "gpt-exhausted",
+		Locations: []string{projectLocation, "eastus2"},
+		Versions:  []*azdext.AiModelVersion{{Version: "2026-01-01", IsDefault: true}},
+	}
+	emptyLoader := func(
+		context.Context, azcore.TokenCredential, string, string, string,
+	) ([]FoundryDeploymentInfo, error) {
+		return nil, nil
+	}
+
+	type fixedLocationRunResult struct {
+		deployment *project.Deployment
+		provision  bool
+		stdout     string
+		err        error
+	}
+
+	runWithSelectedProject := func(
+		t *testing.T,
+		flags initFlags,
+		aiSrv *unifiedModelTestServer,
+	) fixedLocationRunResult {
+		t.Helper()
+
+		envSrv := &testEnvironmentServiceServer{
+			values: map[string]map[string]string{envName: {}},
+		}
+		client := newUnifiedModelAzdClient(t, envSrv, aiSrv)
+		azureCtx := &azdext.AzureContext{
+			Scope: &azdext.AzureScope{SubscriptionId: "sub", Location: projectLocation},
+		}
+
+		var res fixedLocationRunResult
+		res.stdout, res.err = captureStdout(t, func() error {
+			var runErr error
+			res.deployment, res.provision, runErr = configureAgentModelDeployment(
+				t.Context(),
+				agentModelConfigOptions{
+					AzdClient:       client,
+					AzureContext:    azureCtx,
+					Env:             &azdext.Environment{Name: envName},
+					Flags:           &flags,
+					SelectedProject: selectedProject,
+					AllowSkip:       false,
+					loadDeployments: emptyLoader,
+				},
+			)
+			return runErr
+		})
+
+		assert.Empty(t, aiSrv.locationWithQuotaRequests)
+		assert.NotContains(t, res.stdout, "WARNING: If you switch locations:")
+		assert.NotContains(t, envSrv.values[envName], "AZURE_AI_DEPLOYMENTS_LOCATION")
+		assert.Equal(t, projectLocation, azureCtx.Scope.Location)
+
+		return res
+	}
+
+	t.Run("explicit --model unavailable in project location resolves in-region replacement", func(t *testing.T) {
+		aiSrv := &unifiedModelTestServer{
+			catalogModels: []*azdext.AiModel{
+				{Name: "gpt-west-only", Locations: []string{"westus2"}},
+				inRegionReplacement,
+			},
+			promptedModel:   inRegionReplacement,
+			selectResponses: []int32{0}, // "Choose a different model in swedencentral"
+		}
+
+		res := runWithSelectedProject(t, initFlags{model: "gpt-west-only"}, aiSrv)
+		require.NoError(t, res.err)
+		require.True(t, res.provision)
+		require.NotNil(t, res.deployment)
+		assert.Equal(t, defaultAgentModel, res.deployment.Name)
+		assert.Equal(t, int(defaultDeploymentCapacity), res.deployment.Sku.Capacity)
+
+		require.Len(t, aiSrv.selectRequests, 1)
+		assertFixedLocationRecoverySelect(t, aiSrv.selectRequests[0], projectLocation)
+
+		require.Len(t, aiSrv.promptAiModelRequests, 1)
+		assert.Equal(t, []string{projectLocation}, aiSrv.promptAiModelRequests[0].GetFilter().GetLocations())
+		assert.Equal(t, defaultAgentModel, aiSrv.promptAiModelRequests[0].GetDefaultValue())
+	})
+
+	t.Run("explicit --model unavailable in project location exits cleanly on Exit setup", func(t *testing.T) {
+		aiSrv := &unifiedModelTestServer{
+			catalogModels: []*azdext.AiModel{
+				{Name: "gpt-west-only", Locations: []string{"westus2"}},
+			},
+			selectResponses: []int32{1}, // "Exit setup" (pre-selected at index 1)
+		}
+
+		res := runWithSelectedProject(t, initFlags{model: "gpt-west-only"}, aiSrv)
+		require.ErrorContains(t, res.err, "model unavailable in current location and no alternative selected, exiting")
+		assert.Nil(t, res.deployment)
+		assert.False(t, res.provision)
+
+		require.Len(t, aiSrv.selectRequests, 1)
+		assertFixedLocationRecoverySelect(t, aiSrv.selectRequests[0], projectLocation)
+		assert.Empty(t, aiSrv.promptAiModelRequests)
+	})
+
+	for _, reason := range []string{
+		azdext.AiErrorReasonNoValidSkus,
+		azdext.AiErrorReasonNoDeploymentMatch,
+	} {
+		quotaErr := newAiReasonError(reason)
+
+		for _, entry := range []struct {
+			name            string
+			flags           initFlags
+			catalogModels   []*azdext.AiModel
+			promptedModels  []*azdext.AiModel
+			wantModelPrompt int
+		}{
+			{
+				name:            "explicit --model",
+				flags:           initFlags{model: exhaustedModel.Name},
+				catalogModels:   []*azdext.AiModel{exhaustedModel, inRegionReplacement},
+				promptedModels:  []*azdext.AiModel{inRegionReplacement},
+				wantModelPrompt: 1,
+			},
+			{
+				name:            "catalog-picked model",
+				flags:           initFlags{},
+				promptedModels:  []*azdext.AiModel{exhaustedModel, inRegionReplacement},
+				wantModelPrompt: 2,
+			},
+		} {
+			t.Run("quota exhaustion with "+entry.name+" on "+reason, func(t *testing.T) {
+				aiSrv := &unifiedModelTestServer{
+					catalogModels:              entry.catalogModels,
+					promptedModels:             entry.promptedModels,
+					resolveErrByModel:          map[string]error{exhaustedModel.Name: quotaErr},
+					promptDeploymentErrByModel: map[string]error{exhaustedModel.Name: quotaErr},
+					selectResponses:            []int32{0}, // "Choose a different model in swedencentral"
+				}
+
+				res := runWithSelectedProject(t, entry.flags, aiSrv)
+				require.NoError(t, res.err)
+				require.True(t, res.provision)
+				require.NotNil(t, res.deployment)
+				assert.Equal(t, defaultAgentModel, res.deployment.Name)
+
+				// Confirm quota recovery followed a deployment attempt for the exhausted model in projectLocation.
+				require.NotEmpty(t, aiSrv.resolveDeploymentRequests)
+				assert.Equal(t, exhaustedModel.Name, aiSrv.resolveDeploymentRequests[0].GetModelName())
+				assert.Equal(
+					t,
+					[]string{projectLocation},
+					aiSrv.resolveDeploymentRequests[0].GetOptions().GetLocations(),
+				)
+				require.NotEmpty(t, aiSrv.promptDeploymentRequests)
+				assert.Equal(t, exhaustedModel.Name, aiSrv.promptDeploymentRequests[0].GetModelName())
+				assert.Equal(
+					t,
+					[]string{projectLocation},
+					aiSrv.promptDeploymentRequests[0].GetOptions().GetLocations(),
+				)
+
+				require.Len(t, aiSrv.selectRequests, 1)
+				assertFixedLocationRecoverySelect(t, aiSrv.selectRequests[0], projectLocation)
+
+				require.Len(t, aiSrv.promptAiModelRequests, entry.wantModelPrompt)
+				for _, modelReq := range aiSrv.promptAiModelRequests {
+					assert.Equal(t, []string{projectLocation}, modelReq.GetFilter().GetLocations())
+				}
+			})
+		}
+	}
+
+	t.Run("explicit --model not in catalog skips region prompt and filters to project location", func(t *testing.T) {
+		aiSrv := &unifiedModelTestServer{
+			catalogModels:   []*azdext.AiModel{inRegionReplacement},
+			promptedModel:   inRegionReplacement,
+			selectResponses: []int32{0}, // "Select a different model" (no second region-scope prompt)
+		}
+
+		res := runWithSelectedProject(t, initFlags{model: "not-in-catalog"}, aiSrv)
+		require.NoError(t, res.err)
+		require.True(t, res.provision)
+		require.NotNil(t, res.deployment)
+		assert.Equal(t, defaultAgentModel, res.deployment.Name)
+
+		require.Len(t, aiSrv.selectRequests, 1)
+		assert.Equal(
+			t,
+			"Would you like to select a different model or exit?",
+			aiSrv.selectRequests[0].GetOptions().GetMessage(),
+		)
+
+		require.Len(t, aiSrv.promptAiModelRequests, 1)
+		assert.Equal(t, []string{projectLocation}, aiSrv.promptAiModelRequests[0].GetFilter().GetLocations())
+		assert.Equal(t, defaultAgentModel, aiSrv.promptAiModelRequests[0].GetDefaultValue())
 	})
 }

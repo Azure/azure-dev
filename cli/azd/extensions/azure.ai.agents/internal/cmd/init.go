@@ -153,6 +153,7 @@ type modelSelector struct {
 	flags        *initFlags
 
 	modelCatalog         map[string]*azdext.AiModel
+	locationFixed        bool
 	locationWarningShown bool
 }
 

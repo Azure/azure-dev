@@ -176,10 +176,11 @@ func configureAgentModelDeployment(
 			}
 		}
 		selector := &modelSelector{
-			azdClient:    opts.AzdClient,
-			azureContext: opts.AzureContext,
-			environment:  opts.Env,
-			flags:        opts.Flags,
+			azdClient:     opts.AzdClient,
+			azureContext:  opts.AzureContext,
+			environment:   opts.Env,
+			flags:         opts.Flags,
+			locationFixed: opts.SelectedProject != nil,
 		}
 		selectedModel, err := selector.resolveExplicitModel(ctx, modelFlag)
 		if err != nil {
@@ -255,11 +256,12 @@ func configureAgentModelDeployment(
 		return nil, false, err
 	}
 	selector := &modelSelector{
-		azdClient:    opts.AzdClient,
-		azureContext: opts.AzureContext,
-		environment:  opts.Env,
-		flags:        opts.Flags,
-		modelCatalog: map[string]*azdext.AiModel{selectedModel.Name: selectedModel},
+		azdClient:     opts.AzdClient,
+		azureContext:  opts.AzureContext,
+		environment:   opts.Env,
+		flags:         opts.Flags,
+		modelCatalog:  map[string]*azdext.AiModel{selectedModel.Name: selectedModel},
+		locationFixed: opts.SelectedProject != nil,
 	}
 	modelDetails, err := selector.resolveOrPromptModelDeployment(ctx, selectedModel)
 	if err != nil {
@@ -821,36 +823,39 @@ func (a *modelSelector) promptForAlternativeModel(
 		return nil, nil
 	}
 
-	regionChoices := []*azdext.SelectChoice{
-		{
-			Label: fmt.Sprintf("Models available in my current region (%s)", a.azureContext.Scope.Location),
-			Value: "region",
-		},
-		{Label: "All available models", Value: "all"},
-	}
+	filter := agentModelFilter([]string{a.azureContext.Scope.Location}, nil)
+	if !a.locationFixed {
+		regionChoices := []*azdext.SelectChoice{
+			{
+				Label: fmt.Sprintf("Models available in my current region (%s)", a.azureContext.Scope.Location),
+				Value: "region",
+			},
+			{Label: "All available models", Value: "all"},
+		}
 
-	regionResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message:         "Which models would you like to explore?",
-			Choices:         regionChoices,
-			EnableFiltering: new(false),
-		},
-	})
-	if err != nil {
-		return nil, exterrors.FromPrompt(err, "failed to prompt for region choice")
+		regionResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message:         "Which models would you like to explore?",
+				Choices:         regionChoices,
+				EnableFiltering: new(false),
+			},
+		})
+		if err != nil {
+			return nil, exterrors.FromPrompt(err, "failed to prompt for region choice")
+		}
+
+		if regionChoices[*regionResp.Value].Value != "region" {
+			filter = agentModelFilter(nil, nil)
+		}
 	}
 
 	promptReq := &azdext.PromptAiModelRequest{
 		AzureContext: a.azureContext,
-		Filter:       agentModelFilter(nil, nil),
+		Filter:       filter,
 		SelectOptions: &azdext.SelectOptions{
 			Message: "Select a model",
 		},
 		DefaultValue: defaultAgentModel,
-	}
-
-	if regionChoices[*regionResp.Value].Value == "region" {
-		promptReq.Filter = agentModelFilter([]string{a.azureContext.Scope.Location}, nil)
 	}
 
 	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)
@@ -911,14 +916,25 @@ func (a *modelSelector) promptForModelLocationMismatch(
 
 		modelChoiceLabel := fmt.Sprintf("Choose a different model in %s", currentLocation)
 
-		choices := []*azdext.SelectChoice{
-			{Label: modelChoiceLabel, Value: "model"},
-			{Label: "Choose a different model (all regions)", Value: "model_all_regions"},
-			{Label: fmt.Sprintf("Choose a different location for %s", currentModel.Name), Value: "location"},
-			{Label: "Exit setup", Value: "exit"},
+		var choices []*azdext.SelectChoice
+		var exitIndex int32
+		if a.locationFixed {
+			choices = []*azdext.SelectChoice{
+				{Label: modelChoiceLabel, Value: "model"},
+				{Label: "Exit setup", Value: "exit"},
+			}
+			exitIndex = 1
+		} else {
+			choices = []*azdext.SelectChoice{
+				{Label: modelChoiceLabel, Value: "model"},
+				{Label: "Choose a different model (all regions)", Value: "model_all_regions"},
+				{Label: fmt.Sprintf("Choose a different location for %s", currentModel.Name), Value: "location"},
+				{Label: "Exit setup", Value: "exit"},
+			}
+			exitIndex = 3
 		}
 
-		if !a.locationWarningShown {
+		if !a.locationFixed && !a.locationWarningShown {
 			fmt.Println()
 			fmt.Println(output.WithWarningFormat(modelLocationSwitchWarning))
 			a.locationWarningShown = true
@@ -929,7 +945,7 @@ func (a *modelSelector) promptForModelLocationMismatch(
 			Options: &azdext.SelectOptions{
 				Message:         "What would you like to do?",
 				Choices:         choices,
-				SelectedIndex:   new(int32(3)),
+				SelectedIndex:   new(exitIndex),
 				EnableFiltering: new(false),
 			},
 		})

@@ -8,7 +8,6 @@ import (
 	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/azure"
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -1491,9 +1490,6 @@ func resolveSubscription(
 			if exterrors.IsCancellation(err) {
 				return exterrors.Cancelled("subscription selection was cancelled")
 			}
-			if authErr := initSubscriptionRPCError(err); authErr != nil {
-				return authErr
-			}
 			// Only attach the AZURE_SUBSCRIPTION_ID-specific guidance when the
 			// failure is the no-prompt / "prompt required" path. Other prompt
 			// failures (e.g. host transport errors) get a generic message so we
@@ -1521,52 +1517,13 @@ func resolveSubscription(
 			SubscriptionId: azureContext.Scope.SubscriptionId,
 		})
 		if err != nil {
-			if authErr := initSubscriptionRPCError(err); authErr != nil {
-				return authErr
-			}
 			return exterrors.Auth(
 				exterrors.CodeTenantLookupFailed,
 				fmt.Sprintf("failed to lookup tenant for subscription %s: %s", azureContext.Scope.SubscriptionId, err),
-				"check that the signed-in account can access the selected subscription and retry",
+				"verify your Azure login with 'azd auth login'",
 			)
 		}
 		azureContext.Scope.TenantId = tenantResponse.TenantId
-	}
-	return nil
-}
-
-func initSubscriptionRPCError(err error) error {
-	if exterrors.IsCancellation(err) {
-		return exterrors.Cancelled("subscription resolution was cancelled")
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return err
-	}
-	switch st := status.Convert(err); st.Code() {
-	case codes.DeadlineExceeded:
-		return err
-	case codes.Unauthenticated:
-		if azdext.ActionableErrorDetailFromStatus(st) != nil {
-			return err
-		}
-		switch azdext.AuthErrorReason(st) {
-		case azdext.AuthErrorReasonNotLoggedIn:
-			return initAuthStatusError("not_logged_in")
-		case azdext.AuthErrorReasonLoginRequired:
-			return initAuthStatusError("login_required")
-		default:
-			return initAuthStatusError("verification_failed")
-		}
-	case codes.PermissionDenied, codes.NotFound:
-		return exterrors.Auth(
-			exterrors.CodeTenantLookupFailed, "the selected Azure subscription could not be accessed",
-			"check that the selected subscription is available to your signed-in account and tenant",
-		)
-	case codes.Unavailable:
-		return exterrors.Dependency(
-			exterrors.CodeTenantLookupFailed, "Azure subscription resolution is temporarily unavailable",
-			"retry after checking your connection",
-		)
 	}
 	return nil
 }

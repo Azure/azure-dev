@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -85,31 +83,4 @@ func TestInitScaffoldErrorPreservesKnownWorkflowOutcome(t *testing.T) {
 		require.True(t, ok, "%v", err)
 		require.Equal(t, tt.want, local.Code)
 	}
-}
-
-func TestInitSubscriptionRPCErrorPreservesAuthReasons(t *testing.T) {
-	t.Parallel()
-	for _, tt := range []struct {
-		reason string
-		want   string
-	}{
-		{azdext.AuthErrorReasonNotLoggedIn, exterrors.CodeNotLoggedIn},
-		{azdext.AuthErrorReasonLoginRequired, exterrors.CodeLoginExpired},
-		{"", exterrors.CodeAuthFailed},
-	} {
-		st, err := status.New(codes.Unauthenticated, "credential unavailable").WithDetails(&errdetails.ErrorInfo{
-			Domain: azdext.AuthErrorDomain, Reason: tt.reason,
-		})
-		require.NoError(t, err)
-		local, ok := errors.AsType[*azdext.LocalError](initSubscriptionRPCError(st.Err()))
-		require.True(t, ok)
-		require.Equal(t, tt.want, local.Code)
-	}
-	require.ErrorIs(t, initSubscriptionRPCError(context.DeadlineExceeded), context.DeadlineExceeded)
-	local, ok := errors.AsType[*azdext.LocalError](initSubscriptionRPCError(
-		status.Error(codes.PermissionDenied, "subscription forbidden"),
-	))
-	require.True(t, ok)
-	require.Contains(t, local.Suggestion, "subscription")
-	require.NotContains(t, local.Suggestion, "auth login")
 }

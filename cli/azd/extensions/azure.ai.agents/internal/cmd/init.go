@@ -219,12 +219,17 @@ func ensureLoggedIn(ctx context.Context, getAuthStatusJSON func(ctx context.Cont
 	// exit code (ExitError). azd auth status writes JSON to stdout regardless of
 	// exit code, so the output may still be usable.
 	if len(out) > 0 {
-		authStatus, parseErr := parseInitAuthStatus(out)
+		authStatus, parseErr := parseAuthStatusJSON(out)
 		if parseErr == nil {
-			switch authStatus.Status {
-			case "unauthenticated":
-				return initAuthStatusError(authStatus.Reason)
-			case "authenticated":
+			if authStatus == "unauthenticated" {
+				return exterrors.Auth(
+					exterrors.CodeNotLoggedIn,
+					"not logged in",
+					"run `azd auth login` to authenticate before running init",
+				)
+			}
+
+			if authStatus == "authenticated" {
 				return nil
 			}
 
@@ -247,41 +252,18 @@ func authStatusFromCLI(ctx context.Context) ([]byte, error) {
 	return osExec.CommandContext(ctx, "azd", "auth", "status", "--output", "json", "--no-prompt").Output()
 }
 
-type initAuthStatus struct {
-	Status string `json:"status"`
-	Reason string `json:"reason"`
-}
-
-func parseInitAuthStatus(data []byte) (initAuthStatus, error) {
-	var result initAuthStatus
+// parseAuthStatusJSON extracts the "status" field from `azd auth status --output json`.
+func parseAuthStatusJSON(data []byte) (string, error) {
+	var result struct {
+		Status string `json:"status"`
+	}
 	if err := json.Unmarshal(data, &result); err != nil {
-		return initAuthStatus{}, fmt.Errorf("unmarshal auth status: %w", err)
+		return "", fmt.Errorf("unmarshal auth status: %w", err)
 	}
 	if result.Status == "" {
-		return initAuthStatus{}, fmt.Errorf("missing \"status\" field in auth status output")
+		return "", fmt.Errorf("missing \"status\" field in auth status output")
 	}
-	return result, nil
-}
-
-func initAuthStatusError(reason string) error {
-	switch reason {
-	case "", "not_logged_in":
-		// Older core versions omit the reason.
-		return exterrors.Auth(
-			exterrors.CodeNotLoggedIn, "not logged in",
-			"run `azd auth login` to authenticate before running init",
-		)
-	case "login_required":
-		return exterrors.Auth(
-			exterrors.CodeLoginExpired, "Azure sign-in needs to be renewed",
-			"run `azd auth login` to renew your session before running init",
-		)
-	default:
-		return exterrors.Auth(
-			exterrors.CodeAuthFailed, "could not verify Azure sign-in",
-			"check `azd auth status` for details and retry after resolving the reported issue",
-		)
-	}
+	return result.Status, nil
 }
 
 func resolveInitAgentName(

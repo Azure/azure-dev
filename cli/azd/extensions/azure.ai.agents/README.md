@@ -1232,11 +1232,6 @@ access error before retrying. Init does not scaffold over a project it cannot
 read. On older azd hosts, Init checks the local project path when the host does
 not distinguish a missing project from a read failure.
 
-Init does not start a sign-in flow. If it reports that you need to sign in or
-renew your session, authenticate separately and rerun Init. For other sign-in
-verification failures, check `azd auth status`. For subscription access errors,
-verify the selected account and tenant have access to the subscription.
-
 ### Environment reference validation
 
 `azd ai agent init` validates environment references before scaffolding or

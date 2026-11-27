@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
@@ -453,7 +454,9 @@ func (a *modelSelector) resolveOrPromptModelDeployment(
 			return resolveModelDeployment(ctx, a.azdClient, a.azureContext, model, currentLocation)
 		}
 
-		deployments, err := resolveModelDeployments(ctx, a.azdClient, a.azureContext, model, currentLocation)
+		deployments, hadOnlyBatch, err := resolveAgentModelDeployments(
+			ctx, a.azdClient, a.azureContext, model, currentLocation,
+		)
 		if err == nil {
 			if candidate := selectBestModelDeploymentCandidate(model, deployments); candidate != nil {
 				return candidate, nil
@@ -462,13 +465,19 @@ func (a *modelSelector) resolveOrPromptModelDeployment(
 			return nil, exterrors.FromAiService(err, exterrors.CodeModelResolutionFailed)
 		}
 
-		deploymentResp, promptErr := a.promptAiDeploymentWithFallback(ctx, model.Name, currentLocation)
-		if promptErr == nil {
-			return deploymentResp.Deployment, nil
-		}
-
-		if !isRecoverableDeploymentSelectionError(promptErr) {
-			return nil, exterrors.FromPrompt(promptErr, "failed to prompt for model deployment")
+		if err != nil || !hadOnlyBatch {
+			allowedSkus := nonBatchSkuNames(deployments)
+			deploymentResp, promptErr := a.promptAiDeploymentWithAllowedSkus(
+				ctx, model.Name, currentLocation, allowedSkus,
+			)
+			if promptErr == nil {
+				deployment := deploymentResp.GetDeployment()
+				if !isBatchModelSku(deployment.GetSku()) {
+					return deployment, nil
+				}
+			} else if !isRecoverableDeploymentSelectionError(promptErr) {
+				return nil, exterrors.FromPrompt(promptErr, "failed to prompt for model deployment")
+			}
 		}
 
 		resolvedModel, resolvedLocation, resolveErr := a.promptForModelLocationMismatch(
@@ -499,12 +508,55 @@ func (a *modelSelector) promptAiDeploymentWithFallback(
 	modelName string,
 	location string,
 ) (*azdext.PromptAiDeploymentResponse, error) {
-	if fallback, scopeCandidate, ok := a.resolveFallbackPromptDeployment(ctx, modelName, location); ok {
+	return a.promptAiDeploymentWithAllowedSkus(ctx, modelName, location, nil)
+}
+
+type fallbackPromptResolution struct {
+	clampedCandidate *azdext.AiModelDeployment
+	scopeCandidate   bool
+	hasClamped       bool
+	hadOnlyBatch     bool
+	nonBatchSkus     []string
+}
+
+func newNoValidSkusAiError(modelName string, location string) error {
+	msg := fmt.Sprintf("no real-time deployment SKUs with available quota for model %q in %q", modelName, location)
+	st, err := status.New(codes.FailedPrecondition, msg).WithDetails(&errdetails.ErrorInfo{
+		Reason: azdext.AiErrorReasonNoValidSkus,
+		Domain: azdext.AiErrorDomain,
+	})
+	if err != nil {
+		return status.Error(codes.FailedPrecondition, msg)
+	}
+	return st.Err()
+}
+
+func (a *modelSelector) promptAiDeploymentWithAllowedSkus(
+	ctx context.Context,
+	modelName string,
+	location string,
+	allowedSkus []string,
+) (*azdext.PromptAiDeploymentResponse, error) {
+	fallbackRes := a.resolveFallbackPromptDeployment(ctx, modelName, location)
+	if fallbackRes.hadOnlyBatch {
+		return nil, newNoValidSkusAiError(modelName, location)
+	}
+
+	effectiveSkus := slices.Clone(allowedSkus)
+	for _, skuName := range fallbackRes.nonBatchSkus {
+		if !slices.Contains(effectiveSkus, skuName) {
+			effectiveSkus = append(effectiveSkus, skuName)
+		}
+	}
+
+	if fallbackRes.hasClamped {
+		fallback := fallbackRes.clampedCandidate
 		retryOpts := &azdext.AiModelDeploymentOptions{
 			Locations: []string{location},
+			Skus:      slices.Clone(effectiveSkus),
 			Capacity:  new(fallback.GetCapacity()),
 		}
-		if scopeCandidate {
+		if fallbackRes.scopeCandidate {
 			if version := fallback.GetVersion(); version != "" {
 				retryOpts.Versions = []string{version}
 			}
@@ -532,6 +584,7 @@ func (a *modelSelector) promptAiDeploymentWithFallback(
 			ModelName:    modelName,
 			Options: &azdext.AiModelDeploymentOptions{
 				Locations: []string{location},
+				Skus:      slices.Clone(effectiveSkus),
 				Capacity:  new(defaultDeploymentCapacity),
 			},
 			Quota: &azdext.QuotaCheckOptions{
@@ -551,6 +604,7 @@ func (a *modelSelector) promptAiDeploymentWithFallback(
 		ModelName:    modelName,
 		Options: &azdext.AiModelDeploymentOptions{
 			Locations: []string{location},
+			Skus:      slices.Clone(effectiveSkus),
 		},
 		Quota: &azdext.QuotaCheckOptions{
 			MinRemainingCapacity: 1,
@@ -562,7 +616,7 @@ func (a *modelSelector) resolveFallbackPromptDeployment(
 	ctx context.Context,
 	modelName string,
 	location string,
-) (*azdext.AiModelDeployment, bool, bool) {
+) fallbackPromptResolution {
 	resolveResp, err := a.azdClient.Ai().ResolveModelDeployments(ctx, &azdext.ResolveModelDeploymentsRequest{
 		AzureContext: a.azureContext,
 		ModelName:    modelName,
@@ -574,15 +628,33 @@ func (a *modelSelector) resolveFallbackPromptDeployment(
 		},
 	})
 	if err != nil || len(resolveResp.GetDeployments()) == 0 {
-		return nil, false, false
+		return fallbackPromptResolution{}
 	}
 
-	candidates := make([]*azdext.AiModelDeployment, 0, len(resolveResp.GetDeployments()))
-	for _, candidate := range resolveResp.GetDeployments() {
+	rawDeployments := resolveResp.GetDeployments()
+	candidates := make([]*azdext.AiModelDeployment, 0, len(rawDeployments))
+	nonBatchCandidates := make([]*azdext.AiModelDeployment, 0, len(rawDeployments))
+	hadBatch := false
+	for _, candidate := range rawDeployments {
 		if candidate == nil {
 			continue
 		}
-		candidates = append(candidates, cloneDeploymentWithCapacity(candidate, 0))
+		cloned := cloneDeploymentWithCapacity(candidate, 0)
+		candidates = append(candidates, cloned)
+		if isBatchModelSku(candidate.GetSku()) {
+			hadBatch = true
+			continue
+		}
+		nonBatchCandidates = append(nonBatchCandidates, cloned)
+	}
+	if len(nonBatchCandidates) == 0 {
+		return fallbackPromptResolution{
+			hadOnlyBatch: hadBatch,
+		}
+	}
+
+	res := fallbackPromptResolution{
+		nonBatchSkus: nonBatchSkuNames(nonBatchCandidates),
 	}
 
 	var model *azdext.AiModel
@@ -592,12 +664,14 @@ func (a *modelSelector) resolveFallbackPromptDeployment(
 	if model == nil {
 		model = &azdext.AiModel{Name: modelName}
 	}
-	best := selectBestModelDeploymentCandidate(model, candidates)
+	best := selectBestModelDeploymentCandidate(model, nonBatchCandidates)
 	if best == nil || best.GetCapacity() <= 0 || best.GetCapacity() >= defaultDeploymentCapacity {
-		return nil, false, false
+		return res
 	}
-	scopeCandidate := needsAgentCandidateScoping(candidates, best.GetCapacity())
-	return best, scopeCandidate, true
+	res.clampedCandidate = best
+	res.scopeCandidate = needsAgentCandidateScoping(candidates, best.GetCapacity())
+	res.hasClamped = true
+	return res
 }
 
 func needsAgentCandidateScoping(
@@ -607,6 +681,9 @@ func needsAgentCandidateScoping(
 	for _, candidate := range candidates {
 		if candidate == nil || candidate.GetSku() == nil {
 			continue
+		}
+		if isBatchModelSku(candidate.GetSku()) {
+			return true
 		}
 		if !capacityValidForSku(candidate.GetSku(), targetCapacity) {
 			return true
@@ -730,6 +807,31 @@ func cloneDeploymentWithCapacity(candidate *azdext.AiModelDeployment, capacity i
 	cloned := proto.Clone(candidate).(*azdext.AiModelDeployment)
 	cloned.Capacity = capacity
 	return cloned
+}
+
+func isBatchModelSku(sku *azdext.AiModelSku) bool {
+	if sku == nil {
+		return false
+	}
+	if strings.HasSuffix(strings.ToLower(strings.TrimSpace(sku.GetName())), "batch") {
+		return true
+	}
+	parts := strings.SplitN(strings.ToLower(strings.TrimSpace(sku.GetUsageName())), ".", 3)
+	return len(parts) >= 2 && strings.HasSuffix(strings.TrimSpace(parts[1]), "batch")
+}
+
+func nonBatchSkuNames(deployments []*azdext.AiModelDeployment) []string {
+	var skus []string
+	for _, deployment := range deployments {
+		if deployment == nil || isBatchModelSku(deployment.GetSku()) {
+			continue
+		}
+		skuName := strings.TrimSpace(deployment.GetSku().GetName())
+		if skuName != "" && !slices.Contains(skus, skuName) {
+			skus = append(skus, skuName)
+		}
+	}
+	return skus
 }
 
 func skuPriority(skuName string) int {

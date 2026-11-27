@@ -583,7 +583,7 @@ func TestPromptAiDeploymentWithFallback(t *testing.T) {
 			require.NotNil(t, srv.promptRequests[0].GetOptions().Capacity)
 			assert.Equal(t, int32(120), srv.promptRequests[0].GetOptions().GetCapacity())
 			assert.Empty(t, srv.promptRequests[0].GetOptions().GetVersions())
-			assert.Empty(t, srv.promptRequests[0].GetOptions().GetSkus())
+			assert.Equal(t, []string{"GlobalStandard"}, srv.promptRequests[0].GetOptions().GetSkus())
 			assert.Equal(t, int32(120), resp.GetDeployment().GetCapacity())
 		})
 
@@ -811,6 +811,16 @@ func TestResolveModelDeploymentClampsWhenCoreSubstitutesDefaultCapacity(t *testi
 	})
 }
 
+type resolveDeploymentStep struct {
+	deployments []*azdext.AiModelDeployment
+	err         error
+}
+
+type promptDeploymentStep struct {
+	deployment *azdext.AiModelDeployment
+	err        error
+}
+
 type unifiedModelTestServer struct {
 	azdext.UnimplementedPromptServiceServer
 	azdext.UnimplementedAiModelServiceServer
@@ -819,9 +829,11 @@ type unifiedModelTestServer struct {
 	promptedModel              *azdext.AiModel
 	promptedModels             []*azdext.AiModel
 	resolvedCandidates         map[string][]*azdext.AiModelDeployment
+	resolveSequence            []resolveDeploymentStep
 	resolveErr                 error
 	resolveErrByModel          map[string]error
 	promptDeployment           *azdext.AiModelDeployment
+	promptDeploymentSequence   []promptDeploymentStep
 	promptDeploymentErr        error
 	promptDeploymentErrByModel map[string]error
 	selectResponses            []int32
@@ -883,7 +895,15 @@ func (s *unifiedModelTestServer) PromptAiDeployment(
 	_ context.Context,
 	req *azdext.PromptAiDeploymentRequest,
 ) (*azdext.PromptAiDeploymentResponse, error) {
+	idx := len(s.promptDeploymentRequests)
 	s.promptDeploymentRequests = append(s.promptDeploymentRequests, req)
+	if idx < len(s.promptDeploymentSequence) {
+		step := s.promptDeploymentSequence[idx]
+		if step.err != nil {
+			return nil, step.err
+		}
+		return &azdext.PromptAiDeploymentResponse{Deployment: step.deployment}, nil
+	}
 	if err, ok := s.promptDeploymentErrByModel[req.GetModelName()]; ok && err != nil {
 		return nil, err
 	}
@@ -925,8 +945,16 @@ func (s *unifiedModelTestServer) ResolveModelDeployments(
 	_ context.Context,
 	req *azdext.ResolveModelDeploymentsRequest,
 ) (*azdext.ResolveModelDeploymentsResponse, error) {
+	idx := len(s.resolveDeploymentRequests)
 	s.resolveCalls++
 	s.resolveDeploymentRequests = append(s.resolveDeploymentRequests, req)
+	if idx < len(s.resolveSequence) {
+		step := s.resolveSequence[idx]
+		if step.err != nil {
+			return nil, step.err
+		}
+		return &azdext.ResolveModelDeploymentsResponse{Deployments: step.deployments}, nil
+	}
 	if err, ok := s.resolveErrByModel[req.GetModelName()]; ok && err != nil {
 		return nil, err
 	}
@@ -1973,5 +2001,629 @@ func TestConfigureAgentModelDeployment_SelectedProjectLocksLocation(t *testing.T
 		require.Len(t, aiSrv.promptAiModelRequests, 1)
 		assert.Equal(t, []string{projectLocation}, aiSrv.promptAiModelRequests[0].GetFilter().GetLocations())
 		assert.Equal(t, defaultAgentModel, aiSrv.promptAiModelRequests[0].GetDefaultValue())
+	})
+}
+
+func TestIsBatchModelSku(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		sku  *azdext.AiModelSku
+		want bool
+	}{
+		{
+			name: "nil SKU is not batch",
+			sku:  nil,
+			want: false,
+		},
+		{
+			name: "GlobalStandard is not batch",
+			sku: &azdext.AiModelSku{
+				Name:      "GlobalStandard",
+				UsageName: "OpenAI.GlobalStandard.gpt-5.4-mini",
+			},
+			want: false,
+		},
+		{
+			name: "DataZoneStandard is not batch",
+			sku: &azdext.AiModelSku{
+				Name:      "DataZoneStandard",
+				UsageName: "OpenAI.DataZoneStandard.gpt-5.4-mini",
+			},
+			want: false,
+		},
+		{
+			name: "Standard is not batch",
+			sku: &azdext.AiModelSku{
+				Name:      "Standard",
+				UsageName: "OpenAI.Standard.gpt-4o",
+			},
+			want: false,
+		},
+		{
+			name: "real-time SKU whose model name contains batch is not batch",
+			sku: &azdext.AiModelSku{
+				Name:      "GlobalStandard",
+				UsageName: "OpenAI.GlobalStandard.example-batch-aware",
+			},
+			want: false,
+		},
+		{
+			name: "bare Batch SKU name is batch",
+			sku: &azdext.AiModelSku{
+				Name: "Batch",
+			},
+			want: true,
+		},
+		{
+			name: "GlobalBatch is batch",
+			sku: &azdext.AiModelSku{
+				Name:      "GlobalBatch",
+				UsageName: "OpenAI.GlobalBatch.gpt-5.4-mini",
+			},
+			want: true,
+		},
+		{
+			name: "DataZoneBatch is batch",
+			sku: &azdext.AiModelSku{
+				Name:      "DataZoneBatch",
+				UsageName: "OpenAI.DataZoneBatch.gpt-4.1-mini",
+			},
+			want: true,
+		},
+		{
+			name: "Batch case-insensitive with whitespace is batch",
+			sku: &azdext.AiModelSku{
+				Name: "  globalbatch  ",
+			},
+			want: true,
+		},
+		{
+			name: "usage name containing batch is batch",
+			sku: &azdext.AiModelSku{
+				Name:      "CustomTier",
+				UsageName: "OpenAI.GlobalBatch.gpt-4o",
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, isBatchModelSku(tt.sku))
+		})
+	}
+}
+
+func TestSelectBestModelDeploymentCandidate_IgnoresBatchSkus(t *testing.T) {
+	t.Parallel()
+
+	model := &azdext.AiModel{
+		Name:      defaultAgentModel,
+		Locations: []string{"eastus2"},
+		Versions: []*azdext.AiModelVersion{
+			{Version: "2026-01-01", IsDefault: true},
+		},
+	}
+	batchDeployments := []*azdext.AiModelDeployment{
+		nil,
+		{
+			ModelName: defaultAgentModel,
+			Format:    "OpenAI",
+			Version:   "2026-01-01",
+			Sku: &azdext.AiModelSku{
+				Name:            "GlobalBatch",
+				UsageName:       "OpenAI.GlobalBatch.gpt-5.4-mini",
+				MinCapacity:     1,
+				MaxCapacity:     200000,
+				CapacityStep:    1,
+				DefaultCapacity: 10,
+			},
+			RemainingQuota: new(float64(200000)),
+		},
+		{
+			ModelName: defaultAgentModel,
+			Format:    "OpenAI",
+			Version:   "2026-01-01",
+			Sku: &azdext.AiModelSku{
+				Name:            "DataZoneBatch",
+				UsageName:       "OpenAI.DataZoneBatch.gpt-5.4-mini",
+				MinCapacity:     1,
+				MaxCapacity:     200000,
+				CapacityStep:    1,
+				DefaultCapacity: 10,
+			},
+			RemainingQuota: new(float64(200000)),
+		},
+	}
+
+	t.Run("returns nil when only GlobalBatch and DataZoneBatch candidates exist", func(t *testing.T) {
+		t.Parallel()
+		got := selectBestModelDeploymentCandidate(model, batchDeployments)
+		assert.Nil(t, got)
+	})
+
+	t.Run("returns nil when only batch usage name candidate exists", func(t *testing.T) {
+		t.Parallel()
+		got := selectBestModelDeploymentCandidate(model, []*azdext.AiModelDeployment{
+			{
+				ModelName: defaultAgentModel,
+				Format:    "OpenAI",
+				Version:   "2026-01-01",
+				Sku: &azdext.AiModelSku{
+					Name:         "CustomSku",
+					UsageName:    "OpenAI.GlobalBatch.gpt-5.4-mini",
+					MinCapacity:  1,
+					MaxCapacity:  1000,
+					CapacityStep: 1,
+				},
+				RemainingQuota: new(float64(200000)),
+			},
+		})
+		assert.Nil(t, got)
+	})
+
+	t.Run("selects real-time Standard SKU over higher-quota batch SKUs", func(t *testing.T) {
+		t.Parallel()
+		candidates := append(append([]*azdext.AiModelDeployment{}, batchDeployments...), &azdext.AiModelDeployment{
+			ModelName: defaultAgentModel,
+			Format:    "OpenAI",
+			Version:   "2026-01-01",
+			Sku: &azdext.AiModelSku{
+				Name:            "Standard",
+				UsageName:       "OpenAI.Standard.gpt-5.4-mini",
+				MinCapacity:     1,
+				MaxCapacity:     1000,
+				CapacityStep:    1,
+				DefaultCapacity: 10,
+			},
+			RemainingQuota: new(float64(80)),
+		})
+		got := selectBestModelDeploymentCandidate(model, candidates)
+		require.NotNil(t, got)
+		assert.Equal(t, "Standard", got.GetSku().GetName())
+		assert.Equal(t, int32(80), got.GetCapacity())
+	})
+}
+
+func TestConfigureAgentModelDeployment_BatchOnlyQuota(t *testing.T) {
+	resetRegionsCache(t, []string{"eastus2", "swedencentral"})
+	const envName = "batch-quota-env"
+
+	batchOnlyForModel := func(modelName string) []*azdext.AiModelDeployment {
+		return []*azdext.AiModelDeployment{
+			{
+				ModelName: modelName,
+				Format:    "OpenAI",
+				Version:   "2026-01-01",
+				Sku: &azdext.AiModelSku{
+					Name:            "GlobalBatch",
+					UsageName:       "OpenAI.GlobalBatch." + modelName,
+					MinCapacity:     1,
+					MaxCapacity:     200000,
+					CapacityStep:    1,
+					DefaultCapacity: 10,
+				},
+				RemainingQuota: new(float64(200000)),
+			},
+			{
+				ModelName: modelName,
+				Format:    "OpenAI",
+				Version:   "2026-01-01",
+				Sku: &azdext.AiModelSku{
+					Name:            "DataZoneBatch",
+					UsageName:       "OpenAI.DataZoneBatch." + modelName,
+					MinCapacity:     1,
+					MaxCapacity:     200000,
+					CapacityStep:    1,
+					DefaultCapacity: 10,
+				},
+				RemainingQuota: new(float64(200000)),
+			},
+		}
+	}
+
+	realTimeForModel := func(modelName string, quota float64) []*azdext.AiModelDeployment {
+		return []*azdext.AiModelDeployment{
+			{
+				ModelName: modelName,
+				Format:    "OpenAI",
+				Version:   "2026-01-01",
+				Sku: &azdext.AiModelSku{
+					Name:            "GlobalStandard",
+					UsageName:       "OpenAI.GlobalStandard." + modelName,
+					MinCapacity:     1,
+					MaxCapacity:     1000,
+					CapacityStep:    1,
+					DefaultCapacity: 10,
+				},
+				RemainingQuota: new(quota),
+			},
+		}
+	}
+
+	primaryModel := &azdext.AiModel{
+		Name:      defaultAgentModel,
+		Locations: []string{"eastus2", "swedencentral"},
+		Versions:  []*azdext.AiModelVersion{{Version: "2026-01-01", IsDefault: true}},
+	}
+	replacementModel := &azdext.AiModel{
+		Name:      "gpt-4.1-mini",
+		Locations: []string{"eastus2", "swedencentral"},
+		Versions:  []*azdext.AiModelVersion{{Version: "2026-01-01", IsDefault: true}},
+	}
+	existingProject := &FoundryProjectInfo{
+		SubscriptionId:    "sub",
+		ResourceGroupName: "rg",
+		AccountName:       "acct",
+		ProjectName:       "proj",
+		Location:          "swedencentral",
+	}
+	emptyLoader := func(
+		context.Context, azcore.TokenCredential, string, string, string,
+	) ([]FoundryDeploymentInfo, error) {
+		return nil, nil
+	}
+
+	interactiveCases := []struct {
+		name               string
+		initialLocation    string
+		selectedProject    *FoundryProjectInfo
+		flags              initFlags
+		promptedModels     []*azdext.AiModel
+		selectResponses    []int32
+		locationWithQuota  string
+		resolvedCandidates map[string][]*azdext.AiModelDeployment
+		wantModelName      string
+		wantCapacity       int
+		wantLocation       string
+		wantFixedLocation  bool
+	}{
+		{
+			name:              "new project with explicit --model skips PromptAiDeployment and switches location",
+			initialLocation:   "eastus2",
+			flags:             initFlags{model: defaultAgentModel},
+			selectResponses:   []int32{2}, // "Choose a different location for gpt-5.4-mini"
+			locationWithQuota: "swedencentral",
+			resolvedCandidates: map[string][]*azdext.AiModelDeployment{
+				defaultAgentModel + "@eastus2":       batchOnlyForModel(defaultAgentModel),
+				defaultAgentModel + "@swedencentral": realTimeForModel(defaultAgentModel, 300),
+			},
+			wantModelName: defaultAgentModel,
+			wantCapacity:  int(defaultDeploymentCapacity),
+			wantLocation:  "swedencentral",
+		},
+		{
+			name:            "new project with catalog-picked model skips PromptAiDeployment and recovers real-time model",
+			initialLocation: "eastus2",
+			flags:           initFlags{},
+			promptedModels:  []*azdext.AiModel{primaryModel, replacementModel},
+			selectResponses: []int32{0}, // "Choose a different model in eastus2"
+			resolvedCandidates: map[string][]*azdext.AiModelDeployment{
+				defaultAgentModel + "@eastus2": batchOnlyForModel(defaultAgentModel),
+				"gpt-4.1-mini@eastus2":         realTimeForModel("gpt-4.1-mini", 180),
+			},
+			wantModelName: "gpt-4.1-mini",
+			wantCapacity:  180,
+			wantLocation:  "eastus2",
+		},
+		{
+			name:            "existing project with explicit --model skips PromptAiDeployment and recovers in-region model",
+			initialLocation: "swedencentral",
+			selectedProject: existingProject,
+			flags:           initFlags{model: defaultAgentModel},
+			promptedModels:  []*azdext.AiModel{replacementModel},
+			selectResponses: []int32{0}, // "Choose a different model in swedencentral"
+			resolvedCandidates: map[string][]*azdext.AiModelDeployment{
+				defaultAgentModel + "@swedencentral": batchOnlyForModel(defaultAgentModel),
+				"gpt-4.1-mini@swedencentral":         realTimeForModel("gpt-4.1-mini", 200),
+			},
+			wantModelName:     "gpt-4.1-mini",
+			wantCapacity:      200,
+			wantLocation:      "swedencentral",
+			wantFixedLocation: true,
+		},
+		{
+			name:            "existing project with catalog-picked model skips PromptAiDeployment and recovers in-region model",
+			initialLocation: "swedencentral",
+			selectedProject: existingProject,
+			flags:           initFlags{},
+			promptedModels:  []*azdext.AiModel{primaryModel, replacementModel},
+			selectResponses: []int32{0}, // "Choose a different model in swedencentral"
+			resolvedCandidates: map[string][]*azdext.AiModelDeployment{
+				defaultAgentModel + "@swedencentral": batchOnlyForModel(defaultAgentModel),
+				"gpt-4.1-mini@swedencentral":         realTimeForModel("gpt-4.1-mini", 250),
+			},
+			wantModelName:     "gpt-4.1-mini",
+			wantCapacity:      250,
+			wantLocation:      "swedencentral",
+			wantFixedLocation: true,
+		},
+	}
+
+	for _, tc := range interactiveCases {
+		t.Run(tc.name, func(t *testing.T) {
+			envSrv := &testEnvironmentServiceServer{
+				values: map[string]map[string]string{envName: {}},
+			}
+			aiSrv := &unifiedModelTestServer{
+				catalogModels:           []*azdext.AiModel{primaryModel, replacementModel},
+				promptedModels:          tc.promptedModels,
+				selectResponses:         tc.selectResponses,
+				locationWithQuotaResult: tc.locationWithQuota,
+				resolvedCandidates:      tc.resolvedCandidates,
+			}
+			client := newUnifiedModelAzdClient(t, envSrv, aiSrv)
+			azureCtx := &azdext.AzureContext{
+				Scope: &azdext.AzureScope{SubscriptionId: "sub", Location: tc.initialLocation},
+			}
+			flags := tc.flags
+
+			var (
+				got       *project.Deployment
+				provision bool
+			)
+			out, err := captureStdout(t, func() error {
+				var runErr error
+				got, provision, runErr = configureAgentModelDeployment(t.Context(), agentModelConfigOptions{
+					AzdClient:       client,
+					AzureContext:    azureCtx,
+					Env:             &azdext.Environment{Name: envName},
+					Flags:           &flags,
+					SelectedProject: tc.selectedProject,
+					AllowSkip:       false,
+					loadDeployments: emptyLoader,
+				})
+				return runErr
+			})
+
+			require.NoError(t, err)
+			require.True(t, provision)
+			require.NotNil(t, got)
+			assert.Equal(t, tc.wantModelName, got.Name)
+			assert.Equal(t, "GlobalStandard", got.Sku.Name)
+			assert.Equal(t, tc.wantCapacity, got.Sku.Capacity)
+
+			// PromptAiDeployment must not be called when only batch SKUs have quota.
+			assert.Empty(t, aiSrv.promptDeploymentRequests)
+			assert.Contains(
+				t,
+				out,
+				"Not enough available quota to deploy model '"+defaultAgentModel+"' in '"+tc.initialLocation+"'.",
+			)
+			assert.Equal(t, tc.wantLocation, azureCtx.Scope.Location)
+
+			require.Len(t, aiSrv.selectRequests, 1)
+			if tc.wantFixedLocation {
+				assertFixedLocationRecoverySelect(t, aiSrv.selectRequests[0], tc.initialLocation)
+			} else {
+				assert.Equal(t, "What would you like to do?", aiSrv.selectRequests[0].GetOptions().GetMessage())
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name            string
+		selectedProject *FoundryProjectInfo
+		location        string
+	}{
+		{name: "no-prompt new project fails with CodeModelResolutionFailed", location: "eastus2"},
+		{
+			name:            "no-prompt existing project fails with CodeModelResolutionFailed",
+			selectedProject: existingProject,
+			location:        "swedencentral",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			envSrv := &testEnvironmentServiceServer{
+				values: map[string]map[string]string{envName: {}},
+			}
+			aiSrv := &unifiedModelTestServer{
+				catalogModels: []*azdext.AiModel{primaryModel},
+				resolvedCandidates: map[string][]*azdext.AiModelDeployment{
+					defaultAgentModel: batchOnlyForModel(defaultAgentModel),
+				},
+			}
+			client := newUnifiedModelAzdClient(t, envSrv, aiSrv)
+			azureCtx := &azdext.AzureContext{
+				Scope: &azdext.AzureScope{SubscriptionId: "sub", Location: tc.location},
+			}
+
+			var (
+				got       *project.Deployment
+				provision bool
+			)
+			_, err := captureStdout(t, func() error {
+				var runErr error
+				got, provision, runErr = configureAgentModelDeployment(t.Context(), agentModelConfigOptions{
+					AzdClient:       client,
+					AzureContext:    azureCtx,
+					Env:             &azdext.Environment{Name: envName},
+					Flags:           &initFlags{noPrompt: true, model: defaultAgentModel},
+					SelectedProject: tc.selectedProject,
+					AllowSkip:       false,
+					loadDeployments: emptyLoader,
+				})
+				return runErr
+			})
+
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeModelResolutionFailed, localErr.Code)
+			assert.Nil(t, got)
+			assert.False(t, provision)
+			assert.Empty(t, aiSrv.promptDeploymentRequests)
+		})
+	}
+
+	for _, tc := range []struct {
+		name                string
+		fallbackDeployments []*azdext.AiModelDeployment
+	}{
+		{
+			name: "fallback mixed real-time and batch scopes every PromptAiDeployment attempt to non-batch SKUs",
+			fallbackDeployments: append(
+				batchOnlyForModel(defaultAgentModel),
+				realTimeForModel(defaultAgentModel, 300)...,
+			),
+		},
+		{
+			name:                "fallback real-time-only result scopes every PromptAiDeployment attempt to non-batch SKUs",
+			fallbackDeployments: realTimeForModel(defaultAgentModel, 300),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			envSrv := &testEnvironmentServiceServer{
+				values: map[string]map[string]string{envName: {}},
+			}
+			aiSrv := &unifiedModelTestServer{
+				catalogModels: []*azdext.AiModel{primaryModel},
+				resolveSequence: []resolveDeploymentStep{
+					{err: newAiReasonError(azdext.AiErrorReasonNoDeploymentMatch)},
+					{deployments: tc.fallbackDeployments},
+				},
+				promptDeploymentSequence: []promptDeploymentStep{
+					{err: newAiReasonError(azdext.AiErrorReasonNoValidSkus)},
+					{
+						deployment: &azdext.AiModelDeployment{
+							ModelName: defaultAgentModel,
+							Format:    "OpenAI",
+							Version:   "2026-01-01",
+							Sku:       &azdext.AiModelSku{Name: "GlobalStandard"},
+							Capacity:  100,
+						},
+					},
+				},
+			}
+			client := newUnifiedModelAzdClient(t, envSrv, aiSrv)
+			azureCtx := &azdext.AzureContext{
+				Scope: &azdext.AzureScope{SubscriptionId: "sub", Location: "eastus2"},
+			}
+
+			got, provision, err := configureAgentModelDeployment(t.Context(), agentModelConfigOptions{
+				AzdClient:    client,
+				AzureContext: azureCtx,
+				Env:          &azdext.Environment{Name: envName},
+				Flags:        &initFlags{model: defaultAgentModel},
+				AllowSkip:    false,
+			})
+			require.NoError(t, err)
+			require.True(t, provision)
+			require.NotNil(t, got)
+			assert.Equal(t, "GlobalStandard", got.Sku.Name)
+			assert.Equal(t, 100, got.Sku.Capacity)
+
+			require.Len(t, aiSrv.resolveDeploymentRequests, 2)
+			require.Len(t, aiSrv.promptDeploymentRequests, 2)
+			require.NotNil(t, aiSrv.promptDeploymentRequests[0].GetOptions().Capacity)
+			assert.Equal(t, defaultDeploymentCapacity, aiSrv.promptDeploymentRequests[0].GetOptions().GetCapacity())
+			assert.Equal(t, []string{"GlobalStandard"}, aiSrv.promptDeploymentRequests[0].GetOptions().GetSkus())
+			assert.Nil(t, aiSrv.promptDeploymentRequests[1].GetOptions().Capacity)
+			assert.Equal(t, []string{"GlobalStandard"}, aiSrv.promptDeploymentRequests[1].GetOptions().GetSkus())
+		})
+	}
+
+	t.Run("fallback batch-only result skips PromptAiDeployment and enters quota recovery", func(t *testing.T) {
+		envSrv := &testEnvironmentServiceServer{
+			values: map[string]map[string]string{envName: {}},
+		}
+		aiSrv := &unifiedModelTestServer{
+			catalogModels:   []*azdext.AiModel{primaryModel, replacementModel},
+			promptedModels:  []*azdext.AiModel{replacementModel},
+			selectResponses: []int32{0}, // "Choose a different model in eastus2"
+			resolveSequence: []resolveDeploymentStep{
+				{err: newAiReasonError(azdext.AiErrorReasonNoDeploymentMatch)},
+				{deployments: batchOnlyForModel(defaultAgentModel)},
+			},
+			resolvedCandidates: map[string][]*azdext.AiModelDeployment{
+				"gpt-4.1-mini@eastus2": realTimeForModel("gpt-4.1-mini", 150),
+			},
+		}
+		client := newUnifiedModelAzdClient(t, envSrv, aiSrv)
+		azureCtx := &azdext.AzureContext{
+			Scope: &azdext.AzureScope{SubscriptionId: "sub", Location: "eastus2"},
+		}
+
+		var (
+			got       *project.Deployment
+			provision bool
+		)
+		out, err := captureStdout(t, func() error {
+			var runErr error
+			got, provision, runErr = configureAgentModelDeployment(t.Context(), agentModelConfigOptions{
+				AzdClient:    client,
+				AzureContext: azureCtx,
+				Env:          &azdext.Environment{Name: envName},
+				Flags:        &initFlags{model: defaultAgentModel},
+				AllowSkip:    false,
+			})
+			return runErr
+		})
+
+		require.NoError(t, err)
+		require.True(t, provision)
+		require.NotNil(t, got)
+		assert.Equal(t, "gpt-4.1-mini", got.Name)
+		assert.Equal(t, "GlobalStandard", got.Sku.Name)
+		assert.Equal(t, 150, got.Sku.Capacity)
+		require.Len(t, aiSrv.resolveDeploymentRequests, 3)
+		assert.Empty(t, aiSrv.promptDeploymentRequests)
+		assert.Contains(t, out, "Not enough available quota to deploy model '"+defaultAgentModel+"' in 'eastus2'.")
+	})
+
+	t.Run("interactive fallback rejects batch SKU from PromptAiDeployment and enters quota recovery", func(t *testing.T) {
+		envSrv := &testEnvironmentServiceServer{
+			values: map[string]map[string]string{envName: {}},
+		}
+		aiSrv := &unifiedModelTestServer{
+			catalogModels:   []*azdext.AiModel{primaryModel, replacementModel},
+			promptedModels:  []*azdext.AiModel{replacementModel},
+			selectResponses: []int32{0}, // "Choose a different model in eastus2"
+			resolvedCandidates: map[string][]*azdext.AiModelDeployment{
+				// Empty raw candidates for primaryModel triggers PromptAiDeployment fallback.
+				"gpt-4.1-mini@eastus2": realTimeForModel("gpt-4.1-mini", 120),
+			},
+			promptDeployment: &azdext.AiModelDeployment{
+				ModelName: defaultAgentModel,
+				Format:    "OpenAI",
+				Version:   "2026-01-01",
+				Sku: &azdext.AiModelSku{
+					Name:      "GlobalBatch",
+					UsageName: "OpenAI.GlobalBatch." + defaultAgentModel,
+				},
+				Capacity: 250,
+			},
+		}
+		client := newUnifiedModelAzdClient(t, envSrv, aiSrv)
+		azureCtx := &azdext.AzureContext{
+			Scope: &azdext.AzureScope{SubscriptionId: "sub", Location: "eastus2"},
+		}
+
+		var (
+			got       *project.Deployment
+			provision bool
+		)
+		out, err := captureStdout(t, func() error {
+			var runErr error
+			got, provision, runErr = configureAgentModelDeployment(t.Context(), agentModelConfigOptions{
+				AzdClient:    client,
+				AzureContext: azureCtx,
+				Env:          &azdext.Environment{Name: envName},
+				Flags:        &initFlags{model: defaultAgentModel},
+				AllowSkip:    false,
+			})
+			return runErr
+		})
+
+		require.NoError(t, err)
+		require.True(t, provision)
+		require.NotNil(t, got)
+		assert.Equal(t, "gpt-4.1-mini", got.Name)
+		assert.Equal(t, "GlobalStandard", got.Sku.Name)
+		assert.Equal(t, 120, got.Sku.Capacity)
+		require.Len(t, aiSrv.promptDeploymentRequests, 1)
+		assert.Contains(t, out, "Not enough available quota to deploy model '"+defaultAgentModel+"' in 'eastus2'.")
 	})
 }

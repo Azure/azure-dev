@@ -1760,15 +1760,17 @@ func selectNewModel(
 	return modelResp.Model, nil
 }
 
-// resolveModelDeployments resolves model deployments without prompting, returning all candidates
-// filtered by location and quota. Both init flows use this for deployment resolution.
-func resolveModelDeployments(
+// resolveAgentModelDeployments resolves model deployments without prompting,
+// filtering out asynchronous batch SKUs that cannot serve real-time agent calls.
+// hadOnlyBatch is true when the host returned at least one non-nil candidate and
+// every non-nil candidate was a batch SKU.
+func resolveAgentModelDeployments(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	azureContext *azdext.AzureContext,
 	model *azdext.AiModel,
 	location string,
-) ([]*azdext.AiModelDeployment, error) {
+) ([]*azdext.AiModelDeployment, bool, error) {
 	resolveResp, err := azdClient.Ai().ResolveModelDeployments(ctx, &azdext.ResolveModelDeploymentsRequest{
 		AzureContext: azureContext,
 		ModelName:    model.Name,
@@ -1780,18 +1782,37 @@ func resolveModelDeployments(
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	deployments := make([]*azdext.AiModelDeployment, 0, len(resolveResp.GetDeployments()))
-	for _, candidate := range resolveResp.GetDeployments() {
+	rawDeployments := resolveResp.GetDeployments()
+	deployments := make([]*azdext.AiModelDeployment, 0, len(rawDeployments))
+	sawBatch := false
+	for _, candidate := range rawDeployments {
 		if candidate == nil {
+			continue
+		}
+		if isBatchModelSku(candidate.GetSku()) {
+			sawBatch = true
 			continue
 		}
 		deployments = append(deployments, cloneDeploymentWithCapacity(candidate, 0))
 	}
 
-	return deployments, nil
+	return deployments, sawBatch && len(deployments) == 0, nil
+}
+
+// resolveModelDeployments resolves real-time model deployments without prompting, returning all
+// non-batch candidates filtered by location and quota. Both init flows use this for deployment resolution.
+func resolveModelDeployments(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	model *azdext.AiModel,
+	location string,
+) ([]*azdext.AiModelDeployment, error) {
+	deployments, _, err := resolveAgentModelDeployments(ctx, azdClient, azureContext, model, location)
+	return deployments, err
 }
 
 func selectBestModelDeploymentCandidate(
@@ -1802,12 +1823,24 @@ func selectBestModelDeploymentCandidate(
 		return nil
 	}
 
-	orderedCandidates := make([]*azdext.AiModelDeployment, len(deployments))
-	copy(orderedCandidates, deployments)
+	orderedCandidates := make([]*azdext.AiModelDeployment, 0, len(deployments))
+	for _, candidate := range deployments {
+		if candidate == nil || isBatchModelSku(candidate.GetSku()) {
+			continue
+		}
+		orderedCandidates = append(orderedCandidates, candidate)
+	}
+	if len(orderedCandidates) == 0 {
+		return nil
+	}
 
-	defaultVersions := make(map[string]struct{}, len(model.Versions))
-	for _, version := range model.Versions {
-		if version.IsDefault {
+	var versions []*azdext.AiModelVersion
+	if model != nil {
+		versions = model.Versions
+	}
+	defaultVersions := make(map[string]struct{}, len(versions))
+	for _, version := range versions {
+		if version != nil && version.IsDefault {
 			defaultVersions[version.Version] = struct{}{}
 		}
 	}
@@ -1859,20 +1892,22 @@ func sortModelDeploymentCandidates(candidates []*azdext.AiModelDeployment, defau
 	for i := range len(candidates) {
 		for j := i + 1; j < len(candidates); j++ {
 			a, b := candidates[i], candidates[j]
-			_, aDefault := defaultVersions[a.Version]
-			_, bDefault := defaultVersions[b.Version]
+			_, aDefault := defaultVersions[a.GetVersion()]
+			_, bDefault := defaultVersions[b.GetVersion()]
+			aSkuName, bSkuName := a.GetSku().GetName(), b.GetSku().GetName()
+			aUsageName, bUsageName := a.GetSku().GetUsageName(), b.GetSku().GetUsageName()
 
 			swap := false
 			if aDefault != bDefault {
 				swap = !aDefault
-			} else if skuPriority(a.Sku.Name) != skuPriority(b.Sku.Name) {
-				swap = skuPriority(a.Sku.Name) > skuPriority(b.Sku.Name)
-			} else if a.Version != b.Version {
-				swap = a.Version > b.Version
-			} else if a.Sku.Name != b.Sku.Name {
-				swap = a.Sku.Name > b.Sku.Name
+			} else if skuPriority(aSkuName) != skuPriority(bSkuName) {
+				swap = skuPriority(aSkuName) > skuPriority(bSkuName)
+			} else if a.GetVersion() != b.GetVersion() {
+				swap = a.GetVersion() > b.GetVersion()
+			} else if aSkuName != bSkuName {
+				swap = aSkuName > bSkuName
 			} else {
-				swap = a.Sku.UsageName > b.Sku.UsageName
+				swap = aUsageName > bUsageName
 			}
 
 			if swap {

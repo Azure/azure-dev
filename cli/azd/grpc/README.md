@@ -32,7 +32,7 @@ The original unversioned `azdext` protobuf package remains available only as a
 temporary frozen runtime bridge for already-built extensions. It is not a
 source contract or generated SDK package for new development.
 
-Structured deploy messages are stable in azd 1.39.0. Service `predeploy` and
+Structured deploy messages target stable support in azd 1.40.0. Service `predeploy` and
 `postdeploy` handlers can return non-blocking info or warning messages in
 `ServiceHandlerStatus.messages`. Go extensions register them with
 `ExtensionHost.WithServiceEventResponseHandler`; older hosts ignore them.

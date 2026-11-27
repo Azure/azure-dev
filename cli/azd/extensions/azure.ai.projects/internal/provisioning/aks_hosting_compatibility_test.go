@@ -5,13 +5,19 @@ package provisioning
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/synthesis"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -122,7 +128,7 @@ func TestBYOKubeletBindingFailureBeforeRegistryWrites(t *testing.T) {
 					case "missing actual identity":
 						principal = offlineKubeletObjectID
 						fake.kubeletID = ""
-						expectedError = "aks-identity"
+						expectedError = "Kubelet identity principal could not be verified"
 					}
 					source.parameters["kubeletObjectId"] = map[string]any{"value": principal}
 					if external {
@@ -238,12 +244,21 @@ func TestBYOSuppliedUsesEffectiveDeploymentInputs(t *testing.T) {
 				delete(definitions, "agentHosting")
 				source.parameters["AGENTHOSTING"] = map[string]any{"value": "leave undeclared parameters to ARM"}
 			}
-			require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
+			var progress []string
+			require.NoError(t, p.prepareBYO(t.Context(), source, func(message string) {
+				progress = append(progress, message)
+			}))
 			assert.NotContains(t, source.parameters, "agentHosting")
 			if name == "disabled" || name == "undeclared" {
 				assert.Empty(t, fake.requests)
 				assert.NotContains(t, source.parameters, "federatedIdentityRoleDefinitionId")
+				assert.Empty(t, progress)
 			} else {
+				assert.Equal(t, []string{
+					"Checking AKS and supporting resources...",
+					"Checking required permissions...",
+					"Resolving deployment identity and role bindings...",
+				}, byoPreparationStages(progress))
 				assert.Contains(t, fake.requests, "GET "+clusterID)
 				assert.NotContains(t, fake.requests, "GET "+offlineClusterID)
 				assert.Equal(t, map[string]any{"value": suppliedHostingPrincipal}, source.parameters["hostingPrincipalId"])
@@ -512,7 +527,6 @@ func TestBYOPreflightSelectedAccountUnresolvedHosting(t *testing.T) {
 
 					err := runOp(t, p, preview)
 					require.ErrorContains(t, err, tc.wantErr)
-					require.ErrorContains(t, err, "SKIPPED")
 					assert.NotContains(t, err.Error(), offlineKubeletObjectID)
 					for _, forbidden := range []string{
 						offlineClusterID, suppliedStorageID, suppliedHostingID, suppliedWorkloadID,
@@ -561,16 +575,13 @@ func TestBYOPreflightSelectedAccountUnresolvedHosting(t *testing.T) {
 
 					assertOpOK(t, p, &fake.base.writes, &fake.base.previews, preview)
 					assert.Contains(t, fake.requests, "GET "+offlineVNetID+"/subnets/agents")
+					assert.Contains(t, fake.requests, "GET "+offlineVNetID)
 					assert.NotContains(t, fake.requests, "GET "+offlineClusterID)
 					assert.NotContains(t, fake.requests, "GET "+offlineVNetID+"/subnets/nodes")
 					for _, sub := range []string{"target-sub", "identity-sub"} {
 						assert.NotContains(t, fake.reads,
 							"/subscriptions/"+sub+"/providers/Microsoft.Authorization/roleDefinitions")
 					}
-					assert.Contains(t, p.preflightReport.String(), "agent-subnet PASS ["+offlineVNetID+"/subnets/agents]")
-					assert.Contains(t, p.preflightReport.String(),
-						"agent-subnet SKIPPED ["+offlineVNetID+"/subnets/agents]")
-					assert.Contains(t, p.preflightReport.String(), "role-assignment-keys SKIPPED")
 					if supplyExplicitRole {
 						assert.Equal(t, val(explicitRoleID), fake.base.parameters["federatedIdentityRoleDefinitionId"])
 					} else {
@@ -651,6 +662,52 @@ func TestBYOPreflightSelectedAccountUnresolvedHosting(t *testing.T) {
 			assert.Equal(t, val("/subscriptions/sub-b/providers/Microsoft.Authorization/"+
 				"roleDefinitions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
 				fake.base.parameters["federatedIdentityRoleDefinitionId"])
+		})
+	}
+}
+
+func TestBYORejectsSynthesizedHostingWhenOnDiskTemplateLacksAgentHosting(t *testing.T) {
+	for _, preview := range []bool{false, true} {
+		t.Run(fmt.Sprintf("preview=%t", preview), func(t *testing.T) {
+			p, fake := offlineBYOProvider(t)
+			t.Setenv(synthesis.BYOAKSEnvVar, "false")
+			env := &resolveEnvStubEnvServer{envName: "test"}
+			p.azdClient = newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+			p.credential = nil
+			p.acrPromptedEnv = map[string]string{envKeySubscriptionID: p.subID, envKeyLocation: p.location}
+
+			infraDir := filepath.Join(p.projectPath, onDiskInfraDir)
+			require.NoError(t, os.MkdirAll(infraDir, 0o750))
+			file := onDiskBicepFile
+			if preview {
+				file = onDiskBicepParamFile
+			}
+			expectedPath := filepath.Join(infraDir, file)
+			require.NoError(t, os.WriteFile(expectedPath, []byte("// non-AKS\n"), 0o600))
+			p.bicepCliInstance = &stubCompiler{
+				buildResult: bicep.BuildResult{Compiled: minimalARMTemplate()},
+				buildParamResult: bicep.BuildResult{
+					Compiled: fmt.Sprintf(
+						`{"templateJson":%q,"parametersJson":"{\"parameters\":{}}"}`, minimalARMTemplate(),
+					),
+				},
+			}
+
+			var err error
+			if preview {
+				_, err = p.Preview(t.Context(), func(string) {})
+			} else {
+				_, err = p.Deploy(t.Context(), func(string) {})
+			}
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected *azdext.LocalError, got %T: %v", err, err)
+			assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+			assert.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+			assert.Contains(t, localErr.Message, expectedPath)
+			assert.Contains(t, localErr.Suggestion, "regenerate or update")
+			assert.Nil(t, p.credential)
+			assert.Empty(t, fake.requests)
+			assert.Empty(t, env.set)
 		})
 	}
 }

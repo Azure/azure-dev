@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/stretchr/testify/require"
@@ -218,9 +218,9 @@ func TestAnnotatePreviewDeploymentErrors(t *testing.T) {
 	})
 
 	t.Run("what-if response error", func(t *testing.T) {
-		errResp := &armresources.ErrorResponse{
+		errResp := &armdeployments.ErrorResponse{
 			Code: new("DeploymentFailed"),
-			Details: []*armresources.ErrorResponse{{
+			Details: []*armdeployments.ErrorResponse{{
 				Code:    new("InsufficientQuota"),
 				Target:  new(target),
 				Message: new("Insufficient quota."),

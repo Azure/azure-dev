@@ -1680,7 +1680,7 @@ func Test_generatePipelineDefinition_azdoTemplates(t *testing.T) {
 				"release",
 				"AZURE_LOCATION",
 				"AZURE_ENV_NAME",
-				"AZURE_CLIENT_SECRET",
+				"ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)",
 			},
 		},
 		{
@@ -5751,7 +5751,7 @@ func Test_generatePipelineDefinition(t *testing.T) {
 			},
 		},
 		{
-			name: "github terraform client-credentials adds AZURE_CLIENT_SECRET",
+			name: "github terraform client-credentials maps the ARM client secret",
 			props: projectProperties{
 				CiProvider:  ciProviderGitHubActions,
 				IsTerraform: true,
@@ -5759,7 +5759,7 @@ func Test_generatePipelineDefinition(t *testing.T) {
 				AuthType:    AuthTypeClientCredentials,
 			},
 			wantSubstr: []string{
-				"AZURE_CLIENT_SECRET",
+				"ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}",
 				"AZURE_LOCATION",
 				"AZURE_ENV_NAME",
 			},

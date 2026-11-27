@@ -132,7 +132,7 @@ This command is invoked by `azd` to allow your extension to subscribe to lifecyc
 
 The demo uses stable `WithServiceEventResponseHandler` handlers for `predeploy`
 and `postdeploy`. They return structured info and warning messages
-(`azdext.ServiceEventMessage`) that azd 1.39.0 or later displays after the
+(`azdext.ServiceEventMessage`) that azd 1.40.0 or later displays after the
 deployment table and includes in deploy/up JSON results. Other demo lifecycle
 handlers use `WithServiceEventHandler`.
 

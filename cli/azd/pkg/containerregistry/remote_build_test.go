@@ -21,7 +21,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistrytasks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/stretchr/testify/require"
@@ -102,7 +102,7 @@ func TestUploadBuildSource_OpenFileError(t *testing.T) {
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		uploadURL := "https://upload.example.com/container/source.tar.gz?sig=abc"
 		return mocks.CreateHttpResponseWithBody(
-			request, http.StatusOK, armcontainerregistry.SourceUploadDefinition{
+			request, http.StatusOK, armcontainerregistrytasks.SourceUploadDefinition{
 				UploadURL:    &uploadURL,
 				RelativePath: new("source.tar.gz"),
 			},
@@ -137,7 +137,7 @@ func TestUploadBuildSource_Success(t *testing.T) {
 			// ARM call — respond with an upload URL pointing back at this server.
 			host := r.Host
 			uploadURL := "https://" + host + "/upload-container/source.tar.gz?sig=abc"
-			def := armcontainerregistry.SourceUploadDefinition{
+			def := armcontainerregistrytasks.SourceUploadDefinition{
 				UploadURL:    &uploadURL,
 				RelativePath: new("source.tar.gz"),
 			}
@@ -219,7 +219,7 @@ func TestRunDockerBuildRequestWithLogs_CredentialError(t *testing.T) {
 
 	err := mgr.RunDockerBuildRequestWithLogs(
 		t.Context(), testSubscriptionID, testResourceGroup, testRegistryName,
-		&armcontainerregistry.DockerBuildRequest{}, io.Discard,
+		&armcontainerregistrytasks.DockerBuildRequest{}, io.Discard,
 	)
 	require.ErrorIs(t, err, expectedErr)
 }
@@ -258,8 +258,8 @@ func TestRunDockerBuildRequestWithLogs_ScheduleRunError(t *testing.T) {
 				if !tt.afterSubmission {
 					return errorResponse(request)
 				}
-				return mocks.CreateHttpResponseWithBody(request, http.StatusOK, armcontainerregistry.Run{
-					Properties: &armcontainerregistry.RunProperties{RunID: new("run-id")},
+				return mocks.CreateHttpResponseWithBody(request, http.StatusOK, armcontainerregistrytasks.Run{
+					Properties: &armcontainerregistrytasks.RunProperties{RunID: new("run-id")},
 				})
 			})
 			mockCtx.HttpClient.When(func(request *http.Request) bool {
@@ -272,7 +272,7 @@ func TestRunDockerBuildRequestWithLogs_ScheduleRunError(t *testing.T) {
 			)
 			err := mgr.RunDockerBuildRequestWithLogs(
 				t.Context(), testSubscriptionID, testResourceGroup, testRegistryName,
-				&armcontainerregistry.DockerBuildRequest{}, io.Discard,
+				&armcontainerregistrytasks.DockerBuildRequest{}, io.Discard,
 			)
 			require.Error(t, err)
 			responseErr, ok := errors.AsType[*azcore.ResponseError](err)
@@ -293,23 +293,23 @@ func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {
 
 	tests := []struct {
 		name                   string
-		status                 armcontainerregistry.RunStatus
+		status                 armcontainerregistrytasks.RunStatus
 		missingPropertiesFirst bool
 		missingStatusFirst     bool
 	}{
-		{name: "succeeded", status: armcontainerregistry.RunStatusSucceeded},
-		{name: "failed", status: armcontainerregistry.RunStatusFailed},
-		{name: "error", status: armcontainerregistry.RunStatusError},
-		{name: "timeout", status: armcontainerregistry.RunStatusTimeout},
-		{name: "canceled", status: armcontainerregistry.RunStatusCanceled},
+		{name: "succeeded", status: armcontainerregistrytasks.RunStatusSucceeded},
+		{name: "failed", status: armcontainerregistrytasks.RunStatusFailed},
+		{name: "error", status: armcontainerregistrytasks.RunStatusError},
+		{name: "timeout", status: armcontainerregistrytasks.RunStatusTimeout},
+		{name: "canceled", status: armcontainerregistrytasks.RunStatusCanceled},
 		{
 			name:                   "missing properties then succeeds",
-			status:                 armcontainerregistry.RunStatusSucceeded,
+			status:                 armcontainerregistrytasks.RunStatusSucceeded,
 			missingPropertiesFirst: true,
 		},
 		{
 			name:               "missing status then succeeds",
-			status:             armcontainerregistry.RunStatusSucceeded,
+			status:             armcontainerregistrytasks.RunStatusSucceeded,
 			missingStatusFirst: true,
 		},
 	}
@@ -319,15 +319,17 @@ func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {
 			t.Parallel()
 
 			const buildLog = "remote build output\n"
+			var scheduleCalls atomic.Int32
 			var logHeadCalls atomic.Int32
 			var runGetCalls atomic.Int32
 
 			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch {
 				case strings.Contains(r.URL.Path, "scheduleRun"):
-					response := armcontainerregistry.RegistriesClientScheduleRunResponse{
-						Run: armcontainerregistry.Run{
-							Properties: &armcontainerregistry.RunProperties{RunID: new("run-id")},
+					scheduleCalls.Add(1)
+					response := armcontainerregistrytasks.RegistriesClientScheduleRunResponse{
+						Run: armcontainerregistrytasks.Run{
+							Properties: &armcontainerregistrytasks.RunProperties{RunID: new("run-id")},
 						},
 					}
 					w.Header().Set("Content-Type", "application/json")
@@ -336,7 +338,7 @@ func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {
 
 				case strings.Contains(r.URL.Path, "listLogSasUrl"):
 					logURL := "https://" + r.Host + "/logs/run.log?sig=abc"
-					response := armcontainerregistry.RunGetLogResult{LogLink: &logURL}
+					response := armcontainerregistrytasks.RunGetLogResult{LogLink: &logURL}
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
 					require.NoError(t, json.NewEncoder(w).Encode(response))
@@ -356,7 +358,7 @@ func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {
 
 				case strings.Contains(r.URL.Path, "/runs/run-id"):
 					runGetCall := runGetCalls.Add(1)
-					runProperties := &armcontainerregistry.RunProperties{Status: &tt.status}
+					runProperties := &armcontainerregistrytasks.RunProperties{Status: &tt.status}
 					if runGetCall == 1 {
 						switch {
 						case tt.missingPropertiesFirst:
@@ -365,7 +367,7 @@ func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {
 							runProperties.Status = nil
 						}
 					}
-					response := armcontainerregistry.Run{
+					response := armcontainerregistrytasks.Run{
 						Properties: runProperties,
 					}
 					w.Header().Set("Content-Type", "application/json")
@@ -393,9 +395,10 @@ func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {
 			var output strings.Builder
 			err := mgr.RunDockerBuildRequestWithLogs(
 				t.Context(), testSubscriptionID, testResourceGroup, testRegistryName,
-				&armcontainerregistry.DockerBuildRequest{}, &output,
+				&armcontainerregistrytasks.DockerBuildRequest{}, &output,
 			)
 
+			require.Equal(t, int32(1), scheduleCalls.Load())
 			require.Equal(t, int32(2), logHeadCalls.Load())
 			expectedRunGetCalls := int32(1)
 			if tt.missingPropertiesFirst || tt.missingStatusFirst {
@@ -403,7 +406,7 @@ func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {
 			}
 			require.Equal(t, expectedRunGetCalls, runGetCalls.Load())
 			require.Equal(t, buildLog, output.String())
-			if tt.status == armcontainerregistry.RunStatusSucceeded {
+			if tt.status == armcontainerregistrytasks.RunStatusSucceeded {
 				require.NoError(t, err)
 				return
 			}
@@ -416,37 +419,72 @@ func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {
 	}
 }
 
+func TestRunDockerBuildRequestWithLogs_MissingRunID(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		run  armcontainerregistrytasks.Run
+	}{
+		{name: "missing properties"},
+		{name: "missing ID", run: armcontainerregistrytasks.Run{
+			Properties: &armcontainerregistrytasks.RunProperties{},
+		}},
+		{name: "empty ID", run: armcontainerregistrytasks.Run{
+			Properties: &armcontainerregistrytasks.RunProperties{RunID: new("")},
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mockCtx := mocks.NewMockContext(t.Context())
+			mockCtx.HttpClient.When(func(request *http.Request) bool {
+				return strings.Contains(request.URL.Path, "scheduleRun")
+			}).RespondFn(func(request *http.Request) (*http.Response, error) {
+				return mocks.CreateHttpResponseWithBody(request, http.StatusOK, tt.run)
+			})
+			mgr := NewRemoteBuildManager(
+				mockCtx.SubscriptionCredentialProvider,
+				armOptionsNoRetry(mockCtx.HttpClient),
+			)
+			err := mgr.RunDockerBuildRequestWithLogs(
+				t.Context(), testSubscriptionID, testResourceGroup, testRegistryName,
+				&armcontainerregistrytasks.DockerBuildRequest{}, io.Discard,
+			)
+			require.ErrorContains(t, err, "scheduling response is missing the run ID")
+			var unavailable *RemoteBuildUnavailableError
+			require.NotErrorAs(t, err, &unavailable)
+		})
+	}
+}
+
 func TestRemoteBuildRunError(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name           string
-		status         armcontainerregistry.RunStatus
+		status         armcontainerregistrytasks.RunStatus
 		diagnosticCode string
 	}{
 		{
 			name:           "failed",
-			status:         armcontainerregistry.RunStatusFailed,
+			status:         armcontainerregistrytasks.RunStatusFailed,
 			diagnosticCode: "acr_run_failed",
 		},
 		{
 			name:           "error",
-			status:         armcontainerregistry.RunStatusError,
+			status:         armcontainerregistrytasks.RunStatusError,
 			diagnosticCode: "acr_run_error",
 		},
 		{
 			name:           "timeout",
-			status:         armcontainerregistry.RunStatusTimeout,
+			status:         armcontainerregistrytasks.RunStatusTimeout,
 			diagnosticCode: "acr_run_timeout",
 		},
 		{
 			name:           "canceled",
-			status:         armcontainerregistry.RunStatusCanceled,
+			status:         armcontainerregistrytasks.RunStatusCanceled,
 			diagnosticCode: "acr_run_canceled",
 		},
 		{
 			name:   "unknown",
-			status: armcontainerregistry.RunStatus("unknown"),
+			status: armcontainerregistrytasks.RunStatus("unknown"),
 		},
 	}
 
@@ -472,21 +510,21 @@ func TestTerminalContainerRegistryRunStates(t *testing.T) {
 	t.Parallel()
 
 	// Guard against regressions: these are the statuses considered terminal.
-	expected := []armcontainerregistry.RunStatus{
-		armcontainerregistry.RunStatusCanceled,
-		armcontainerregistry.RunStatusError,
-		armcontainerregistry.RunStatusFailed,
-		armcontainerregistry.RunStatusSucceeded,
-		armcontainerregistry.RunStatusTimeout,
+	expected := []armcontainerregistrytasks.RunStatus{
+		armcontainerregistrytasks.RunStatusCanceled,
+		armcontainerregistrytasks.RunStatusError,
+		armcontainerregistrytasks.RunStatusFailed,
+		armcontainerregistrytasks.RunStatusSucceeded,
+		armcontainerregistrytasks.RunStatusTimeout,
 	}
 	require.ElementsMatch(t, expected, terminalContainerRegistryRunStates)
 
 	// Intermediate/unknown statuses must NOT be terminal — otherwise the
 	// RunDockerBuildRequestWithLogs retry loop would exit prematurely.
-	nonTerminal := []armcontainerregistry.RunStatus{
-		armcontainerregistry.RunStatusQueued,
-		armcontainerregistry.RunStatusRunning,
-		armcontainerregistry.RunStatusStarted,
+	nonTerminal := []armcontainerregistrytasks.RunStatus{
+		armcontainerregistrytasks.RunStatusQueued,
+		armcontainerregistrytasks.RunStatusRunning,
+		armcontainerregistrytasks.RunStatusStarted,
 	}
 	for _, s := range nonTerminal {
 		require.NotContains(t, terminalContainerRegistryRunStates, s,

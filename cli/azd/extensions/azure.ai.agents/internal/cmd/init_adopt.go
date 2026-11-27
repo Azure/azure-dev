@@ -1582,6 +1582,19 @@ func finalizeAdoptedProject(
 		return err
 	}
 
+	if err := syncAdoptedPendingModelDeploymentSignal(
+		ctx,
+		azdClient,
+		env.Name,
+		flags,
+		deferredAzureContext,
+	); err != nil {
+		log.Printf(
+			"warning: failed to update model_deployment provision signal: %v",
+			err,
+		)
+	}
+
 	fmt.Printf(
 		"\nAdopted the sample's azure.yaml as the project manifest at %s.\n",
 		output.WithHighLightFormat("azure.yaml"),
@@ -1752,24 +1765,9 @@ func configureAdoptedExistingDeployment(
 			"verify the deployment name or omit --model-deployment",
 		)
 	}
-	if err := replaceAdoptedTemplateDeployment(
+	return replaceAdoptedTemplateDeployment(
 		ctx, azdClient, envName, selected.Name, replacedDeployment,
-	); err != nil {
-		return err
-	}
-	if err := updatePendingModelDeploymentSignal(
-		ctx,
-		azdClient,
-		envName,
-		true,
-		false,
-	); err != nil {
-		log.Printf(
-			"warning: failed to update model_deployment provision signal: %v",
-			err,
-		)
-	}
-	return nil
+	)
 }
 
 func validateAdoptedAgentNameOverride(content []byte, projectRoot string) error {
@@ -2166,15 +2164,22 @@ func printAdoptionNextSteps(
 	folderDisplay string,
 	promptOnly bool,
 ) {
-	if promptOnly {
-		printPromptInitNextSteps(folderDisplay)
-		return
-	}
 	var stateOpts []nextstep.Option
 	if folderDisplay != "" {
 		stateOpts = append(stateOpts, nextstep.WithCreatedFolder(folderDisplay))
 	}
-	state, _ := nextstep.AssembleState(ctx, azdClient, stateOpts...)
+	var state *nextstep.State
+	if azdClient != nil {
+		state, _ = nextstep.AssembleState(ctx, azdClient, stateOpts...)
+	}
+	if promptOnly {
+		needsProvision := state == nil ||
+			len(state.PendingProvisionReasons) > 0 ||
+			!state.HasProjectEndpoint ||
+			len(state.MissingInfraVars) > 0
+		printPromptInitNextSteps(folderDisplay, needsProvision)
+		return
+	}
 	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, azdClient)))
 }
 

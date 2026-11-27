@@ -81,6 +81,11 @@ type EntraIdService interface {
 		appIdOrName string,
 		options CreateOrUpdateServicePrincipalOptions,
 	) (*graphsdk.ServicePrincipal, error)
+	AddPasswordCredential(
+		ctx context.Context,
+		subscriptionId string,
+		appId string,
+	) (*AzureCredentials, error)
 	ResetPasswordCredentials(
 		ctx context.Context,
 		subscriptionId string,
@@ -194,12 +199,24 @@ func (ad *entraIdService) CreateOrUpdateServicePrincipal(
 	return servicePrincipal, nil
 }
 
-// Removes any existing password credentials from the application
-// and creates a new password credential
+// AddPasswordCredential adds an application password without invalidating existing credentials.
+func (ad *entraIdService) AddPasswordCredential(
+	ctx context.Context, subscriptionId, appId string,
+) (*AzureCredentials, error) {
+	return ad.setPasswordCredential(ctx, subscriptionId, appId, false)
+}
+
+// ResetPasswordCredentials replaces all existing application passwords with a new one.
 func (ad *entraIdService) ResetPasswordCredentials(
 	ctx context.Context,
 	subscriptionId string,
 	appId string,
+) (*AzureCredentials, error) {
+	return ad.setPasswordCredential(ctx, subscriptionId, appId, true)
+}
+
+func (ad *entraIdService) setPasswordCredential(
+	ctx context.Context, subscriptionId, appId string, removeExisting bool,
 ) (*AzureCredentials, error) {
 	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
 	if err != nil {
@@ -216,19 +233,16 @@ func (ad *entraIdService) ResetPasswordCredentials(
 		return nil, fmt.Errorf("failed finding matching service principal: %w", err)
 	}
 
-	for _, credential := range application.PasswordCredentials {
-		err := graphClient.
-			ApplicationById(*application.Id).
-			RemovePassword(ctx, *credential.KeyId)
-
-		if err != nil {
-			return nil, fmt.Errorf("failed removing credentials for KeyId '%s' : %w", *credential.KeyId, err)
+	app := graphClient.ApplicationById(*application.Id)
+	if removeExisting {
+		for _, credential := range application.PasswordCredentials {
+			if err := app.RemovePassword(ctx, *credential.KeyId); err != nil {
+				return nil, fmt.Errorf("failed removing credentials for KeyId '%s' : %w", *credential.KeyId, err)
+			}
 		}
 	}
 
-	credential, err := graphClient.
-		ApplicationById(*application.Id).
-		AddPassword(ctx)
+	credential, err := app.AddPassword(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf(

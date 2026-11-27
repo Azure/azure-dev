@@ -323,6 +323,7 @@ The prompt is displayed with a `Filter:` line showing ghost-text ("Type to filte
 **Hint:**
 
 - The `[Type ? for hint]` pattern follows the same behavior as Text Input — **hi-blue bold** via `WithHighLightFormat` (Bright Blue, ANSI 94).
+- If users need to compare options before choosing, use `OptionDetails` with `ShowOptionDetailsBelow` to show a short hint directly beneath each label. Use text such as `(Recommended)` rather than color alone to identify a recommendation.
 
 **After submitting:**
 

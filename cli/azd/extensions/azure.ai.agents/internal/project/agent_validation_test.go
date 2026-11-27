@@ -488,16 +488,38 @@ func TestValidateAgentServiceDefinitionClassifiesRootRefErrors(t *testing.T) {
 }
 
 func TestValidateAgentServiceDefinitionRejectsMalformedSkill(t *testing.T) {
-	values := map[string]any{
-		"kind":         "prompt",
-		"name":         "prompt-agent",
-		"model":        "gpt-4.1-mini",
-		"instructions": "Help.",
-	}
-
 	for _, source := range []string{"inline", "root-ref"} {
-		t.Run(source, func(t *testing.T) {
+		t.Run("conflicting authored pins/"+source, func(t *testing.T) {
 			root := t.TempDir()
+			values := map[string]any{
+				"kind":         "prompt",
+				"name":         "prompt-agent",
+				"model":        "gpt-4.1-mini",
+				"instructions": "Help.",
+				"skills": []any{
+					map[string]any{"name": "broken", "version": "1"},
+					map[string]any{"name": "broken", "version": "2"},
+				},
+			}
+			svc := validationTestService(t, root, source, values)
+
+			_, err := ValidateAgentServiceDefinition(svc, root)
+
+			require.ErrorContains(t, err, `conflicting authored versions "1" and "2"`)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
+		})
+
+		t.Run("local skills dir is ignored/"+source, func(t *testing.T) {
+			root := t.TempDir()
+			values := map[string]any{
+				"kind":         "prompt",
+				"name":         "prompt-agent",
+				"model":        "gpt-4.1-mini",
+				"instructions": "Help.",
+				"skills":       []any{"broken"},
+			}
 			svc := validationTestService(t, root, source, values)
 			agentDir := filepath.Join(root, svc.GetRelativePath())
 			if source == "root-ref" {
@@ -513,10 +535,7 @@ func TestValidateAgentServiceDefinitionRejectsMalformedSkill(t *testing.T) {
 
 			_, err := ValidateAgentServiceDefinition(svc, root)
 
-			require.ErrorContains(t, err, "is missing 'description'")
-			localErr, ok := errors.AsType[*azdext.LocalError](err)
-			require.True(t, ok)
-			require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
+			require.NoError(t, err)
 		})
 	}
 }

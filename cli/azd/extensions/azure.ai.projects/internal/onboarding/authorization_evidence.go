@@ -208,7 +208,7 @@ func (e *AuthorizationEvidence) ExistingRoleAssignmentKeys(
 	for _, resource := range []Resource{plan.Cluster, plan.Workload, plan.Storage} {
 		if missing := resource.Missing; missing != "" {
 			skipped = append(skipped, SkippedCheck("role-assignment-keys", resource.diagnosticScope(),
-				"existing role assignment deduplication", missing))
+				"Role assignment"))
 			continue
 		}
 		if resource.ID == "" {
@@ -252,26 +252,8 @@ func (e *AuthorizationEvidence) ExistingRoleAssignmentKeys(
 					"conditional role assignment ID is missing at %s for principal %s and role %s",
 					grant.scope, grant.principalID, grant.roleID)
 			}
-			identity := plan.Hosting
-			if grant.checkID == "workload-blob" {
-				identity = plan.Workload
-			}
-			check := resourceCheck("role-assignment-keys", grant.scope,
-				"a matching role assignment without a condition before suppressing the template grant")
-			check.Status = Fail
-			check.Observed = fmt.Sprintf(
-				"existing role assignment %s for identity %s (principalId %s), scope %s, role %s (roleDefinitionId %s) "+
-					"has condition %q (conditionVersion %q); preflight cannot establish the required unconditional grant",
-				authString(assignment.ID), identity.ID, grant.principalID, grant.scope, grant.roleName,
-				authString(p.RoleDefinitionID), authString(p.Condition), authString(p.ConditionVersion))
-			check.Missing = "a matching role assignment without a condition"
-			check.Remediation = fmt.Sprintf(
-				"Have the resource administrator review role assignment %s and, if approved, remove its condition "+
-					"or replace it with an unconditional %s assignment (roleDefinitionId %s) for identity %s "+
-					"(principalId %s) at scope %s. Creating a second assignment with the same principal, scope and role "+
-					"under a different ID conflicts with the existing assignment. azd does not modify existing conditions.",
-				authString(assignment.ID), grant.roleName, authString(p.RoleDefinitionID),
-				identity.ID, grant.principalID, grant.scope)
+			check := resourceResult(resourceCheck("role-assignment-keys", grant.scope, grant.resourceType()), Fail,
+				"Required "+grant.roleName+" role assignment has a condition")
 			skipped = append(skipped, check)
 		}
 	}

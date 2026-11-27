@@ -25,6 +25,40 @@ import (
 	"go.uber.org/atomic"
 )
 
+func TestAskerConsole_Select_ShowsDetailsBelowInPlainText(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		stdin    string
+		noPrompt bool
+		want     int
+	}{
+		{name: "Explicit", stdin: "Bravo\n", want: 1},
+		{name: "Default", stdin: "\n"},
+		{name: "NoPrompt", noPrompt: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			writer := &bytes.Buffer{}
+			console := NewConsole(tt.noPrompt, false, Writers{Output: writer},
+				ConsoleHandles{Stdin: strings.NewReader(tt.stdin), Stdout: writer}, &output.NoneFormatter{}, nil)
+
+			selected, err := console.Select(t.Context(), ConsoleOptions{
+				Message:                "Choose:",
+				Options:                []string{"Alpha", "Bravo"},
+				OptionDetails:          []string{"First choice", "Second choice"},
+				ShowOptionDetailsBelow: true,
+				DefaultValue:           "Alpha",
+			})
+			require.NoError(t, err)
+			require.Equal(t, tt.want, selected)
+			if tt.noPrompt {
+				require.Empty(t, writer.String())
+			} else {
+				require.Contains(t, writer.String(), "Choose:\n  Alpha\n    First choice\n  Bravo\n    Second choice\n")
+			}
+		})
+	}
+}
+
 func TestAskerConsole_Confirm_RequireInput(t *testing.T) {
 	tests := []struct {
 		name         string

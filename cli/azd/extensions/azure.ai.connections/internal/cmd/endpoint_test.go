@@ -35,7 +35,7 @@ func TestResolveARMContext_PrefersEnvProjectID(t *testing.T) {
 				assert.Equal(t, http.MethodGet, request.Method)
 				assert.Equal(t, "management.azure.com", request.URL.Host)
 				assert.Equal(t, projectID, request.URL.Path)
-				assert.Equal(t, "2025-06-01", request.URL.Query().Get("api-version"))
+				assert.Equal(t, "2025-09-01", request.URL.Query().Get("api-version"))
 				return identityResponse(request, http.StatusOK,
 					`{"properties":{"endpoints":{"AI Foundry API":"`+endpoint+`"}}}`), nil
 			}))

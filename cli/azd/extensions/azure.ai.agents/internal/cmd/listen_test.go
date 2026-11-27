@@ -287,6 +287,49 @@ func TestUpdateLegacyProjectDeploymentsSplitNoOp(t *testing.T) {
 	require.NoError(t, updateLegacyProjectDeployments(t.Context(), nil, services, ""))
 }
 
+func TestPredeployDoesNotSeedLegacyProjectDeployments(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "true")
+	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
+	env := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		values:  map[string]map[string]string{"dev": {}},
+	}
+	client := newTestAzdClient(t, env, &testWorkflowServiceServer{})
+	service := &azdext.ServiceConfig{
+		Name: "agent",
+		Host: AiAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind":         "prompt",
+			"name":         "agent",
+			"model":        "chat",
+			"instructions": "Help the user.",
+			"deployments": []any{
+				map[string]any{
+					"name":  "chat",
+					"model": map[string]any{"name": "gpt-4.1-mini", "version": "2025-04-14"},
+					"sku":   map[string]any{"name": "GlobalStandard", "capacity": 10},
+				},
+			},
+		}),
+	}
+	proj := &azdext.ProjectConfig{
+		Path:     t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{"agent": service},
+	}
+
+	_, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+		Project: proj,
+		Service: service,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, env.values["dev"]["AI_PROJECT_DEPLOYMENTS"],
+		"predeploy must not seed AI_PROJECT_DEPLOYMENTS from legacy service declarations")
+
+	require.NoError(t, preprovisionHandler(t.Context(), client, &azdext.ProjectEventArgs{Project: proj}))
+	assert.Contains(t, env.values["dev"]["AI_PROJECT_DEPLOYMENTS"], `\"name\":\"chat\"`,
+		"preprovision continues to seed AI_PROJECT_DEPLOYMENTS from legacy service declarations")
+}
+
 func TestPrepareContainerSettings_AppliesSettingsInMemory(t *testing.T) {
 	t.Parallel()
 
@@ -1694,26 +1737,26 @@ func TestPredownIgnoresPromptDeploymentReadiness(t *testing.T) {
 	}{
 		{"empty instructions", "", false, "non-empty instructions"},
 		{"blank instructions", " \t", false, "non-empty instructions"},
-		{"malformed local skill", "Help.", true, "is missing 'description'"},
+		{"conflicting skill versions", "Help.", true, `conflicting authored versions "1" and "2"`},
 	} {
 		for _, source := range []string{"direct", "root ref"} {
 			t.Run(tt.name+"/"+source, func(t *testing.T) {
 				root := t.TempDir()
-				props := mustStruct(t, map[string]any{
+				propValues := map[string]any{
 					"kind": "prompt", "name": "agent", "model": "gpt-4.1", "instructions": tt.instructions,
-				})
+				}
+				if tt.brokenSkill {
+					propValues["skills"] = []any{
+						map[string]any{"name": "broken", "version": "1"},
+						map[string]any{"name": "broken", "version": "2"},
+					}
+				}
+				props := mustStruct(t, propValues)
 				if source == "root ref" {
 					data, err := json.Marshal(props.AsMap())
 					require.NoError(t, err)
 					require.NoError(t, os.WriteFile(filepath.Join(root, "definition.yaml"), data, 0o600))
 					props = mustStruct(t, map[string]any{"$ref": "./definition.yaml"})
-				}
-				if tt.brokenSkill {
-					skillDir := filepath.Join(root, "skills", "broken")
-					require.NoError(t, os.MkdirAll(skillDir, 0o700))
-					require.NoError(t, os.WriteFile(
-						filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: broken\n---\n"), 0o600,
-					))
 				}
 				proj := &azdext.ProjectConfig{
 					Path: root,

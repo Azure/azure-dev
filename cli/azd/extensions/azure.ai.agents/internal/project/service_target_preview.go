@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 var _ azdext.ServiceTargetPreviewProvider = (*AgentServiceTargetProvider)(nil)
@@ -195,12 +196,17 @@ func preparePreviewRequest(
 		}
 		inputs.PublicEnvironment[name] = public
 	}
-	for _, protocol := range service.GetAdditionalProperties().GetFields()["protocols"].GetListValue().GetValues() {
-		fields := protocol.GetStructValue().GetFields()
-		if fields["version"].GetStringValue() == "" {
-			name := fields["protocol"].GetStringValue()
-			_, declared := fields["version"]
-			inputs.ProtocolVersions[name] = inputs.ProtocolVersions[name] || declared
+	for key, list := range service.GetAdditionalProperties().GetFields() {
+		if !strings.EqualFold(key, "protocols") {
+			continue
+		}
+		for _, protocol := range list.GetListValue().GetValues() {
+			fields := protocol.GetStructValue().GetFields()
+			if fields["version"].GetStringValue() == "" {
+				name := fields["protocol"].GetStringValue()
+				_, declared := fields["version"]
+				inputs.ProtocolVersions[name] = inputs.ProtocolVersions[name] || declared
+			}
 		}
 	}
 	prebuilt := definition.Image != "" && (service.GetDocker().GetImagePassthrough() ||
@@ -307,11 +313,21 @@ func preparePreviewRequest(
 	return prepared.request, inputs, nil
 }
 
+// hasFoldedKey reports whether any key in props equals name under case folding.
+func hasFoldedKey(props map[string]*structpb.Value, name string) bool {
+	for key := range props {
+		if strings.EqualFold(key, name) {
+			return true
+		}
+	}
+	return false
+}
+
 func previewDeclaredFields(service *azdext.ServiceConfig, definition agent_yaml.ContainerAgent) map[string]bool {
 	props := service.GetAdditionalProperties().GetFields()
 	fields := map[string]bool{}
 	for _, path := range []string{"name", "description"} {
-		if _, declared := props[path]; declared {
+		if hasFoldedKey(props, path) {
 			fields[path] = true
 		}
 	}
@@ -320,7 +336,7 @@ func previewDeclaredFields(service *azdext.ServiceConfig, definition agent_yaml.
 			fields["metadata."+name] = true
 		}
 	}
-	if _, declared := props["protocols"]; declared {
+	if hasFoldedKey(props, "protocols") {
 		fields["definition.protocol_versions"] = true
 	}
 	resources := props["container"].GetStructValue().GetFields()["resources"].GetStructValue().GetFields()
@@ -341,7 +357,7 @@ func previewDeclaredFields(service *azdext.ServiceConfig, definition agent_yaml.
 		if definition.Image != "" {
 			fields[previewImagePath] = true
 		}
-		if _, declared := props["registryConnectionId"]; declared {
+		if hasFoldedKey(props, "registryConnectionId") {
 			fields["definition.container_configuration.registry_connection_id"] = true
 		}
 	}
@@ -398,8 +414,13 @@ func previewSourceInputs(
 	}
 	// Scan only previewed inputs, not excluded code/artifact settings.
 	for _, key := range []string{"name", "description", "metadata", "protocols", "image", "registryConnectionId"} {
-		if err := previewSourceSecrets(source[key], lookup, &inputs.Secrets); err != nil {
-			return previewInputs{}, previewConfigurationError()
+		for sourceKey, value := range source {
+			if !strings.EqualFold(sourceKey, key) {
+				continue
+			}
+			if err := previewSourceSecrets(value, lookup, &inputs.Secrets); err != nil {
+				return previewInputs{}, previewConfigurationError()
+			}
 		}
 	}
 	if container, ok := source["container"].(map[string]any); ok {

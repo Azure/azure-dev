@@ -25,17 +25,20 @@ import (
 )
 
 type templatePlanResolver struct {
-	ctx                 context.Context
-	provider            *FoundryProvisioningProvider
-	evidence            *onboarding.AuthorizationEvidence
-	scopes              map[string]planScope
-	functions           map[string]any
-	references          map[*planResource]bool
-	owningSubscriptions map[string]bool
-	nodes               []*planResource
-	account             *planResource
-	unresolved          []string
-	err                 error
+	ctx                  context.Context
+	provider             *FoundryProvisioningProvider
+	evidence             *onboarding.AuthorizationEvidence
+	scopes               map[string]planScope
+	functions            map[string]any
+	references           map[*planResource]bool
+	owningSubscriptions  map[string]bool
+	nodes                []*planResource
+	account              *planResource
+	accountHostingProven bool
+	singleAccountHosting bool
+	unresolved           []string
+	unresolvedAccounts   []string
+	err                  error
 }
 
 type planResource struct {
@@ -45,6 +48,7 @@ type planResource struct {
 	path      string
 	kind      string
 	inactive  bool
+	existing  bool
 	missing   string
 	child     *planEnvironment
 	childRead bool
@@ -186,7 +190,8 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 	for _, entry := range entries {
 		count := 1
 		copyMissing := ""
-		if copy, ok := entry.raw["copy"].(map[string]any); ok {
+		copy, hasCopy := entry.raw["copy"].(map[string]any)
+		if hasCopy {
 			value := env.value(copy["count"])
 			number, ok := value.(float64)
 			if !ok || number < 0 || number > 128 || number != float64(int(number)) {
@@ -202,6 +207,9 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 			}
 			local := *env
 			local.copyIndex = index
+			if copyMissing != "" {
+				local.copyIndex = -1
+			}
 			local.variables, local.active = map[string]any{}, map[string]bool{}
 			path := env.path + "/" + entry.symbol
 			if count > 1 {
@@ -223,14 +231,27 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 				}
 			}
 			if existing, _ := entry.raw["existing"].(bool); existing {
-				resource.inactive = true
+				resource.existing = true
 			}
-			if !resource.inactive && typeMissing != "" {
+			if !resource.inactive && !resource.existing && typeMissing != "" {
 				r.unresolved = append(r.unresolved, path+": resource type: "+typeMissing)
 			}
-			env.resources[entry.symbol] = resource
+			if !resource.inactive && typeMissing != "" {
+				r.unresolvedAccounts = append(r.unresolvedAccounts, path+": resource type: "+typeMissing)
+			} else if !resource.inactive && copyMissing != "" &&
+				(strings.EqualFold(resource.kind, "Microsoft.CognitiveServices/accounts") ||
+					(!resource.existing && strings.EqualFold(resource.kind, "Microsoft.Resources/deployments") &&
+						moduleMayContainAccount(entry.raw, 0))) {
+				r.unresolvedAccounts = append(r.unresolvedAccounts, path+": "+copyMissing)
+			}
+			if hasCopy && copyMissing == "" {
+				env.resources[fmt.Sprintf("%s[%d]", entry.symbol, index)] = resource
+			} else {
+				env.resources[entry.symbol] = resource
+			}
 			r.nodes = append(r.nodes, resource)
-			if !resource.inactive && strings.EqualFold(resource.kind, "Microsoft.Resources/deployments") {
+			if !resource.inactive && !resource.existing &&
+				strings.EqualFold(resource.kind, "Microsoft.Resources/deployments") {
 				modules = append(modules, resource)
 			}
 		}
@@ -243,6 +264,49 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 	}
 }
 
+func moduleMayContainAccount(raw map[string]any, depth int) bool {
+	props, ok := raw["properties"].(map[string]any)
+	if !ok || depth > 32 {
+		return true
+	}
+	tmpl, ok := props["template"].(map[string]any)
+	return !ok || resourcesMayContainAccount(tmpl["resources"], depth)
+}
+
+func resourcesMayContainAccount(raw any, depth int) bool {
+	if raw == nil {
+		return false
+	}
+	if depth > 32 {
+		return true
+	}
+	var items []any
+	switch resources := raw.(type) {
+	case map[string]any:
+		items = slices.Collect(maps.Values(resources))
+	case []any:
+		items = resources
+	default:
+		return true
+	}
+	return slices.ContainsFunc(items, func(item any) bool {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			return true
+		}
+		if cond, isBool := entry["condition"].(bool); isBool && !cond {
+			return false
+		}
+		kind, ok := entry["type"].(string)
+		if !ok || (strings.HasPrefix(kind, "[") && !strings.HasPrefix(kind, "[[")) {
+			return true
+		}
+		return strings.EqualFold(kind, "Microsoft.CognitiveServices/accounts") ||
+			(strings.EqualFold(kind, "Microsoft.Resources/deployments") && moduleMayContainAccount(entry, depth+1)) ||
+			resourcesMayContainAccount(entry["resources"], depth+1)
+	})
+}
+
 func (n *planResource) module() *planEnvironment {
 	if n.childRead {
 		return n.child
@@ -251,6 +315,7 @@ func (n *planResource) module() *planEnvironment {
 	properties, ok := n.raw["properties"].(map[string]any)
 	if !ok {
 		n.missing = "deployment module properties are not an inline object"
+		n.resolver.unresolved = append(n.resolver.unresolved, n.path+": "+n.missing)
 		return nil
 	}
 	template, ok := properties["template"].(map[string]any)
@@ -299,7 +364,7 @@ func (n *planResource) module() *planEnvironment {
 		scope = n.resolver.scope(scope.subscriptionID, scope.group)
 		if scope.location == "" && !scope.groupExists && scope.groupARMID != "" {
 			for _, resource := range n.env.resources {
-				if resource.inactive || resource.missing != "" ||
+				if resource.inactive || resource.existing || resource.missing != "" ||
 					!strings.EqualFold(resource.kind, "Microsoft.Resources/resourceGroups") {
 					continue
 				}
@@ -323,22 +388,51 @@ func (n *planResource) module() *planEnvironment {
 }
 
 func (n *planResource) resourceScope() (string, string) {
-	if n.env.scope.missing != "" {
-		return "", n.env.scope.missing
+	sub, subMissing := n.env.scope.subscriptionID, n.env.scope.missing
+	rawRG, hasRG := planObjectField(n.raw, "resourceGroup")
+	if rawSub, hasSub := planObjectField(n.raw, "subscriptionId"); hasSub {
+		var why string
+		if sub, why = planString(n.env.value(rawSub)); why != "" {
+			return "", "resource subscription: " + why
+		}
+		if hasRG || strings.EqualFold(n.kind, "Microsoft.Resources/resourceGroups") {
+			subMissing = ""
+		}
+	}
+	if subMissing != "" {
+		return "", subMissing
+	}
+	if sub == "" || strings.ContainsAny(sub, "/\\?#%@:\x00 \t\r\n") {
+		return "", "resource subscription scope is not resolved"
 	}
 	if strings.EqualFold(n.kind, "Microsoft.Resources/resourceGroups") {
-		return n.env.scope.subscriptionARMID, ""
+		return "/subscriptions/" + sub, ""
 	}
-	scope := n.env.scope.groupARMID
-	if raw, present := n.raw["scope"]; present {
+	group := n.env.scope.group
+	if hasRG {
+		var why string
+		if group, why = planString(n.env.value(rawRG)); why != "" {
+			return "", "resource group: " + why
+		}
+	}
+	scope := ""
+	if group != "" {
+		if strings.ContainsAny(group, "/\\?#%@:\x00 \t\r\n") {
+			return "", "resource group scope is not resolved"
+		}
+		scope = "/subscriptions/" + sub + "/resourceGroups/" + group
+	}
+	if raw, present := planObjectField(n.raw, "scope"); present {
 		value, why := planString(n.env.value(raw))
 		if why != "" {
 			return "", "resource scope: " + why
 		}
 		if strings.HasPrefix(value, "/") {
 			scope = value
-		} else {
+		} else if scope != "" {
 			scope += "/providers/" + value
+		} else {
+			return "", "resource type or deployment resource-group scope is not resolved"
 		}
 	}
 	if scope == "" {
@@ -375,6 +469,12 @@ func (n *planResource) id() (string, string) {
 }
 
 func (n *planResource) reference(full bool) any {
+	if n.inactive {
+		return planUnknown{"referenced resource/module at " + n.path + " is inactive"}
+	}
+	if n.missing != "" {
+		return planUnknown{n.missing}
+	}
 	if n.resolver.references[n] {
 		return planUnknown{"cyclic local resource/module reference at " + n.path}
 	}
@@ -391,7 +491,20 @@ func (n *planResource) reference(full bool) any {
 		}
 		outputs, _ := child.template["outputs"].(map[string]any)
 		result := map[string]any{}
-		for key, output := range outputs {
+		for _, key := range slices.Sorted(maps.Keys(outputs)) {
+			output := outputs[key]
+			if definition, ok := output.(map[string]any); ok {
+				if condition, hasCond := planObjectField(definition, "condition"); hasCond {
+					active, missing := planBool(child.value(condition))
+					if missing != "" {
+						result[key] = planUnknownPresence{"output " + key + " condition: " + missing}
+						continue
+					}
+					if !active {
+						continue
+					}
+				}
+			}
 			result[key] = child.value(output)
 		}
 		properties := map[string]any{"outputs": result}
@@ -469,10 +582,13 @@ func (r *templatePlanResolver) resource(value any, kind, origin string) onboardi
 	}
 	uncertain := strings.Join(r.unresolved, "; ")
 	for _, node := range r.nodes {
-		if node.inactive || !strings.EqualFold(node.kind, kind) {
+		if node.inactive || node.existing || !strings.EqualFold(node.kind, kind) {
 			continue
 		}
-		if _, override := node.raw["scope"]; !override {
+		_, hasScope := planObjectField(node.raw, "scope")
+		_, hasSub := planObjectField(node.raw, "subscriptionId")
+		_, hasRG := planObjectField(node.raw, "resourceGroup")
+		if !hasScope && !hasSub && !hasRG {
 			if node.env.scope.subscriptionID != "" &&
 				!strings.EqualFold(node.env.scope.subscriptionID, parsed.SubscriptionID) {
 				continue
@@ -522,6 +638,13 @@ func (r *templatePlanResolver) recordOwningSubscription(kind, subscription strin
 func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	ctx context.Context, source *templateSource, evidence *onboarding.AuthorizationEvidence,
 ) (onboarding.Plan, error) {
+	plan, _, _, err := p.identifyBYOPlan(ctx, source, evidence)
+	return plan, err
+}
+
+func (p *FoundryProvisioningProvider) identifyBYOPlan(
+	ctx context.Context, source *templateSource, evidence *onboarding.AuthorizationEvidence,
+) (onboarding.Plan, bool, bool, error) {
 	if evidence == nil {
 		evidence = onboarding.NewAuthorizationEvidence(p.credential, p.armClientOptions)
 	}
@@ -531,11 +654,11 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	}
 	encoded, err := json.Marshal(source.parameters)
 	if err != nil {
-		return onboarding.Plan{}, fmt.Errorf("encode actual merged BYO plan parameters: %w", err)
+		return onboarding.Plan{}, false, false, fmt.Errorf("encode actual merged BYO plan parameters: %w", err)
 	}
 	var merged map[string]any
 	if err := json.Unmarshal(encoded, &merged); err != nil {
-		return onboarding.Plan{}, fmt.Errorf("decode actual merged BYO plan parameters: %w", err)
+		return onboarding.Plan{}, false, false, fmt.Errorf("decode actual merged BYO plan parameters: %w", err)
 	}
 	parameters := map[string]func() any{}
 	for key, envelope := range merged {
@@ -573,5 +696,5 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	}
 	resolver.bindNetwork(&plan)
 	plan.OwningSubscriptions = append(plan.OwningSubscriptions, slices.Sorted(maps.Keys(resolver.owningSubscriptions))...)
-	return plan, resolver.err
+	return plan, resolver.accountHostingProven, resolver.singleAccountHosting, resolver.err
 }

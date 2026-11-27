@@ -147,12 +147,13 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		return err
 	}
 	evidence := onboarding.NewAuthorizationEvidence(p.credential, p.armClientOptions)
-	plan, err := p.identifyBYOTemplatePlan(ctx, source, evidence)
+	plan, accountHostingProven, singleAccountHosting, err := p.identifyBYOPlan(ctx, source, evidence)
 	if err != nil {
 		return err
 	}
 	// Explicit selectors still need bindings when their effective identities are also ARM deployment targets.
-	for i, resource := range []*onboarding.Resource{&plan.Hosting, &plan.Workload} {
+	identityResources := [2]*onboarding.Resource{&plan.Hosting, &plan.Workload}
+	for i, resource := range identityResources {
 		identity := &identities[i]
 		_, automatic := hostBindings[identity.binding]
 		resource.PrincipalRequired = automatic && (resource.Supplied || identity.id != "")
@@ -185,7 +186,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	progress("Resolving deployment identity and role bindings...")
 	_, needsKubelet := hostBindings["kubeletObjectId"]
 	if facts.KubeletObjectID == "" && (plan.Cluster.Missing == "" || needsKubelet || includeAcr) {
-		return fmt.Errorf("BYO AKS requires a kubelet principal object ID from preflight")
+		return withPlanMissing("BYO AKS requires a kubelet principal object ID from preflight", plan.Cluster)
 	}
 	if facts.KubeletObjectID != "" {
 		if _, err := uuid.Parse(facts.KubeletObjectID); err != nil {
@@ -198,15 +199,6 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 				explicitKubeletID, facts.KubeletObjectID, plan.Cluster.ID),
 			"remove kubeletObjectId to resolve it automatically, or set it to the selected AKS cluster's actual kubelet ID")
 	}
-	workloadScope := plan.Workload.ID
-	if workloadScope == "" {
-		workloadScope = plan.Workload.Parent
-	}
-	if resolveFederationRole && workloadScope != "" {
-		if scope, err := arm.ParseResourceID(workloadScope); err == nil && scope.SubscriptionID != "" {
-			roleSubscription = scope.SubscriptionID
-		}
-	}
 	identities[0].fact, identities[1].fact = facts.HostingIdentity, facts.WorkloadIdentity
 	resolvedBindings := map[string]any{"kubeletObjectId": facts.KubeletObjectID}
 	for i := range identities {
@@ -215,8 +207,9 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 			continue
 		}
 		if !strings.EqualFold(identity.id, identity.fact.ID) || identity.fact.PrincipalID == "" {
-			return fmt.Errorf("%s deployment binding requires matching resource ID and principal ID from preflight",
-				identity.field)
+			return withPlanMissing(fmt.Sprintf(
+				"%s deployment binding requires matching resource ID and principal ID from preflight",
+				identity.field), *identityResources[i])
 		}
 		if _, err := uuid.Parse(identity.fact.PrincipalID); err != nil {
 			return fmt.Errorf("supplied identity principal ID must be a GUID: %w", err)
@@ -225,6 +218,17 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	}
 	federationRoleID, _ := byoParameterValue(source, "federatedIdentityRoleDefinitionId").(string)
 	if resolveFederationRole {
+		workloadScope := plan.Workload.ID
+		if workloadScope == "" {
+			workloadScope = plan.Workload.Parent
+		}
+		if scope, err := arm.ParseResourceID(workloadScope); accountHostingProven && workloadScope != "" &&
+			err == nil && scope.SubscriptionID != "" {
+			roleSubscription = scope.SubscriptionID
+		} else if !singleAccountHosting {
+			return withPlanMissing("federatedIdentityRoleDefinitionId deployment binding "+
+				"requires a resolved workload identity scope from preflight", plan.Workload)
+		}
 		var err error
 		federationRoleID, err = resolveBYOFederationRoleID(ctx, roleSubscription, evidence)
 		if err != nil {
@@ -259,6 +263,18 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	}
 	source.parameters = mergeParameters(source.parameters, hostBindings)
 	return nil
+}
+
+func withPlanMissing(message string, resource onboarding.Resource) error {
+	if resource.Missing == "" {
+		return errors.New(message)
+	}
+	if resource.Origin != "" &&
+		!strings.HasPrefix(resource.Missing, "no unique local ") &&
+		!strings.HasPrefix(resource.Missing, "selected Foundry account ") {
+		return fmt.Errorf("%s (%s: %s)", message, resource.Origin, resource.Missing)
+	}
+	return fmt.Errorf("%s: %s", message, resource.Missing)
 }
 
 // Terminal controls delimit URLs in OSC8 hyperlinks and must not be consumed by URL parsing.

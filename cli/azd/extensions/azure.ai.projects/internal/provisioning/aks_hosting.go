@@ -19,10 +19,12 @@ import (
 
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/onboarding"
+	projectTelemetry "azure.ai.projects/internal/telemetry"
 	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/google/uuid"
 )
@@ -32,6 +34,22 @@ type byoHostingParameters struct {
 	ClusterResourceID                   json.RawMessage `json:"clusterResourceId"`
 	HostingManagementIdentityResourceID json.RawMessage `json:"hostingManagementIdentityResourceId"`
 	WorkloadIdentityResourceID          json.RawMessage `json:"workloadIdentityResourceId"`
+}
+
+func (p *FoundryProvisioningProvider) reportAgentHosting(
+	ctx context.Context, source *templateSource,
+) {
+	if p.azdClient == nil {
+		return
+	}
+	if hosting, err := byoHostingParameter(source); err == nil && hosting.Enabled {
+		foundryTelemetry.NewReporter(p.azdClient.Telemetry(), nil).Report(
+			context.WithoutCancel(ctx),
+			projectTelemetry.AgentHostingSelected(
+				projectTelemetry.AgentHostingModeBYOAKS,
+			),
+		)
+	}
 }
 
 func (p *FoundryProvisioningProvider) prepareBYO(

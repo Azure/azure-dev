@@ -571,6 +571,22 @@ func Test_RegisterSingletonAndInvoke(t *testing.T) {
 
 // ---------- RegisterSingleton (error-returning) ----------
 
+func Test_Singleton_CachedAcrossLaterRegistrations(t *testing.T) {
+	t.Parallel()
+	c := NewNestedContainer(nil)
+	c.MustRegisterSingleton(newSingletonService)
+
+	var before *singletonService
+	require.NoError(t, c.Resolve(&before))
+
+	// Each registration publishes a new copy of the bindings, which must keep the cached singleton.
+	c.MustRegisterTransient(newTransientService)
+
+	var after *singletonService
+	require.NoError(t, c.Resolve(&after))
+	require.Same(t, before, after)
+}
+
 func Test_RegisterSingleton_Error(t *testing.T) {
 	t.Parallel()
 	c := NewNestedContainer(nil)

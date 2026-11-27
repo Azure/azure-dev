@@ -2052,7 +2052,7 @@ func (p *FoundryProvisioningProvider) Destroy(
 		}
 		recordedGroupMissing = !exists
 	}
-	if p.brownfieldEndpoint == "" && !recordedGroupMissing {
+	if p.brownfieldEndpoint == "" {
 		mode, recorded, err := synthesis.ResolveGreenfieldACRSelection(synthesis.Input{
 			RawAzureYAML: p.projectYAML, Env: p.synthesisEnv, ResourceGroupName: p.rgName, ACRBinding: p.acrBinding,
 		})

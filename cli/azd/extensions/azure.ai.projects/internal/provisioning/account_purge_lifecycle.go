@@ -180,14 +180,6 @@ func (p *FoundryProvisioningProvider) completeAccountCleanup(
 	if p.accountPurge == nil {
 		return result, nil
 	}
-	if !options.GetPurge() {
-		// Keep the target discoverable by the next provider instance, even
-		// after the host invalidates the deleted Project's other outputs.
-		result.InvalidatedEnvKeys = slices.DeleteFunc(result.InvalidatedEnvKeys, func(key string) bool {
-			return key == envKeyFoundryRG || key == envKeyFoundryRGOwner
-		})
-		return result, nil
-	}
 	if _, err := p.azdClient.Environment().UnsetConfig(ctx, &azdext.UnsetConfigRequest{
 		EnvName: p.envName, Path: accountPurgeConfigKey,
 	}); err != nil {

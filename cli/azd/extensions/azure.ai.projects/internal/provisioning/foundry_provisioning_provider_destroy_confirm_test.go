@@ -54,6 +54,7 @@ func newDestroyConfirmTestClient(
 
 	srv := grpc.NewServer()
 	azdext.RegisterPromptServiceServer(srv, promptSrv)
+	azdext.RegisterEnvironmentServiceServer(srv, &resolveEnvStubEnvServer{})
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

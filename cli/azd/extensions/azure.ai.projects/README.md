@@ -383,6 +383,14 @@ The federation-role binding resolves the built-in role name on demand in the tar
 
 `azd down` uses the standard Foundry teardown path, including its confirmation and `--force` behavior. It deletes model deployments and the target resource group with all resources inside it, including pre-existing resources; cleanup is not limited to resources created by the ARM deployment. An existing AKS cluster, network, supplied Storage, or supplied identity in the target resource group is deleted along with the group. Resources in other resource groups are outside this group-deletion scope. Infrastructure layers retain the standard Foundry resource-group ownership checks.
 
+When a deployed BYO AKS account's hosting-management identity is in the same subscription and target resource group, teardown deletes its model deployments, then explicitly deletes and waits for all its Projects and the account before deleting the group. The hosting identity remains available until Foundry cleanup finishes and is removed with the group, not by a separate identity deletion. This ordering uses the deployed account's hosting configuration and identity resource IDs, including custom names; current YAML or the preview switch does not select it. Other accounts and existing-project reuse retain their standard teardown behavior.
+
+This ordered cleanup requires `Microsoft.CognitiveServices/accounts/projects/read`, `Microsoft.CognitiveServices/accounts/projects/delete`, and `Microsoft.CognitiveServices/accounts/delete` in addition to the existing teardown permissions. Resource-group Owner and Contributor normally include these operations; a custom role allowing only resource-group deletion may not. If a Project or account deletion fails, times out, or is canceled, teardown stops without deleting the group or hosting identity.
+
+Before the first ordered Project or account deletion, the extension saves the target group's complete account purge scope (resource IDs, names, and locations) in `extensions.ai-projects.accountPurge`, bound to the environment, infrastructure layer, subscription, and resource group. A save failure prevents that deletion. A later `azd down --purge` merges still-live accounts with this saved scope and purges both previously deleted and remaining accounts after group deletion, including when the group is already absent. Failures, cancellation, timeouts, and partial purge retain the recovery record. Recovery reads the group's existence and, when a repeated purge returns not found, reads the exact soft-deleted account; only a `ResourceNotFound` response from that lookup confirms absence. The caller needs permission for these reads.
+
+Running without `--purge` never performs permanent cleanup and retains the recovery record and target-group environment keys for a later purge. The record is cleared only after all requested purges and deployment-record cleanup succeed. Ordinary Foundry teardown without an ordered-cleanup recovery record does not require these state writes or additional soft-deleted-account lookups.
+
 Embedded provisioning and Bicep eject are supported through `microsoft.foundry`; Terraform eject is rejected before changing files. On-disk Bicep templates and explicit parameters control resource naming, creation and authorization for both default and supplied supporting resources. Bicep compilation, ARM JSON parsing and Foundry Connection compatibility checks apply to on-disk infrastructure. ARM validates the resulting deployment; custom templates are responsible for the resources and grants they declare.
 
 Bicep eject includes AKS parameters, preview account resources and `byo-*` modules only when `agentHosting` is configured; enabling the preview switch alone does not include them. Projects without AKS retain the standard networking, monitoring and registry modules. The shared `synthesis/templates/main.bicep.tmpl`, `modules/resources.bicep.tmpl` and `modules/acr.bicep.tmpl` sources render both modes. After editing them, run `go generate` from `synthesis/` with Bicep on PATH to regenerate the full embedded provisioning graph.
@@ -556,7 +564,10 @@ from source. Without opt-in, fresh create returns normal outputs without a
 binding-only project identity lookup, canonical binding config write, or new
 mode write. Saved create bindings retain immutable identity validation and
 maintenance. Recovered create ownership remains available for safe operations
-without newly persisting or unsetting a transient binding while off.
+without newly persisting or unsetting a transient binding while off, except during
+ordered BYO AKS cleanup: its recovered create binding is saved before Project
+deletion and cleared after group cleanup so retries do not need the deleted
+Project's identity.
 
 Legacy existing-project `reuse-connect` environments without canonical reuse
 bindings or pending operations remain supported without the switch. Canonical

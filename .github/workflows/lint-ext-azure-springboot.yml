@@ -1,0 +1,28 @@
+name: ext-azure-springboot-lint
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/extensions/azure.springboot/**"
+      - ".github/workflows/lint-ext-azure-springboot.yml"
+      - ".github/workflows/verify-ext-providers.yml"
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write  # required by reusable workflow lint-go.yml
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint-go.yml
+    with:
+      working-directory: cli/azd/extensions/azure.springboot
+
+  verify-providers:
+    uses: ./.github/workflows/verify-ext-providers.yml
+    with:
+      working-directory: cli/azd/extensions/azure.springboot

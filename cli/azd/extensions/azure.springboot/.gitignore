@@ -1,0 +1,21 @@
+# Build output directory
+bin/
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary and reports
+*.test
+*.out
+junitTestReport.xml
+
+# Go workspace file
+go.work
+go.work.sum
+
+# env file
+.env

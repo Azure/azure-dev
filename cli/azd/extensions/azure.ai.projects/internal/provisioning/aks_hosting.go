@@ -52,7 +52,17 @@ type byoLocalPreparation struct {
 
 func (p *FoundryProvisioningProvider) rejectFallbackBYORegistry(source *templateSource) error {
 	if p != nil && p.brownfieldEndpoint != "" {
-		return nil
+		mode, _ := parameterValue(source, "acrMode").(string)
+		if !strings.EqualFold(mode, "create") && !strings.EqualFold(mode, "reuse-connect") {
+			return nil
+		}
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"existing-project container registry routing with BYO AKS hosting is not supported "+
+				"for acrMode create or reuse-connect",
+			"use an already-connected or omitted registry in existing-project mode, "+
+				"or provision a new Foundry account with agentHosting.enabled=true",
+		)
 	}
 	includeAcr, _ := byoParameterValue(source, "includeAcr").(bool)
 	existingACR, _ := parameterValue(source, "existingAcrResourceId").(string)
@@ -169,8 +179,8 @@ func (p *FoundryProvisioningProvider) prepareBYOLocal(
 		if multipleHosting {
 			return nil, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
-				"multiple active agentHostingConfigurations in a custom template require single-account hosting",
-				"retain a single active AKS hosting configuration or declare and enable agentHosting for the target Foundry account",
+				"multiple active agentHostingConfigurations in a custom template are not supported",
+				"retain a single active AKS hosting configuration in the Foundry deployment template",
 			)
 		}
 		if err := p.rejectFallbackBYORegistry(source); err != nil {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -503,6 +504,73 @@ func TestBYOCustomTemplateGateAndNonAKSIsolation(t *testing.T) {
 	assert.Nil(t, p.credential)
 	assert.Empty(t, fake.requests)
 
+	// Existing-project fallback BYO rejects acrMode create/reuse-connect while allowing none/already-connected.
+	for _, tc := range []struct {
+		mode   string
+		reject bool
+	}{
+		{"create", true},
+		{"reuse-connect", true},
+		{"none", false},
+		{"already-connected", false},
+	} {
+		p, _, source = customTemplateWithoutAgentHosting(t, 7, customBYOProperties(offlineClusterID))
+		p.brownfieldEndpoint = offlineProjectEndpoint
+		source.parameters["acrMode"] = map[string]any{"value": tc.mode}
+		source.parameters["includeAcr"] = map[string]any{"value": true}
+		source.parameters["existingAcrResourceId"] = map[string]any{"value": registryID}
+		_, err = p.prepareBYOLocal(source)
+		if tc.reject {
+			require.ErrorContains(t, err, "acrMode create or reuse-connect")
+		} else {
+			require.NoError(t, err)
+		}
+	}
+
+	// Both Deploy and Preview recover previous external ACR bindings (including without root outputs) before submission.
+	for _, preview := range []bool{false, true} {
+		p, fake, _ = customTemplateWithoutAgentHosting(t, 7, customBYOProperties(offlineClusterID))
+		env := &resolveEnvStubEnvServer{envName: "test"}
+		p.azdClient = newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+		deployPath := "/subscriptions/target-sub/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+		opsPath := "/subscriptions/target-sub/resourceGroups/target-rg/" +
+			"providers/Microsoft.Resources/deployments/foundry-resources/operations"
+		p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+			require.Equal(t, http.MethodGet, method)
+			switch path {
+			case deployPath:
+				return acrTestReply(out, map[string]any{"properties": map[string]any{"provisioningState": "Succeeded"}})
+			case opsPath:
+				return acrTestReply(out, map[string]any{"value": []any{map[string]any{"properties": map[string]any{
+					"targetResource": map[string]any{
+						"id":           offlineProjectID,
+						"resourceType": "Microsoft.CognitiveServices/accounts/projects",
+					},
+				}}}})
+			case offlineProjectID:
+				return acrTestReply(out, map[string]any{
+					"identity": map[string]string{"principalId": "22222222-2222-4222-8222-222222222222"},
+				})
+			case offlineProjectID + "/connections":
+				return acrTestReply(out, map[string]any{"value": []any{map[string]any{"properties": map[string]any{
+					"category": "ContainerRegistry",
+					"metadata": map[string]string{"ResourceId": registryID},
+				}}}})
+			default:
+				return acrTestReply(out, map[string]any{"value": []any{}})
+			}
+		}
+		if preview {
+			_, err = p.Preview(t.Context(), func(string) {})
+		} else {
+			_, err = p.Deploy(t.Context(), func(string) {})
+		}
+		require.ErrorContains(t, err, "requires agentHosting.enabled=true")
+		assert.Zero(t, fake.base.writes)
+		assert.Zero(t, fake.base.previews)
+		assert.Empty(t, env.config)
+	}
+
 	p, fake, source = customTemplateWithoutAgentHosting(t, 7, customBYOProperties("/not-a-cluster"))
 	t.Setenv(synthesis.BYOAKSEnvVar, "false")
 	p.credential = nil
@@ -530,10 +598,17 @@ func TestBYOCustomTemplateGateAndNonAKSIsolation(t *testing.T) {
 	_, err = p.Deploy(t.Context(), func(string) {})
 	requireBYOFeatureNotEnabled(t, err)
 	t.Setenv(synthesis.BYOAKSEnvVar, "true")
-	_, err = p.Deploy(t.Context(), func(string) {})
-	require.ErrorContains(t, err, "multiple active agentHostingConfigurations")
+	for _, preview := range []bool{false, true} {
+		if preview {
+			_, err = p.Preview(t.Context(), func(string) {})
+		} else {
+			_, err = p.Deploy(t.Context(), func(string) {})
+		}
+		require.ErrorContains(t, err, "multiple active agentHostingConfigurations")
+	}
 	assert.Empty(t, fake.requests)
 	assert.Zero(t, fake.base.writes)
+	assert.Zero(t, fake.base.previews)
 
 	p, fake, source = customTemplateWithoutAgentHosting(t, 0, nil)
 	t.Setenv(synthesis.BYOAKSEnvVar, "false")

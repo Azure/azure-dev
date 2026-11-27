@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/azure"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -1418,4 +1419,249 @@ func TestConfigureExistingProjectAcrPreservesConnectionDiscoveryError(t *testing
 	)
 
 	require.ErrorIs(t, err, discoveryErr)
+}
+
+func TestFormatFoundryDeploymentLabel(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		info FoundryDeploymentInfo
+		want string
+	}{
+		{
+			name: "all fields present",
+			info: FoundryDeploymentInfo{
+				Name:      "gpt-4o",
+				ModelName: "gpt-4o",
+				Version:   "2024-08-06",
+				SkuName:   "GlobalStandard",
+			},
+			want: "gpt-4o (gpt-4o v2024-08-06, GlobalStandard)",
+		},
+		{
+			name: "missing sku",
+			info: FoundryDeploymentInfo{
+				Name:      "gpt-4o",
+				ModelName: "gpt-4o",
+				Version:   "2024-08-06",
+			},
+			want: "gpt-4o (gpt-4o v2024-08-06)",
+		},
+		{
+			name: "missing version",
+			info: FoundryDeploymentInfo{
+				Name:      "gpt-4o",
+				ModelName: "gpt-4o",
+				SkuName:   "GlobalStandard",
+			},
+			want: "gpt-4o (gpt-4o, GlobalStandard)",
+		},
+		{
+			name: "model name only",
+			info: FoundryDeploymentInfo{
+				Name:      "my-chat",
+				ModelName: "gpt-5.4-mini",
+			},
+			want: "my-chat (gpt-5.4-mini)",
+		},
+		{
+			name: "sku only",
+			info: FoundryDeploymentInfo{
+				Name:    "my-chat",
+				SkuName: "Standard",
+			},
+			want: "my-chat (Standard)",
+		},
+		{
+			name: "deployment name only",
+			info: FoundryDeploymentInfo{Name: "my-chat"},
+			want: "my-chat",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, formatFoundryDeploymentLabel(tt.info))
+		})
+	}
+}
+
+type recordingSelectServer struct {
+	azdext.UnimplementedPromptServiceServer
+	requests []*azdext.SelectRequest
+	response int32
+}
+
+func (s *recordingSelectServer) Select(
+	_ context.Context,
+	req *azdext.SelectRequest,
+) (*azdext.SelectResponse, error) {
+	s.requests = append(s.requests, req)
+	return &azdext.SelectResponse{Value: new(s.response)}, nil
+}
+
+func TestSelectModelDeployment(t *testing.T) {
+	t.Parallel()
+
+	sampleProject := FoundryProjectInfo{
+		SubscriptionId:    "sub",
+		ResourceGroupName: "rg",
+		AccountName:       "acct",
+		ProjectName:       "proj",
+	}
+	sampleDeployments := []FoundryDeploymentInfo{
+		{
+			Name:      "existing-mini",
+			ModelName: "gpt-5.4-mini",
+			Version:   "2026-01-01",
+			SkuName:   "GlobalStandard",
+		},
+	}
+
+	tests := []struct {
+		name            string
+		deployments     []FoundryDeploymentInfo
+		flag            string
+		allowSkip       bool
+		selectIndex     int32
+		wantAction      modelDeploymentSelectionAction
+		wantName        string
+		wantErrCode     string
+		wantErrContains string
+		wantSelectCalls int
+		wantLabels      []string
+	}{
+		{
+			name:        "explicit flag on empty project fails with CodeModelDeploymentNotFound",
+			deployments: nil,
+			flag:        "nonexistent",
+			wantErrCode: exterrors.CodeModelDeploymentNotFound,
+		},
+		{
+			name:            "explicit flag missing on populated project lists available names",
+			deployments:     sampleDeployments,
+			flag:            "nonexistent",
+			wantErrCode:     exterrors.CodeModelDeploymentNotFound,
+			wantErrContains: "existing-mini",
+		},
+		{
+			name:        "explicit flag matches case-insensitively without prompting",
+			deployments: sampleDeployments,
+			flag:        "EXISTING-MINI",
+			wantAction:  modelDeploymentSelected,
+			wantName:    "existing-mini",
+		},
+		{
+			name:        "empty deployments without flag returns empty action without prompting",
+			deployments: nil,
+			allowSkip:   true,
+			wantAction:  modelDeploymentEmpty,
+		},
+		{
+			name:            "interactive prompt without allowSkip omits skip choice",
+			deployments:     sampleDeployments,
+			allowSkip:       false,
+			selectIndex:     0,
+			wantAction:      modelDeploymentSelected,
+			wantName:        "existing-mini",
+			wantSelectCalls: 1,
+			wantLabels: []string{
+				"existing-mini (gpt-5.4-mini v2026-01-01, GlobalStandard)",
+				"Deploy a new model from the catalog",
+			},
+		},
+		{
+			name:            "interactive prompt with allowSkip includes skip choice and handles new selection",
+			deployments:     sampleDeployments,
+			allowSkip:       true,
+			selectIndex:     1,
+			wantAction:      modelDeploymentCreateNew,
+			wantSelectCalls: 1,
+			wantLabels: []string{
+				"existing-mini (gpt-5.4-mini v2026-01-01, GlobalStandard)",
+				"Deploy a new model from the catalog",
+				"Skip model configuration",
+			},
+		},
+		{
+			name:            "interactive prompt with allowSkip handles skip selection",
+			deployments:     sampleDeployments,
+			allowSkip:       true,
+			selectIndex:     2,
+			wantAction:      modelDeploymentSkipped,
+			wantSelectCalls: 1,
+			wantLabels: []string{
+				"existing-mini (gpt-5.4-mini v2026-01-01, GlobalStandard)",
+				"Deploy a new model from the catalog",
+				"Skip model configuration",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			selectSrv := &recordingSelectServer{response: tt.selectIndex}
+			azdClient := newTestAzdClient(
+				t,
+				&testEnvironmentServiceServer{},
+				&testWorkflowServiceServer{},
+				selectSrv,
+			)
+			loader := func(
+				context.Context, azcore.TokenCredential, string, string, string,
+			) ([]FoundryDeploymentInfo, error) {
+				return tt.deployments, nil
+			}
+
+			ctx, timing := inittelemetry.NewContext(t.Context())
+			got, action, err := selectModelDeployment(
+				ctx,
+				azdClient,
+				nil,
+				sampleProject,
+				tt.flag,
+				"",
+				tt.allowSkip,
+				loader,
+			)
+
+			recorder := &initTimingRecorder{}
+			timing.Flush(ctx, recorder)
+			require.Len(t, recordedStepDurations(t, recorder, inittelemetry.ModelDeploymentSelection), 1)
+
+			if tt.wantErrCode != "" {
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Equal(t, tt.wantErrCode, localErr.Code)
+				if tt.wantErrContains != "" {
+					require.Contains(t, localErr.Suggestion, tt.wantErrContains)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.wantAction, action)
+			require.Len(t, selectSrv.requests, tt.wantSelectCalls)
+			if tt.wantSelectCalls > 0 {
+				req := selectSrv.requests[0]
+				require.Equal(t, "Select a model deployment", req.GetOptions().GetMessage())
+				require.Equal(t, int32(0), req.GetOptions().GetSelectedIndex())
+				gotLabels := make([]string, len(req.GetOptions().GetChoices()))
+				for i, c := range req.GetOptions().GetChoices() {
+					gotLabels[i] = c.GetLabel()
+				}
+				require.Equal(t, tt.wantLabels, gotLabels)
+			}
+			if tt.wantName != "" {
+				require.NotNil(t, got)
+				require.Equal(t, tt.wantName, got.Name)
+			} else {
+				require.Nil(t, got)
+			}
+		})
+	}
 }

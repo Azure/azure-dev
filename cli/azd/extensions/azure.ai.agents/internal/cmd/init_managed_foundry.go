@@ -108,12 +108,8 @@ func resolvePromptHarnessTarget(
 	}
 
 	if proj == nil {
-		if strings.TrimSpace(flags.modelDeployment) != "" {
-			return nil, false, nil, nil, exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"the selected new project cannot reuse an existing model deployment",
-				"select an existing project containing that deployment, or use --model to deploy a new model",
-			)
+		if err := validateModelDeploymentTarget(flags, nil); err != nil {
+			return nil, false, nil, nil, err
 		}
 		// Create-new path. Prompt for a location (a new project needs one) and
 		// signal Bicep to create the project + a model deployment.
@@ -133,7 +129,14 @@ func resolvePromptHarnessTarget(
 		}
 		// A new project is provisioned by `azd up`; its endpoint is resolved from
 		// the provisioned environment at deploy time.
-		deployment, err := resolvePromptModelDeployment(ctx, azdClient, azureContext, env, flags)
+		deployment, provision, err := configureAgentModelDeployment(ctx, agentModelConfigOptions{
+			AzdClient:    azdClient,
+			Credential:   cred,
+			AzureContext: azureContext,
+			Env:          env,
+			Flags:        flags,
+			AllowSkip:    false,
+		})
 		if err == nil {
 			err = validateInitLocation(ctx, azureContext.Scope.Location, allowedLocations)
 		}
@@ -144,7 +147,7 @@ func resolvePromptHarnessTarget(
 			}
 			err = validateNewProjectLocation(location, azureContext.Scope.Location)
 		}
-		return deployment, true, nil, cred, err
+		return deployment, provision, nil, cred, err
 	}
 
 	// Existing project: populate the harness target and derive the location
@@ -183,9 +186,15 @@ func resolvePromptHarnessTarget(
 		log.Printf("warning: failed to update project provision signal: %v", err)
 	}
 
-	deployment, provision, err := resolvePromptModelForExistingProject(
-		ctx, azdClient, cred, azureContext, env, flags, proj,
-	)
+	deployment, provision, err := configureAgentModelDeployment(ctx, agentModelConfigOptions{
+		AzdClient:       azdClient,
+		Credential:      cred,
+		AzureContext:    azureContext,
+		Env:             env,
+		Flags:           flags,
+		SelectedProject: proj,
+		AllowSkip:       false,
+	})
 	if err == nil {
 		err = validateInitLocation(ctx, azureContext.Scope.Location, allowedLocations)
 	}
@@ -331,209 +340,4 @@ func setPromptFoundryProjectEnv(
 		}
 	}
 	return nil
-}
-
-// resolvePromptModelForExistingProject resolves a model deployment for a prompt
-// agent on an already-selected Foundry project. It offers the project's
-// existing deployments first (reuse a live deployment), plus a "deploy a new
-// model" option that runs the full catalog -> version -> SKU -> capacity flow.
-func resolvePromptModelForExistingProject(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	credential azcore.TokenCredential,
-	azureContext *azdext.AzureContext,
-	env *azdext.Environment,
-	flags *initFlags,
-	proj *FoundryProjectInfo,
-) (*project.Deployment, bool, error) {
-	// --model-deployment names an existing deployment in this project to reuse
-	// verbatim, which is the non-interactive equivalent of picking one from the
-	// list below. It wins over --model so `--model-deployment x --model y` does
-	// not silently provision a second deployment.
-	if requested := strings.TrimSpace(flags.modelDeployment); requested != "" {
-		deployment, err := findExistingPromptDeployment(ctx, credential, proj, requested)
-		return deployment, false, err
-	}
-
-	// --model short-circuits to the new-deployment configuration so the named
-	// model is resolved (version/SKU/capacity) and provisioned.
-	if strings.TrimSpace(flags.model) == "" {
-		deployments, err := listProjectDeployments(
-			ctx, credential, proj.SubscriptionId, proj.ResourceGroupName, proj.AccountName,
-		)
-		if err != nil {
-			fmt.Println(output.WithWarningFormat(
-				"Could not list existing model deployments: %s. Choosing from the catalog instead.\n", err,
-			))
-		} else if len(deployments) > 0 && !flags.noPrompt {
-			const newModelValue = "__new_model__"
-			choices := make([]*azdext.SelectChoice, 0, len(deployments)+1)
-			byName := make(map[string]*FoundryDeploymentInfo, len(deployments))
-			for i := range deployments {
-				d := &deployments[i]
-				byName[d.Name] = d
-				label := d.Name
-				if d.ModelName != "" {
-					label = fmt.Sprintf("%s (%s", d.Name, d.ModelName)
-					if d.Version != "" {
-						label += " " + d.Version
-					}
-					label += ")"
-				}
-				choices = append(choices, &azdext.SelectChoice{Label: label, Value: d.Name})
-			}
-			choices = append(choices, &azdext.SelectChoice{
-				Label: "Deploy a new model from the catalog",
-				Value: newModelValue,
-			})
-
-			defaultIndex := int32(0)
-			resp, selErr := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-				Options: &azdext.SelectOptions{
-					Message:       "Select the model deployment your agent will call",
-					Choices:       choices,
-					SelectedIndex: &defaultIndex,
-				},
-			})
-			if selErr != nil {
-				if exterrors.IsCancellation(selErr) {
-					return nil, false, exterrors.Cancelled("model selection was cancelled")
-				}
-				return nil, false, fmt.Errorf("prompting for model deployment: %w", selErr)
-			}
-			if selected := choices[*resp.Value].Value; selected != newModelValue {
-				return promptDeploymentFromFoundry(byName[selected]), false, nil
-			}
-		}
-	}
-
-	deployment, err := resolvePromptModelDeployment(ctx, azdClient, azureContext, env, flags)
-	return deployment, true, err
-}
-
-// findExistingPromptDeployment resolves a named model deployment in the given
-// Foundry project so `--model-deployment` can reference a live deployment
-// without provisioning a new one. A missing deployment is an error rather than
-// a fallback to the catalog: silently deploying a different model than the one
-// the caller named would surprise them and cost them quota.
-func findExistingPromptDeployment(
-	ctx context.Context,
-	credential azcore.TokenCredential,
-	proj *FoundryProjectInfo,
-	deploymentName string,
-) (*project.Deployment, error) {
-	deployments, err := listProjectDeployments(
-		ctx, credential, proj.SubscriptionId, proj.ResourceGroupName, proj.AccountName,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("listing model deployments for Foundry project %q: %w", proj.ProjectName, err)
-	}
-
-	available := make([]string, 0, len(deployments))
-	for i := range deployments {
-		if strings.EqualFold(deployments[i].Name, deploymentName) {
-			return promptDeploymentFromFoundry(&deployments[i]), nil
-		}
-		available = append(available, deployments[i].Name)
-	}
-
-	suggestion := "create the deployment first, or pass --model <model-name> to have `azd up` deploy it"
-	if len(available) > 0 {
-		suggestion = fmt.Sprintf("deployments in this project: %s. %s", strings.Join(available, ", "), suggestion)
-	}
-	return nil, exterrors.Validation(
-		exterrors.CodeInvalidParameter,
-		fmt.Sprintf(
-			"model deployment %q was not found in Foundry project %q", deploymentName, proj.ProjectName,
-		),
-		suggestion,
-	)
-}
-
-// promptDeploymentFromFoundry converts a discovered Foundry model deployment
-// into the azure.yaml deployment entry recorded on the prompt agent service.
-func promptDeploymentFromFoundry(d *FoundryDeploymentInfo) *project.Deployment {
-	return &project.Deployment{
-		Name: d.Name,
-		Model: project.DeploymentModel{
-			Name:    d.ModelName,
-			Format:  d.ModelFormat,
-			Version: d.Version,
-		},
-		Sku: project.DeploymentSku{
-			Name:     d.SkuName,
-			Capacity: d.SkuCapacity,
-		},
-	}
-}
-
-// resolvePromptModelDeployment runs the full "deploy a new model" flow — model
-// selection from the catalog, then version / SKU / capacity via the shared
-// modelSelector, then a deployment-name prompt — and returns the resulting
-// deployment. It reuses the exact hosted helpers so prompt agents get the same
-// deployment configuration UX.
-func resolvePromptModelDeployment(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	azureContext *azdext.AzureContext,
-	env *azdext.Environment,
-	flags *initFlags,
-) (*project.Deployment, error) {
-	selector := &modelSelector{
-		azdClient:    azdClient,
-		azureContext: azureContext,
-		environment:  env,
-		flags:        flags,
-	}
-
-	defaultModel := strings.TrimSpace(flags.model)
-	if defaultModel == "" {
-		defaultModel = "gpt-4.1-mini"
-	}
-
-	// getModelDetails handles model confirm/change, location-availability and
-	// quota retries, and the version / SKU / capacity selection (via
-	// PromptAiDeployment). allowSkip=false: a prompt agent must have a model.
-	modelDetails, err := selector.getModelDetails(ctx, defaultModel, false)
-	if err != nil {
-		return nil, err
-	}
-
-	// Deployment name (defaults to the model name), matching hosted.
-	deploymentName := modelDetails.ModelName
-	if !flags.noPrompt {
-		resp, promptErr := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message: fmt.Sprintf(
-					"Enter model deployment name for model '%s' (defaults to model name)",
-					modelDetails.ModelName,
-				),
-				IgnoreHintKeys: true,
-				DefaultValue:   modelDetails.ModelName,
-			},
-		})
-		if promptErr != nil {
-			if exterrors.IsCancellation(promptErr) {
-				return nil, exterrors.Cancelled("deployment name prompt was cancelled")
-			}
-			return nil, fmt.Errorf("prompting for deployment name: %w", promptErr)
-		}
-		if v := strings.TrimSpace(resp.Value); v != "" {
-			deploymentName = v
-		}
-	}
-
-	deployment := &project.Deployment{
-		Name: deploymentName,
-		Model: project.DeploymentModel{
-			Name:    modelDetails.ModelName,
-			Format:  modelDetails.Format,
-			Version: modelDetails.Version,
-		},
-		Sku: project.DeploymentSku{
-			Name:     modelDetails.Sku.Name,
-			Capacity: int(modelDetails.Capacity),
-		},
-	}
-	return deployment, nil
 }

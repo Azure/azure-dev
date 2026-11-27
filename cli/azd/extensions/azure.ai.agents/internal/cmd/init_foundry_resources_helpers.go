@@ -1760,15 +1760,17 @@ func selectNewModel(
 	return modelResp.Model, nil
 }
 
-// resolveModelDeployments resolves model deployments without prompting, returning all candidates
-// filtered by location and quota. Both init flows use this for deployment resolution.
-func resolveModelDeployments(
+// resolveAgentModelDeployments resolves model deployments without prompting,
+// filtering out asynchronous batch SKUs that cannot serve real-time agent calls.
+// hadOnlyBatch is true when the host returned at least one non-nil candidate and
+// every non-nil candidate was a batch SKU.
+func resolveAgentModelDeployments(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	azureContext *azdext.AzureContext,
 	model *azdext.AiModel,
 	location string,
-) ([]*azdext.AiModelDeployment, error) {
+) ([]*azdext.AiModelDeployment, bool, error) {
 	resolveResp, err := azdClient.Ai().ResolveModelDeployments(ctx, &azdext.ResolveModelDeploymentsRequest{
 		AzureContext: azureContext,
 		ModelName:    model.Name,
@@ -1780,18 +1782,37 @@ func resolveModelDeployments(
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	deployments := make([]*azdext.AiModelDeployment, 0, len(resolveResp.GetDeployments()))
-	for _, candidate := range resolveResp.GetDeployments() {
+	rawDeployments := resolveResp.GetDeployments()
+	deployments := make([]*azdext.AiModelDeployment, 0, len(rawDeployments))
+	sawBatch := false
+	for _, candidate := range rawDeployments {
 		if candidate == nil {
+			continue
+		}
+		if isBatchModelSku(candidate.GetSku()) {
+			sawBatch = true
 			continue
 		}
 		deployments = append(deployments, cloneDeploymentWithCapacity(candidate, 0))
 	}
 
-	return deployments, nil
+	return deployments, sawBatch && len(deployments) == 0, nil
+}
+
+// resolveModelDeployments resolves real-time model deployments without prompting, returning all
+// non-batch candidates filtered by location and quota. Both init flows use this for deployment resolution.
+func resolveModelDeployments(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	model *azdext.AiModel,
+	location string,
+) ([]*azdext.AiModelDeployment, error) {
+	deployments, _, err := resolveAgentModelDeployments(ctx, azdClient, azureContext, model, location)
+	return deployments, err
 }
 
 func selectBestModelDeploymentCandidate(
@@ -1802,12 +1823,24 @@ func selectBestModelDeploymentCandidate(
 		return nil
 	}
 
-	orderedCandidates := make([]*azdext.AiModelDeployment, len(deployments))
-	copy(orderedCandidates, deployments)
+	orderedCandidates := make([]*azdext.AiModelDeployment, 0, len(deployments))
+	for _, candidate := range deployments {
+		if candidate == nil || isBatchModelSku(candidate.GetSku()) {
+			continue
+		}
+		orderedCandidates = append(orderedCandidates, candidate)
+	}
+	if len(orderedCandidates) == 0 {
+		return nil
+	}
 
-	defaultVersions := make(map[string]struct{}, len(model.Versions))
-	for _, version := range model.Versions {
-		if version.IsDefault {
+	var versions []*azdext.AiModelVersion
+	if model != nil {
+		versions = model.Versions
+	}
+	defaultVersions := make(map[string]struct{}, len(versions))
+	for _, version := range versions {
+		if version != nil && version.IsDefault {
 			defaultVersions[version.Version] = struct{}{}
 		}
 	}
@@ -1859,20 +1892,22 @@ func sortModelDeploymentCandidates(candidates []*azdext.AiModelDeployment, defau
 	for i := range len(candidates) {
 		for j := i + 1; j < len(candidates); j++ {
 			a, b := candidates[i], candidates[j]
-			_, aDefault := defaultVersions[a.Version]
-			_, bDefault := defaultVersions[b.Version]
+			_, aDefault := defaultVersions[a.GetVersion()]
+			_, bDefault := defaultVersions[b.GetVersion()]
+			aSkuName, bSkuName := a.GetSku().GetName(), b.GetSku().GetName()
+			aUsageName, bUsageName := a.GetSku().GetUsageName(), b.GetSku().GetUsageName()
 
 			swap := false
 			if aDefault != bDefault {
 				swap = !aDefault
-			} else if skuPriority(a.Sku.Name) != skuPriority(b.Sku.Name) {
-				swap = skuPriority(a.Sku.Name) > skuPriority(b.Sku.Name)
-			} else if a.Version != b.Version {
-				swap = a.Version > b.Version
-			} else if a.Sku.Name != b.Sku.Name {
-				swap = a.Sku.Name > b.Sku.Name
+			} else if skuPriority(aSkuName) != skuPriority(bSkuName) {
+				swap = skuPriority(aSkuName) > skuPriority(bSkuName)
+			} else if a.GetVersion() != b.GetVersion() {
+				swap = a.GetVersion() > b.GetVersion()
+			} else if aSkuName != bSkuName {
+				swap = aSkuName > bSkuName
 			} else {
-				swap = a.Sku.UsageName > b.Sku.UsageName
+				swap = aUsageName > bUsageName
 			}
 
 			if swap {
@@ -2067,11 +2102,45 @@ func selectFoundryProject(
 
 // --- Shared "select model deployment" flow ---
 
+type modelDeploymentSelectionAction int
+
+const (
+	modelDeploymentSelected modelDeploymentSelectionAction = iota
+	modelDeploymentCreateNew
+	modelDeploymentEmpty
+	modelDeploymentSkipped
+)
+
+type foundryDeploymentsLoader func(
+	ctx context.Context,
+	credential azcore.TokenCredential,
+	subscriptionId, resourceGroup, accountName string,
+) ([]FoundryDeploymentInfo, error)
+
+// formatFoundryDeploymentLabel formats an existing deployment label consistently,
+// omitting empty model, version, or SKU fields cleanly.
+func formatFoundryDeploymentLabel(d FoundryDeploymentInfo) string {
+	var details []string
+	if d.ModelName != "" {
+		modelPart := d.ModelName
+		if d.Version != "" {
+			modelPart = fmt.Sprintf("%s v%s", d.ModelName, d.Version)
+		}
+		details = append(details, modelPart)
+	}
+	if d.SkuName != "" {
+		details = append(details, d.SkuName)
+	}
+	if len(details) == 0 {
+		return d.Name
+	}
+	return fmt.Sprintf("%s (%s)", d.Name, strings.Join(details, ", "))
+}
+
 // selectModelDeployment lists model deployments in a Foundry project and prompts
 // the user to select one. If modelDeploymentFlag is provided, finds the matching
 // deployment by name without prompting. modelFilter optionally restricts to deployments
-// matching a specific model ID (from manifest). Returns nil if user chose
-// "Create a new model deployment" or no deployments exist.
+// matching a specific model ID.
 func selectModelDeployment(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -2079,28 +2148,48 @@ func selectModelDeployment(
 	project FoundryProjectInfo,
 	modelDeploymentFlag string,
 	modelFilter string,
-) (*FoundryDeploymentInfo, error) {
+	allowSkip bool,
+	loadDeployments foundryDeploymentsLoader,
+) (*FoundryDeploymentInfo, modelDeploymentSelectionAction, error) {
 	defer inittelemetry.Start(ctx, inittelemetry.ModelDeploymentSelection)()
+
+	if loadDeployments == nil {
+		loadDeployments = listProjectDeployments
+	}
 
 	spinner := ux.NewSpinner(&ux.SpinnerOptions{
 		Text:        "Searching for model deployments in your Foundry Project...",
 		ClearOnStop: true,
 	})
 	if err := spinner.Start(ctx); err != nil {
-		return nil, fmt.Errorf("failed to start spinner: %w", err)
+		return nil, modelDeploymentEmpty, fmt.Errorf("failed to start spinner: %w", err)
 	}
 
-	deployments, err := listProjectDeployments(ctx, credential, project.SubscriptionId, project.ResourceGroupName, project.AccountName)
+	requested := strings.TrimSpace(modelDeploymentFlag)
+
+	deployments, err := loadDeployments(
+		ctx, credential, project.SubscriptionId, project.ResourceGroupName, project.AccountName,
+	)
 	if stopErr := spinner.Stop(ctx); stopErr != nil {
-		return nil, stopErr
+		return nil, modelDeploymentEmpty, stopErr
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to list deployments: %w", err)
+		if exterrors.IsCancellation(err) {
+			return nil, modelDeploymentEmpty, exterrors.Cancelled("model deployment selection was cancelled")
+		}
+		if ctx.Err() != nil {
+			return nil, modelDeploymentEmpty, ctx.Err()
+		}
+		if requested != "" {
+			return nil, modelDeploymentEmpty, fmt.Errorf("failed to list deployments: %w", err)
+		}
+		fmt.Printf("%s", output.WithWarningFormat("Could not list existing model deployments: %s.\n", err))
+		return nil, modelDeploymentEmpty, nil
 	}
 
 	// Filter by model if specified
 	if modelFilter != "" {
-		filtered := make([]FoundryDeploymentInfo, 0)
+		filtered := make([]FoundryDeploymentInfo, 0, len(deployments))
 		for _, d := range deployments {
 			if strings.EqualFold(d.ModelName, modelFilter) {
 				filtered = append(filtered, d)
@@ -2109,67 +2198,98 @@ func selectModelDeployment(
 		deployments = filtered
 	}
 
+	if requested != "" {
+		// Flag provided: find matching deployment by name before checking empty list
+		// so nonexistent names against empty projects fail rather than falling through.
+		for i := range deployments {
+			if strings.EqualFold(deployments[i].Name, requested) {
+				return &deployments[i], modelDeploymentSelected, nil
+			}
+		}
+		suggestion := "verify the deployment name or omit --model-deployment to select interactively"
+		if len(deployments) > 0 {
+			available := make([]string, 0, len(deployments))
+			for _, d := range deployments {
+				available = append(available, d.Name)
+			}
+			suggestion = fmt.Sprintf(
+				"deployments in this project: %s. %s",
+				strings.Join(available, ", "),
+				suggestion,
+			)
+		}
+		return nil, modelDeploymentEmpty, exterrors.Validation(
+			exterrors.CodeModelDeploymentNotFound,
+			fmt.Sprintf("model deployment %q not found in Foundry project", requested),
+			suggestion,
+		)
+	}
+
 	if len(deployments) == 0 {
 		if modelFilter != "" {
 			fmt.Printf("No existing deployments found matching model '%s'.\n", modelFilter)
 		} else {
 			fmt.Println("No existing deployments found. You can create a new model deployment.")
 		}
-		return nil, nil
+		return nil, modelDeploymentEmpty, nil
 	}
 
-	if modelDeploymentFlag != "" {
-		// Flag provided: find matching deployment by name
-		for _, d := range deployments {
-			if strings.EqualFold(d.Name, modelDeploymentFlag) {
-				return &d, nil
-			}
-		}
-		return nil, exterrors.Validation(
-			exterrors.CodeModelDeploymentNotFound,
-			fmt.Sprintf("model deployment %q not found in Foundry project", modelDeploymentFlag),
-			"verify the deployment name or omit --model-deployment to select interactively",
-		)
+	// Interactive flattened 1-step prompt
+	capacity := len(deployments) + 1
+	if allowSkip {
+		capacity++
 	}
-
-	// Interactive prompt
-	deployChoices := make([]*azdext.SelectChoice, 0, len(deployments)+1)
-	for _, d := range deployments {
-		label := fmt.Sprintf("%s (%s v%s, %s)", d.Name, d.ModelName, d.Version, d.SkuName)
+	deployChoices := make([]*azdext.SelectChoice, 0, capacity)
+	for i, d := range deployments {
 		deployChoices = append(deployChoices, &azdext.SelectChoice{
-			Label: label,
-			Value: d.Name,
+			Label: formatFoundryDeploymentLabel(d),
+			Value: fmt.Sprintf("%d", i),
 		})
 	}
 	deployChoices = append(deployChoices, &azdext.SelectChoice{
-		Label: "Create a new model deployment",
-		Value: "__create_new__",
+		Label: "Deploy a new model from the catalog",
+		Value: "new",
 	})
+	if allowSkip {
+		deployChoices = append(deployChoices, &azdext.SelectChoice{
+			Label: "Skip model configuration",
+			Value: "skip",
+		})
+	}
 
 	deployResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: "Select a model deployment",
-			Choices: deployChoices,
+			Message:       "Select a model deployment",
+			Choices:       deployChoices,
+			SelectedIndex: new(int32(0)),
 		},
 	})
 	if err != nil {
 		if exterrors.IsCancellation(err) {
-			return nil, exterrors.Cancelled("model deployment selection was cancelled")
+			return nil, modelDeploymentEmpty, exterrors.Cancelled("model deployment selection was cancelled")
 		}
-		return nil, exterrors.Dependency(
+		return nil, modelDeploymentEmpty, exterrors.Dependency(
 			exterrors.CodePromptFailed,
 			fmt.Sprintf("failed to prompt for deployment selection: %v", err),
 			"use --model-deployment to specify a deployment name in non-interactive mode",
 		)
 	}
 
-	deploymentIdx := *deployResp.Value
-	if deploymentIdx >= 0 && int(deploymentIdx) < len(deployments) {
+	deploymentIdx := int(*deployResp.Value)
+	if deploymentIdx < 0 || deploymentIdx >= len(deployChoices) {
+		return nil, modelDeploymentEmpty, exterrors.Internal(
+			exterrors.CodePromptFailed,
+			"model deployment selection returned an invalid index",
+		)
+	}
+	if deploymentIdx < len(deployments) {
 		d := deployments[deploymentIdx]
 		fmt.Printf("Model deployment name: %s\n", d.Name)
-		return &d, nil
+		return &d, modelDeploymentSelected, nil
+	}
+	if deployChoices[deploymentIdx].Value == "skip" {
+		return nil, modelDeploymentSkipped, nil
 	}
 
-	// User chose "Create a new model deployment"
-	return nil, nil
+	return nil, modelDeploymentCreateNew, nil
 }

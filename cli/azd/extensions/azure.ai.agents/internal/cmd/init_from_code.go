@@ -226,8 +226,11 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 	if a.projectTargetDir != "" {
 		return ensureProject(ctx, a.flags, a.azdClient, a.projectTargetDir)
 	}
-	projectResponse, err := a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	config, err := probeInitProject(ctx, a.azdClient)
 	if err != nil {
+		return nil, err
+	}
+	if config == nil {
 		defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
 
 		fmt.Println("Let's get your project initialized.")
@@ -266,21 +269,14 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 		if _, err := a.azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
 			Workflow: workflow,
 		}); err != nil {
-			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("project initialization was cancelled")
-			}
-			return nil, exterrors.Dependency(
-				exterrors.CodeProjectInitFailed,
-				fmt.Sprintf("failed to initialize project: %s", err),
-				"",
-			)
+			return nil, initScaffoldError(err)
 		}
 
 		if err := writeFoundryProvider(ctx, a.azdClient); err != nil {
 			return nil, err
 		}
 
-		projectResponse, err = a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+		projectResponse, err := a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 		if err != nil {
 			return nil, exterrors.Dependency(
 				exterrors.CodeProjectNotFound,
@@ -288,11 +284,12 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 				"",
 			)
 		}
+		config = projectResponse.GetProject()
 
 		fmt.Println()
 	}
 
-	if projectResponse.Project == nil {
+	if config == nil {
 		return nil, exterrors.Dependency(
 			exterrors.CodeProjectNotFound,
 			"project not found",
@@ -300,7 +297,7 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 		)
 	}
 
-	return projectResponse.Project, nil
+	return config, nil
 }
 
 func (a *InitFromCodeAction) resolveACREnvironment(ctx context.Context) error {

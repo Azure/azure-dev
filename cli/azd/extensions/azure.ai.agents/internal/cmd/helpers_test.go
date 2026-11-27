@@ -24,6 +24,7 @@ import (
 	goyaml "go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -478,14 +479,18 @@ func TestIsTerminal_NonTTY(t *testing.T) {
 // helpersProjectServer is a fake ProjectServiceServer that returns a fixed project config.
 type helpersProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
-	project *azdext.ProjectConfig
-	err     error
+	project      *azdext.ProjectConfig
+	err          error
+	getErrReason string
 }
 
 func (s *helpersProjectServer) Get(
-	_ context.Context, _ *azdext.EmptyRequest,
+	ctx context.Context, _ *azdext.EmptyRequest,
 ) (*azdext.GetProjectResponse, error) {
 	if s.err != nil {
+		if s.getErrReason != "" {
+			_ = grpc.SetTrailer(ctx, metadata.Pairs("azd-project-get-error", s.getErrReason))
+		}
 		return nil, s.err
 	}
 	return &azdext.GetProjectResponse{Project: s.project}, nil

@@ -992,8 +992,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			var projectResponse *azdext.GetProjectResponse
 			var projectErr error
 			if !userProvidedTemplate {
-				projectResponse, projectErr = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-				if projectErr == nil && projectResponse.GetProject() != nil {
+				var discovered *azdext.ProjectConfig
+				discovered, projectErr = probeInitProject(ctx, azdClient)
+				if projectErr != nil {
+					return projectErr
+				}
+				projectResponse = &azdext.GetProjectResponse{Project: discovered}
+				if discovered != nil {
 					if err := requireBYOAKSProjectFeature(projectResponse.GetProject(), noticeWriter); err != nil {
 						return err
 					}
@@ -1717,8 +1722,12 @@ func ensureProject(
 	azdClient *azdext.AzdClient,
 	targetDir string,
 ) (*azdext.ProjectConfig, error) {
-	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	config, err := probeInitProject(ctx, azdClient)
 	if err != nil {
+		return nil, err
+	}
+	var projectResponse *azdext.GetProjectResponse
+	if config == nil {
 		defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
 
 		fmt.Println("Let's get your project initialized.")
@@ -1760,7 +1769,8 @@ func ensureProject(
 		}
 
 		fmt.Println()
-	} else if projectResponse.Project != nil {
+	} else {
+		projectResponse = &azdext.GetProjectResponse{Project: config}
 		fmt.Println(output.WithGrayFormat(
 			"Found existing azd project at %q. Adding agent to it.", projectResponse.Project.Path,
 		))
@@ -1845,14 +1855,7 @@ func scaffoldProject(
 	if _, err := azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
 		Workflow: workflow,
 	}); err != nil {
-		if exterrors.IsCancellation(err) {
-			return exterrors.Cancelled("project initialization was cancelled")
-		}
-		return exterrors.Dependency(
-			exterrors.CodeProjectInitFailed,
-			fmt.Sprintf("failed to initialize project: %s", err),
-			"",
-		)
+		return initScaffoldError(err)
 	}
 
 	// Best-effort: generate a salt so uniqueString()-based resource names
@@ -1896,7 +1899,7 @@ func writeFoundryProvider(ctx context.Context, azdClient *azdext.AzdClient) erro
 			return exterrors.Cancelled("writing infra.provider was cancelled")
 		}
 		return exterrors.Dependency(
-			exterrors.CodeProjectInitFailed,
+			exterrors.CodeProjectConfigurationFailed,
 			fmt.Sprintf(
 				"failed to set infra.provider=%s on azure.yaml: %s",
 				project.FoundryProviderName, err,
@@ -1909,9 +1912,12 @@ func writeFoundryProvider(ctx context.Context, azdClient *azdext.AzdClient) erro
 	_, err = azdClient.Project().UnsetConfig(ctx, &azdext.UnsetProjectConfigRequest{
 		Path: "infra.path",
 	})
-	if err != nil && !exterrors.IsCancellation(err) {
+	if exterrors.IsCancellation(err) {
+		return exterrors.Cancelled("removing infra.path was cancelled")
+	}
+	if err != nil {
 		return exterrors.Dependency(
-			exterrors.CodeProjectInitFailed,
+			exterrors.CodeProjectConfigurationFailed,
 			fmt.Sprintf("failed to unset infra.path on azure.yaml: %s", err),
 			"check that azure.yaml is writable and re-run the command",
 		)

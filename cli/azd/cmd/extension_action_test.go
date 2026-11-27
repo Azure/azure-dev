@@ -4,9 +4,11 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -25,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -109,6 +112,155 @@ func newExtensionActionTestServer() *grpcserver.Server {
 		&azdext.UnimplementedTelemetryServiceServer{},
 		&v1beta.UnimplementedCommandResultServiceServer{},
 	)
+}
+
+func TestExtensionAction_UpdateNotificationStreams(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		redirected bool
+	}{
+		{name: "DefaultJSON"},
+		{name: "RedirectedConsoleWriter", redirected: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+			t.Setenv("NO_COLOR", "1")
+			mockCtx := mocks.NewMockContext(t.Context())
+			extension := &extensions.Extension{
+				Id: "test-ext", DisplayName: "Test Extension", Version: "1.0.0", Source: "test-source",
+			}
+			manager := newExtensionActionTestManager(t, mockCtx, extension)
+			cache, err := extensions.NewRegistryCacheManager()
+			require.NoError(t, err)
+			require.NoError(t, cache.Set(t.Context(), extension.Source, []*extensions.ExtensionMetadata{{
+				Id: extension.Id, Versions: []extensions.ExtensionVersion{{Version: "2.0.0"}},
+			}}))
+
+			var stdout, stderr, redirectedOutput bytes.Buffer
+			console := input.NewConsole(true, false, input.Writers{Output: &stdout}, input.ConsoleHandles{
+				Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr,
+			}, &output.NoneFormatter{}, nil)
+			if tt.redirected {
+				console.SetWriter(&redirectedOutput)
+			}
+			originalWriter := console.GetWriter()
+			action := &extensionAction{console: console, extensionManager: manager}
+
+			// Model a child command whose default output is JSON, without an explicit -o json.
+			const childOutput = "{\"data\":[],\"has_more\":false}\n"
+			_, err = io.WriteString(console.Handles().Stdout, childOutput)
+			require.NoError(t, err)
+			// Complete the real cached check synchronously before testing the host's deferred
+			// notification boundary. No sleeps or races with the opportunistic non-blocking read.
+			results := make(chan *updateCheckOutcome, 1)
+			action.checkForUpdateAsync(t.Context(), extension, results)
+			action.notifyExtensionUpdate(t.Context(), results)
+
+			require.Equal(t, childOutput, stdout.String(), "host notification must not alter child stdout")
+			require.True(t, json.Valid(stdout.Bytes()))
+			require.Contains(t, stderr.String(),
+				"WARNING: A new version of extension 'Test Extension' is available: 1.0.0 -> 2.0.0")
+			require.Contains(t, stderr.String(), "azd extension update test-ext")
+			require.Contains(t, stderr.String(), "azd extension update --all")
+			require.True(t, strings.HasSuffix(stderr.String(), "\n\n"), "separator belongs on stderr too")
+			require.Empty(t, redirectedOutput.String())
+			require.Same(t, originalWriter, console.GetWriter())
+			console.Message(t.Context(), "after notification")
+			if tt.redirected {
+				require.Equal(t, "after notification\n", redirectedOutput.String())
+			} else {
+				require.Equal(t, childOutput+"after notification\n", stdout.String())
+			}
+			installed, err := manager.GetInstalled(extensions.FilterOptions{Id: extension.Id, Source: extension.Source})
+			require.NoError(t, err)
+			require.NotEmpty(t, installed.LastUpdateWarning)
+			require.False(t, extensions.NewUpdateChecker(cache).ShouldShowWarning(installed))
+		})
+	}
+}
+
+func TestExtensionAction_UpdateNotificationNotReady(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		closed bool
+		result *updateCheckOutcome
+	}{
+		{name: "Pending"},
+		{name: "Closed", closed: true},
+		{name: "NoUpdate", result: &updateCheckOutcome{}},
+		{name: "NoWarning", result: &updateCheckOutcome{shouldShow: true}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+			mockCtx := mocks.NewMockContext(t.Context())
+			extension := &extensions.Extension{Id: "test-ext", Source: "test-source"}
+			manager := newExtensionActionTestManager(t, mockCtx, extension)
+			var stdout, stderr bytes.Buffer
+			console := input.NewConsole(true, false, input.Writers{Output: &stdout}, input.ConsoleHandles{
+				Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr,
+			}, &output.NoneFormatter{}, nil)
+			action := &extensionAction{console: console, extensionManager: manager}
+			results := make(chan *updateCheckOutcome, 1)
+			if tt.result != nil {
+				results <- tt.result
+			}
+			if tt.closed {
+				close(results)
+			}
+			action.notifyExtensionUpdate(t.Context(), results)
+			require.Empty(t, stdout.String())
+			require.Empty(t, stderr.String())
+			require.Same(t, &stdout, console.GetWriter())
+			installed, err := manager.GetInstalled(extensions.FilterOptions{Id: extension.Id})
+			require.NoError(t, err)
+			require.Empty(t, installed.LastUpdateWarning)
+		})
+	}
+}
+
+func TestExtensionAction_Run_ExplicitJSONSuppressesUpdateNotification(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	extensionPath := filepath.Join("extensions", "test-ext", "test-ext")
+	fullPath := filepath.Join(configDir, extensionPath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
+	require.NoError(t, os.WriteFile(fullPath, []byte("test"), 0o600))
+	extension := &extensions.Extension{
+		Id: "test-ext", Path: extensionPath, Version: "1.0.0", Source: "test-source",
+	}
+	cache, err := extensions.NewRegistryCacheManager()
+	require.NoError(t, err)
+	require.NoError(t, cache.Set(t.Context(), extension.Source, []*extensions.ExtensionMetadata{{
+		Id: extension.Id, Versions: []extensions.ExtensionVersion{{Version: "2.0.0"}},
+	}}))
+	var stdout, stderr bytes.Buffer
+	console := input.NewConsole(true, false, input.Writers{Output: &stderr}, input.ConsoleHandles{
+		Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr,
+	}, &output.JsonFormatter{}, nil)
+	originalWriter := console.GetWriter()
+	mockCtx := mocks.NewMockContext(t.Context())
+	mockCtx.CommandRunner.When(func(args exec.RunArgs, _ string) bool { return true }).
+		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			_, err := io.WriteString(console.Handles().Stdout, "{\"data\":[]}\n")
+			return exec.NewRunResult(0, "", ""), err
+		})
+	manager := newExtensionActionTestManager(t, mockCtx, extension)
+	action := &extensionAction{
+		console: console, extensionRunner: extensions.NewRunner(mockCtx.CommandRunner),
+		lazyEnv: lazy.From[*environment.Environment](nil), extensionManager: manager,
+		azdServer:     newExtensionActionTestServer(),
+		globalOptions: &internal.GlobalCommandOptions{PreParsedOutput: "json"},
+		cmd:           &cobra.Command{Annotations: map[string]string{"extension.id": extension.Id}},
+		args:          []string{"list", "-o", "json"},
+	}
+	_, err = action.Run(t.Context())
+	require.NoError(t, err)
+	require.JSONEq(t, `{"data":[]}`, stdout.String())
+	require.Empty(t, stderr.String())
+	require.Same(t, originalWriter, console.GetWriter())
+	installed, err := manager.GetInstalled(extensions.FilterOptions{Id: extension.Id})
+	require.NoError(t, err)
+	require.Empty(t, installed.LastUpdateWarning)
 }
 
 func TestExtensionAction_Run_PropagatesTraceContext(t *testing.T) {

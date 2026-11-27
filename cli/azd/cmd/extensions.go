@@ -206,21 +206,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		// Note: This defer runs AFTER the defer for a.azdServer.Stop() registered later,
 		// because defers execute in LIFO order. This is intentional - we want to show
 		// the warning after the extension completes but the server stop doesn't affect us.
-		defer func() {
-			// Collect result and show warning if needed (non-blocking read)
-			select {
-			case result := <-updateResultChan:
-				if result != nil && result.shouldShow && result.warning != nil {
-					a.console.MessageUxItem(ctx, result.warning)
-					a.console.Message(ctx, "")
-
-					// Record cooldown only after warning is actually displayed
-					a.recordUpdateWarningShown(result.extensionId, result.extensionSource)
-				}
-			default:
-				// Check didn't complete in time, skip warning (and don't record cooldown)
-			}
-		}()
+		defer a.notifyExtensionUpdate(ctx, updateResultChan)
 	}
 
 	tracing.SetUsageAttributes(
@@ -668,6 +654,27 @@ func (a *extensionAction) checkForUpdateAsync(
 	}
 
 	resultChan <- outcome
+}
+
+// notifyExtensionUpdate displays a completed update check without delaying command completion.
+func (a *extensionAction) notifyExtensionUpdate(ctx context.Context, resultChan <-chan *updateCheckOutcome) {
+	select {
+	case result := <-resultChan:
+		if result != nil && result.shouldShow && result.warning != nil {
+			// Extensions may default to structured stdout even without an explicit --output flag.
+			// Keep this notification and its separator on the caller's stderr only.
+			originalWriter := a.console.GetWriter()
+			a.console.SetWriter(a.console.Handles().Stderr)
+			defer a.console.SetWriter(originalWriter)
+			a.console.MessageUxItem(ctx, result.warning)
+			a.console.Message(ctx, "")
+
+			// Record cooldown only after warning is actually displayed
+			a.recordUpdateWarningShown(result.extensionId, result.extensionSource)
+		}
+	default:
+		// Check didn't complete in time, skip warning (and don't record cooldown)
+	}
 }
 
 // recordUpdateWarningShown saves the cooldown timestamp after a warning is displayed

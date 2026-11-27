@@ -1,0 +1,2044 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: management.azure.com
+        form:
+            api-version:
+                - "2022-12-01"
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armsubscriptions/v1.3.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 30b62072-183e-27ca-e08b-7f2f2b957065
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations?api-version=2022-12-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: 51404
+        body: '{"value":[{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/eastus","name":"eastus","type":"Region","displayName":"East US","regionalDisplayName":"(US) East US","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"United States","geographyGroup":"US","longitude":"-79.8164","latitude":"37.3719","physicalLocation":"Virginia","pairedRegion":[{"name":"westus","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/westus"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"eastus-az2"},{"logicalZone":"2","physicalZone":"eastus-az1"},{"logicalZone":"3","physicalZone":"eastus-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/westus2","name":"westus2","type":"Region","displayName":"West US 2","regionalDisplayName":"(US) West US 2","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"United States","geographyGroup":"US","longitude":"-119.852","latitude":"47.233","physicalLocation":"Washington","pairedRegion":[{"name":"westcentralus","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/westcentralus"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"westus2-az2"},{"logicalZone":"2","physicalZone":"westus2-az1"},{"logicalZone":"3","physicalZone":"westus2-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/australiaeast","name":"australiaeast","type":"Region","displayName":"Australia East","regionalDisplayName":"(Asia Pacific) Australia East","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Australia","geographyGroup":"Asia Pacific","longitude":"151.2094","latitude":"-33.86","physicalLocation":"New South Wales","pairedRegion":[{"name":"australiasoutheast","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/australiasoutheast"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"australiaeast-az2"},{"logicalZone":"2","physicalZone":"australiaeast-az1"},{"logicalZone":"3","physicalZone":"australiaeast-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southeastasia","name":"southeastasia","type":"Region","displayName":"Southeast Asia","regionalDisplayName":"(Asia Pacific) Southeast Asia","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Asia Pacific","geographyGroup":"Asia Pacific","longitude":"103.833","latitude":"1.283","physicalLocation":"Singapore","pairedRegion":[{"name":"eastasia","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/eastasia"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"southeastasia-az2"},{"logicalZone":"2","physicalZone":"southeastasia-az1"},{"logicalZone":"3","physicalZone":"southeastasia-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/northeurope","name":"northeurope","type":"Region","displayName":"North Europe","regionalDisplayName":"(Europe) North Europe","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Europe","geographyGroup":"Europe","longitude":"-6.2597","latitude":"53.3478","physicalLocation":"Ireland","pairedRegion":[{"name":"westeurope","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/westeurope"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"northeurope-az2"},{"logicalZone":"2","physicalZone":"northeurope-az1"},{"logicalZone":"3","physicalZone":"northeurope-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/swedencentral","name":"swedencentral","type":"Region","displayName":"Sweden Central","regionalDisplayName":"(Europe) Sweden Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Sweden","geographyGroup":"Europe","longitude":"17.14127","latitude":"60.67488","physicalLocation":"Gävle","pairedRegion":[{"name":"swedensouth","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/swedensouth"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"swedencentral-az2"},{"logicalZone":"2","physicalZone":"swedencentral-az1"},{"logicalZone":"3","physicalZone":"swedencentral-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/westeurope","name":"westeurope","type":"Region","displayName":"West Europe","regionalDisplayName":"(Europe) West Europe","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Europe","geographyGroup":"Europe","longitude":"4.9","latitude":"52.3667","physicalLocation":"Netherlands","pairedRegion":[{"name":"northeurope","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/northeurope"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"westeurope-az2"},{"logicalZone":"2","physicalZone":"westeurope-az1"},{"logicalZone":"3","physicalZone":"westeurope-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/uksouth","name":"uksouth","type":"Region","displayName":"UK South","regionalDisplayName":"(UK) UK South","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"United Kingdom","geographyGroup":"UK","longitude":"-0.799","latitude":"50.941","physicalLocation":"London","pairedRegion":[{"name":"ukwest","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/ukwest"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"uksouth-az2"},{"logicalZone":"2","physicalZone":"uksouth-az1"},{"logicalZone":"3","physicalZone":"uksouth-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/centralus","name":"centralus","type":"Region","displayName":"Central US","regionalDisplayName":"(US) Central US","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"United States","geographyGroup":"US","longitude":"-93.6208","latitude":"41.5908","physicalLocation":"Iowa","pairedRegion":[{"name":"eastus2","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/eastus2"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"centralus-az2"},{"logicalZone":"2","physicalZone":"centralus-az1"},{"logicalZone":"3","physicalZone":"centralus-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southafricanorth","name":"southafricanorth","type":"Region","displayName":"South Africa North","regionalDisplayName":"(Africa) South Africa North","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"South Africa","geographyGroup":"Africa","longitude":"28.21837","latitude":"-25.73134","physicalLocation":"Johannesburg","pairedRegion":[{"name":"southafricawest","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southafricawest"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"southafricanorth-az2"},{"logicalZone":"2","physicalZone":"southafricanorth-az1"},{"logicalZone":"3","physicalZone":"southafricanorth-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/centralindia","name":"centralindia","type":"Region","displayName":"Central India","regionalDisplayName":"(Asia Pacific) Central India","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"India","geographyGroup":"Asia Pacific","longitude":"73.9197","latitude":"18.5822","physicalLocation":"Pune","pairedRegion":[{"name":"southindia","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southindia"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"centralindia-az2"},{"logicalZone":"2","physicalZone":"centralindia-az1"},{"logicalZone":"3","physicalZone":"centralindia-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/eastasia","name":"eastasia","type":"Region","displayName":"East Asia","regionalDisplayName":"(Asia Pacific) East Asia","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Asia Pacific","geographyGroup":"Asia Pacific","longitude":"114.188","latitude":"22.267","physicalLocation":"Hong Kong","pairedRegion":[{"name":"southeastasia","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southeastasia"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"eastasia-az2"},{"logicalZone":"2","physicalZone":"eastasia-az1"},{"logicalZone":"3","physicalZone":"eastasia-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/indiasouthcentral","name":"indiasouthcentral","type":"Region","displayName":"India South Central","regionalDisplayName":"(Asia Pacific) India South Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"India","geographyGroup":"Asia Pacific","longitude":"78.47599792","latitude":"17.36599922","physicalLocation":"Hyderabad","pairedRegion":[{"name":"centralindia","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/centralindia"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"indiasouthcentral-az2"},{"logicalZone":"2","physicalZone":"indiasouthcentral-az1"},{"logicalZone":"3","physicalZone":"indiasouthcentral-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/indonesiacentral","name":"indonesiacentral","type":"Region","displayName":"Indonesia Central","regionalDisplayName":"(Asia Pacific) Indonesia Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Indonesia","geographyGroup":"Asia Pacific","longitude":"106.816666","latitude":"-6.2","physicalLocation":"Jakarta","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"indonesiacentral-az2"},{"logicalZone":"2","physicalZone":"indonesiacentral-az1"},{"logicalZone":"3","physicalZone":"indonesiacentral-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/japaneast","name":"japaneast","type":"Region","displayName":"Japan East","regionalDisplayName":"(Asia Pacific) Japan East","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Japan","geographyGroup":"Asia Pacific","longitude":"139.77","latitude":"35.68","physicalLocation":"Tokyo, Saitama","pairedRegion":[{"name":"japanwest","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/japanwest"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"japaneast-az2"},{"logicalZone":"2","physicalZone":"japaneast-az1"},{"logicalZone":"3","physicalZone":"japaneast-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/japanwest","name":"japanwest","type":"Region","displayName":"Japan West","regionalDisplayName":"(Asia Pacific) Japan West","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Japan","geographyGroup":"Asia Pacific","longitude":"135.5022","latitude":"34.6939","physicalLocation":"Osaka","pairedRegion":[{"name":"japaneast","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/japaneast"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"japanwest-az2"},{"logicalZone":"2","physicalZone":"japanwest-az1"},{"logicalZone":"3","physicalZone":"japanwest-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/koreacentral","name":"koreacentral","type":"Region","displayName":"Korea Central","regionalDisplayName":"(Asia Pacific) Korea Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Korea","geographyGroup":"Asia Pacific","longitude":"126.978","latitude":"37.5665","physicalLocation":"Seoul","pairedRegion":[{"name":"koreasouth","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/koreasouth"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"koreacentral-az2"},{"logicalZone":"2","physicalZone":"koreacentral-az1"},{"logicalZone":"3","physicalZone":"koreacentral-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/malaysiawest","name":"malaysiawest","type":"Region","displayName":"Malaysia West","regionalDisplayName":"(Asia Pacific) Malaysia West","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Malaysia","geographyGroup":"Asia Pacific","longitude":"101.693207","latitude":"3.140853","physicalLocation":"Kuala Lumpur","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"malaysiawest-az2"},{"logicalZone":"2","physicalZone":"malaysiawest-az1"},{"logicalZone":"3","physicalZone":"malaysiawest-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/newzealandnorth","name":"newzealandnorth","type":"Region","displayName":"New Zealand North","regionalDisplayName":"(Asia Pacific) New Zealand North","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"New Zealand","geographyGroup":"Asia Pacific","longitude":"174.76349","latitude":"-36.84853","physicalLocation":"Auckland","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"newzealandnorth-az2"},{"logicalZone":"2","physicalZone":"newzealandnorth-az1"},{"logicalZone":"3","physicalZone":"newzealandnorth-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southeastasia3","name":"southeastasia3","type":"Region","displayName":"Southeast Asia 3","regionalDisplayName":"(Asia Pacific) Southeast Asia 3","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Malaysia","geographyGroup":"Asia Pacific","longitude":"103.630158","latitude":"1.62378","physicalLocation":"Senai","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"southeastasia3-az2"},{"logicalZone":"2","physicalZone":"southeastasia3-az1"},{"logicalZone":"3","physicalZone":"southeastasia3-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/taiwannorth","name":"taiwannorth","type":"Region","displayName":"Taiwan North","regionalDisplayName":"(Asia Pacific) Taiwan North","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Taiwan","geographyGroup":"Asia Pacific","longitude":"121.3662962","latitude":"25.0174719","physicalLocation":"Taipei","pairedRegion":[{"name":"taiwannorthwest","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/taiwannorthwest"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"taiwannorth-az2"},{"logicalZone":"2","physicalZone":"taiwannorth-az1"},{"logicalZone":"3","physicalZone":"taiwannorth-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/canadacentral","name":"canadacentral","type":"Region","displayName":"Canada Central","regionalDisplayName":"(Canada) Canada Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Canada","geographyGroup":"Canada","longitude":"-79.383","latitude":"43.653","physicalLocation":"Toronto","pairedRegion":[{"name":"canadaeast","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/canadaeast"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"canadacentral-az2"},{"logicalZone":"2","physicalZone":"canadacentral-az1"},{"logicalZone":"3","physicalZone":"canadacentral-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/austriaeast","name":"austriaeast","type":"Region","displayName":"Austria East","regionalDisplayName":"(Europe) Austria East","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Austria","geographyGroup":"Europe","longitude":"16.3727779","latitude":"48.2092056","physicalLocation":"Vienna","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"austriaeast-az2"},{"logicalZone":"2","physicalZone":"austriaeast-az1"},{"logicalZone":"3","physicalZone":"austriaeast-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/belgiumcentral","name":"belgiumcentral","type":"Region","displayName":"Belgium Central","regionalDisplayName":"(Europe) Belgium Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Belgium","geographyGroup":"Europe","longitude":"4.355707169","latitude":"50.84553528","physicalLocation":"Brussels","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"belgiumcentral-az2"},{"logicalZone":"2","physicalZone":"belgiumcentral-az1"},{"logicalZone":"3","physicalZone":"belgiumcentral-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/denmarkeast","name":"denmarkeast","type":"Region","displayName":"Denmark East","regionalDisplayName":"(Europe) Denmark East","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Denmark","geographyGroup":"Europe","longitude":"12.56553","latitude":"55.67594","physicalLocation":"Copenhagen","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"denmarkeast-az2"},{"logicalZone":"2","physicalZone":"denmarkeast-az1"},{"logicalZone":"3","physicalZone":"denmarkeast-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/francecentral","name":"francecentral","type":"Region","displayName":"France Central","regionalDisplayName":"(Europe) France Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"France","geographyGroup":"Europe","longitude":"2.373","latitude":"46.3772","physicalLocation":"Paris","pairedRegion":[{"name":"francesouth","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/francesouth"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"francecentral-az2"},{"logicalZone":"2","physicalZone":"francecentral-az1"},{"logicalZone":"3","physicalZone":"francecentral-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/germanywestcentral","name":"germanywestcentral","type":"Region","displayName":"Germany West Central","regionalDisplayName":"(Europe) Germany West Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Germany","geographyGroup":"Europe","longitude":"8.682127","latitude":"50.110924","physicalLocation":"Frankfurt","pairedRegion":[{"name":"germanynorth","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/germanynorth"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"germanywestcentral-az2"},{"logicalZone":"2","physicalZone":"germanywestcentral-az1"},{"logicalZone":"3","physicalZone":"germanywestcentral-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/italynorth","name":"italynorth","type":"Region","displayName":"Italy North","regionalDisplayName":"(Europe) Italy North","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Italy","geographyGroup":"Europe","longitude":"9.18109","latitude":"45.46888","physicalLocation":"Milan","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"italynorth-az2"},{"logicalZone":"2","physicalZone":"italynorth-az1"},{"logicalZone":"3","physicalZone":"italynorth-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/norwayeast","name":"norwayeast","type":"Region","displayName":"Norway East","regionalDisplayName":"(Europe) Norway East","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Norway","geographyGroup":"Europe","longitude":"10.752245","latitude":"59.913868","physicalLocation":"Norway","pairedRegion":[{"name":"norwaywest","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/norwaywest"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"norwayeast-az2"},{"logicalZone":"2","physicalZone":"norwayeast-az1"},{"logicalZone":"3","physicalZone":"norwayeast-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/polandcentral","name":"polandcentral","type":"Region","displayName":"Poland Central","regionalDisplayName":"(Europe) Poland Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Poland","geographyGroup":"Europe","longitude":"21.01666","latitude":"52.23334","physicalLocation":"Warsaw","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"polandcentral-az2"},{"logicalZone":"2","physicalZone":"polandcentral-az1"},{"logicalZone":"3","physicalZone":"polandcentral-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/spaincentral","name":"spaincentral","type":"Region","displayName":"Spain Central","regionalDisplayName":"(Europe) Spain Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Spain","geographyGroup":"Europe","longitude":"3.4209","latitude":"40.4259","physicalLocation":"Madrid","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"spaincentral-az2"},{"logicalZone":"2","physicalZone":"spaincentral-az1"},{"logicalZone":"3","physicalZone":"spaincentral-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/switzerlandnorth","name":"switzerlandnorth","type":"Region","displayName":"Switzerland North","regionalDisplayName":"(Europe) Switzerland North","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Switzerland","geographyGroup":"Europe","longitude":"8.564572","latitude":"47.451542","physicalLocation":"Zurich","pairedRegion":[{"name":"switzerlandwest","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/switzerlandwest"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"switzerlandnorth-az2"},{"logicalZone":"2","physicalZone":"switzerlandnorth-az1"},{"logicalZone":"3","physicalZone":"switzerlandnorth-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/mexicocentral","name":"mexicocentral","type":"Region","displayName":"Mexico Central","regionalDisplayName":"(Mexico) Mexico Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Mexico","geographyGroup":"Mexico","longitude":"-100.389888","latitude":"20.588818","physicalLocation":"Querétaro State","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"mexicocentral-az2"},{"logicalZone":"2","physicalZone":"mexicocentral-az1"},{"logicalZone":"3","physicalZone":"mexicocentral-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/uaenorth","name":"uaenorth","type":"Region","displayName":"UAE North","regionalDisplayName":"(Middle East) UAE North","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"UAE","geographyGroup":"Middle East","longitude":"55.316666","latitude":"25.266666","physicalLocation":"Dubai","pairedRegion":[{"name":"uaecentral","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/uaecentral"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"uaenorth-az2"},{"logicalZone":"2","physicalZone":"uaenorth-az1"},{"logicalZone":"3","physicalZone":"uaenorth-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/brazilsouth","name":"brazilsouth","type":"Region","displayName":"Brazil South","regionalDisplayName":"(South America) Brazil South","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Brazil","geographyGroup":"South America","longitude":"-46.633","latitude":"-23.55","physicalLocation":"Sao Paulo State","pairedRegion":[{"name":"southcentralus","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southcentralus"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"brazilsouth-az2"},{"logicalZone":"2","physicalZone":"brazilsouth-az1"},{"logicalZone":"3","physicalZone":"brazilsouth-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/chilecentral","name":"chilecentral","type":"Region","displayName":"Chile Central","regionalDisplayName":"(South America) Chile Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Chile","geographyGroup":"South America","longitude":"-70.673676","latitude":"-33.447487","physicalLocation":"Santiago","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"chilecentral-az2"},{"logicalZone":"2","physicalZone":"chilecentral-az1"},{"logicalZone":"3","physicalZone":"chilecentral-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/eastus2euap","name":"eastus2euap","type":"Region","displayName":"East US 2 EUAP","regionalDisplayName":"(US) East US 2 EUAP","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Canary (US)","geographyGroup":"US","longitude":"-78.3889","latitude":"36.6681","physicalLocation":"","pairedRegion":[{"name":"centraluseuap","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/centraluseuap"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"eastus2euap-az2"},{"logicalZone":"2","physicalZone":"eastus2euap-az1"},{"logicalZone":"3","physicalZone":"eastus2euap-az3"},{"logicalZone":"4","physicalZone":"eastus2euap-az4"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/israelcentral","name":"israelcentral","type":"Region","displayName":"Israel Central","regionalDisplayName":"(Middle East) Israel Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Israel","geographyGroup":"Middle East","longitude":"33.4506633","latitude":"31.2655698","physicalLocation":"Israel","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"israelcentral-az2"},{"logicalZone":"2","physicalZone":"israelcentral-az1"},{"logicalZone":"3","physicalZone":"israelcentral-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/qatarcentral","name":"qatarcentral","type":"Region","displayName":"Qatar Central","regionalDisplayName":"(Middle East) Qatar Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Qatar","geographyGroup":"Middle East","longitude":"51.439327","latitude":"25.551462","physicalLocation":"Doha","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"qatarcentral-az2"},{"logicalZone":"2","physicalZone":"qatarcentral-az1"},{"logicalZone":"3","physicalZone":"qatarcentral-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/centralusstage","name":"centralusstage","type":"Region","displayName":"Central US (Stage)","regionalDisplayName":"(US) Central US (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"usa","geographyGroup":"US"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/eastusstage","name":"eastusstage","type":"Region","displayName":"East US (Stage)","regionalDisplayName":"(US) East US (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"usa","geographyGroup":"US"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/eastus2stage","name":"eastus2stage","type":"Region","displayName":"East US 2 (Stage)","regionalDisplayName":"(US) East US 2 (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"usa","geographyGroup":"US"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/northcentralusstage","name":"northcentralusstage","type":"Region","displayName":"North Central US (Stage)","regionalDisplayName":"(US) North Central US (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"usa","geographyGroup":"US"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southcentralusstage","name":"southcentralusstage","type":"Region","displayName":"South Central US (Stage)","regionalDisplayName":"(US) South Central US (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"usa","geographyGroup":"US"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/westusstage","name":"westusstage","type":"Region","displayName":"West US (Stage)","regionalDisplayName":"(US) West US (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"usa","geographyGroup":"US"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/westus2stage","name":"westus2stage","type":"Region","displayName":"West US 2 (Stage)","regionalDisplayName":"(US) West US 2 (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"usa","geographyGroup":"US"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/asia","name":"asia","type":"Region","displayName":"Asia","regionalDisplayName":"Asia","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/asiapacific","name":"asiapacific","type":"Region","displayName":"Asia Pacific","regionalDisplayName":"Asia Pacific","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/australia","name":"australia","type":"Region","displayName":"Australia","regionalDisplayName":"Australia","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/austria","name":"austria","type":"Region","displayName":"Austria","regionalDisplayName":"Austria","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/belgium","name":"belgium","type":"Region","displayName":"Belgium","regionalDisplayName":"Belgium","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/brazil","name":"brazil","type":"Region","displayName":"Brazil","regionalDisplayName":"Brazil","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/canada","name":"canada","type":"Region","displayName":"Canada","regionalDisplayName":"Canada","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/chile","name":"chile","type":"Region","displayName":"Chile","regionalDisplayName":"Chile","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/denmark","name":"denmark","type":"Region","displayName":"Denmark","regionalDisplayName":"Denmark","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/europe","name":"europe","type":"Region","displayName":"Europe","regionalDisplayName":"Europe","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/finland","name":"finland","type":"Region","displayName":"Finland","regionalDisplayName":"Finland","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/france","name":"france","type":"Region","displayName":"France","regionalDisplayName":"France","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/germany","name":"germany","type":"Region","displayName":"Germany","regionalDisplayName":"Germany","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/global","name":"global","type":"Region","displayName":"Global","regionalDisplayName":"Global","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/india","name":"india","type":"Region","displayName":"India","regionalDisplayName":"India","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/indonesia","name":"indonesia","type":"Region","displayName":"Indonesia","regionalDisplayName":"Indonesia","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/israel","name":"israel","type":"Region","displayName":"Israel","regionalDisplayName":"Israel","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/italy","name":"italy","type":"Region","displayName":"Italy","regionalDisplayName":"Italy","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/japan","name":"japan","type":"Region","displayName":"Japan","regionalDisplayName":"Japan","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/korea","name":"korea","type":"Region","displayName":"Korea","regionalDisplayName":"Korea","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/malaysia","name":"malaysia","type":"Region","displayName":"Malaysia","regionalDisplayName":"Malaysia","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/mexico","name":"mexico","type":"Region","displayName":"Mexico","regionalDisplayName":"Mexico","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/newzealand","name":"newzealand","type":"Region","displayName":"New Zealand","regionalDisplayName":"New Zealand","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/norway","name":"norway","type":"Region","displayName":"Norway","regionalDisplayName":"Norway","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/poland","name":"poland","type":"Region","displayName":"Poland","regionalDisplayName":"Poland","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/qatar","name":"qatar","type":"Region","displayName":"Qatar","regionalDisplayName":"Qatar","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/saudiarabia","name":"saudiarabia","type":"Region","displayName":"Saudi Arabia","regionalDisplayName":"Saudi Arabia","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/singapore","name":"singapore","type":"Region","displayName":"Singapore","regionalDisplayName":"Singapore","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southafrica","name":"southafrica","type":"Region","displayName":"South Africa","regionalDisplayName":"South Africa","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/spain","name":"spain","type":"Region","displayName":"Spain","regionalDisplayName":"Spain","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/sweden","name":"sweden","type":"Region","displayName":"Sweden","regionalDisplayName":"Sweden","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/switzerland","name":"switzerland","type":"Region","displayName":"Switzerland","regionalDisplayName":"Switzerland","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/taiwan","name":"taiwan","type":"Region","displayName":"Taiwan","regionalDisplayName":"Taiwan","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/uae","name":"uae","type":"Region","displayName":"United Arab Emirates","regionalDisplayName":"United Arab Emirates","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/uk","name":"uk","type":"Region","displayName":"United Kingdom","regionalDisplayName":"United Kingdom","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/unitedstates","name":"unitedstates","type":"Region","displayName":"United States","regionalDisplayName":"United States","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/unitedstateseuap","name":"unitedstateseuap","type":"Region","displayName":"United States EUAP","regionalDisplayName":"United States EUAP","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/eastasiastage","name":"eastasiastage","type":"Region","displayName":"East Asia (Stage)","regionalDisplayName":"(Asia Pacific) East Asia (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"asia","geographyGroup":"Asia Pacific"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southeastasiastage","name":"southeastasiastage","type":"Region","displayName":"Southeast Asia (Stage)","regionalDisplayName":"(Asia Pacific) Southeast Asia (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"asia","geographyGroup":"Asia Pacific"}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/eastus2","name":"eastus2","type":"Region","displayName":"East US 2","regionalDisplayName":"(US) East US 2","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"United States","geographyGroup":"US","longitude":"-78.3889","latitude":"36.6681","physicalLocation":"Virginia","pairedRegion":[{"name":"centralus","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/centralus"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"eastus2-az2"},{"logicalZone":"2","physicalZone":"eastus2-az1"},{"logicalZone":"3","physicalZone":"eastus2-az3"},{"logicalZone":"4","physicalZone":"eastus2-az5"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/eastusstg","name":"eastusstg","type":"Region","displayName":"East US STG","regionalDisplayName":"(US) East US STG","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Stage (US)","geographyGroup":"US","longitude":"-79.8164","latitude":"37.3719","physicalLocation":"Virginia","pairedRegion":[{"name":"southcentralusstg","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southcentralusstg"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southcentralus","name":"southcentralus","type":"Region","displayName":"South Central US","regionalDisplayName":"(US) South Central US","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"United States","geographyGroup":"US","longitude":"-98.5","latitude":"29.4167","physicalLocation":"Texas","pairedRegion":[{"name":"northcentralus","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/northcentralus"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"southcentralus-az2"},{"logicalZone":"2","physicalZone":"southcentralus-az1"},{"logicalZone":"3","physicalZone":"southcentralus-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/westus3","name":"westus3","type":"Region","displayName":"West US 3","regionalDisplayName":"(US) West US 3","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"United States","geographyGroup":"US","longitude":"-112.074036","latitude":"33.448376","physicalLocation":"Phoenix","pairedRegion":[{"name":"eastus","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/eastus"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"westus3-az2"},{"logicalZone":"2","physicalZone":"westus3-az1"},{"logicalZone":"3","physicalZone":"westus3-az3"}]},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/northcentralus","name":"northcentralus","type":"Region","displayName":"North Central US","regionalDisplayName":"(US) North Central US","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"United States","geographyGroup":"US","longitude":"-87.6278","latitude":"41.8819","physicalLocation":"Illinois","pairedRegion":[{"name":"southcentralus","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southcentralus"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/westus","name":"westus","type":"Region","displayName":"West US","regionalDisplayName":"(US) West US","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"United States","geographyGroup":"US","longitude":"-122.417","latitude":"37.783","physicalLocation":"California","pairedRegion":[{"name":"eastus","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/eastus"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/jioindiawest","name":"jioindiawest","type":"Region","displayName":"Jio India West","regionalDisplayName":"(Asia Pacific) Jio India West","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"India","geographyGroup":"Asia Pacific","longitude":"70.05773","latitude":"22.470701","physicalLocation":"Jamnagar","pairedRegion":[{"name":"jioindiacentral","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/jioindiacentral"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/centraluseuap","name":"centraluseuap","type":"Region","displayName":"Central US EUAP","regionalDisplayName":"(US) Central US EUAP","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Canary (US)","geographyGroup":"US","longitude":"-93.6208","latitude":"41.5908","physicalLocation":"","pairedRegion":[{"name":"eastus2euap","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/eastus2euap"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southcentralusstg","name":"southcentralusstg","type":"Region","displayName":"South Central US STG","regionalDisplayName":"(US) South Central US STG","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Stage (US)","geographyGroup":"US","longitude":"-98.5","latitude":"29.4167","physicalLocation":"Texas","pairedRegion":[{"name":"eastusstg","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/eastusstg"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/westcentralus","name":"westcentralus","type":"Region","displayName":"West Central US","regionalDisplayName":"(US) West Central US","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"United States","geographyGroup":"US","longitude":"-110.234","latitude":"40.89","physicalLocation":"Wyoming","pairedRegion":[{"name":"westus2","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/westus2"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southafricawest","name":"southafricawest","type":"Region","displayName":"South Africa West","regionalDisplayName":"(Africa) South Africa West","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"South Africa","geographyGroup":"Africa","longitude":"18.843266","latitude":"-34.075691","physicalLocation":"Cape Town","pairedRegion":[{"name":"southafricanorth","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southafricanorth"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/australiacentral","name":"australiacentral","type":"Region","displayName":"Australia Central","regionalDisplayName":"(Asia Pacific) Australia Central","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Australia","geographyGroup":"Asia Pacific","longitude":"149.1244","latitude":"-35.3075","physicalLocation":"Canberra","pairedRegion":[{"name":"australiacentral2","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/australiacentral2"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/australiacentral2","name":"australiacentral2","type":"Region","displayName":"Australia Central 2","regionalDisplayName":"(Asia Pacific) Australia Central 2","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Australia","geographyGroup":"Asia Pacific","longitude":"149.1244","latitude":"-35.3075","physicalLocation":"Canberra","pairedRegion":[{"name":"australiacentral","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/australiacentral"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/australiasoutheast","name":"australiasoutheast","type":"Region","displayName":"Australia Southeast","regionalDisplayName":"(Asia Pacific) Australia Southeast","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Australia","geographyGroup":"Asia Pacific","longitude":"144.9631","latitude":"-37.8136","physicalLocation":"Victoria","pairedRegion":[{"name":"australiaeast","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/australiaeast"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/jioindiacentral","name":"jioindiacentral","type":"Region","displayName":"Jio India Central","regionalDisplayName":"(Asia Pacific) Jio India Central","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"India","geographyGroup":"Asia Pacific","longitude":"79.08886","latitude":"21.146633","physicalLocation":"Nagpur","pairedRegion":[{"name":"jioindiawest","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/jioindiawest"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/koreasouth","name":"koreasouth","type":"Region","displayName":"Korea South","regionalDisplayName":"(Asia Pacific) Korea South","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Korea","geographyGroup":"Asia Pacific","longitude":"129.0756","latitude":"35.1796","physicalLocation":"Busan","pairedRegion":[{"name":"koreacentral","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/koreacentral"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southindia","name":"southindia","type":"Region","displayName":"South India","regionalDisplayName":"(Asia Pacific) South India","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"India","geographyGroup":"Asia Pacific","longitude":"80.1636","latitude":"12.9822","physicalLocation":"Chennai","pairedRegion":[{"name":"centralindia","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/centralindia"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/westindia","name":"westindia","type":"Region","displayName":"West India","regionalDisplayName":"(Asia Pacific) West India","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"India","geographyGroup":"Asia Pacific","longitude":"72.868","latitude":"19.088","physicalLocation":"Mumbai","pairedRegion":[{"name":"southindia","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/southindia"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/canadaeast","name":"canadaeast","type":"Region","displayName":"Canada East","regionalDisplayName":"(Canada) Canada East","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Canada","geographyGroup":"Canada","longitude":"-71.217","latitude":"46.817","physicalLocation":"Quebec","pairedRegion":[{"name":"canadacentral","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/canadacentral"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/francesouth","name":"francesouth","type":"Region","displayName":"France South","regionalDisplayName":"(Europe) France South","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"France","geographyGroup":"Europe","longitude":"2.1972","latitude":"43.8345","physicalLocation":"Marseille","pairedRegion":[{"name":"francecentral","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/francecentral"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/germanynorth","name":"germanynorth","type":"Region","displayName":"Germany North","regionalDisplayName":"(Europe) Germany North","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Germany","geographyGroup":"Europe","longitude":"8.806422","latitude":"53.073635","physicalLocation":"Berlin","pairedRegion":[{"name":"germanywestcentral","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/germanywestcentral"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/norwaywest","name":"norwaywest","type":"Region","displayName":"Norway West","regionalDisplayName":"(Europe) Norway West","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Norway","geographyGroup":"Europe","longitude":"5.733107","latitude":"58.969975","physicalLocation":"Norway","pairedRegion":[{"name":"norwayeast","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/norwayeast"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/switzerlandwest","name":"switzerlandwest","type":"Region","displayName":"Switzerland West","regionalDisplayName":"(Europe) Switzerland West","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Switzerland","geographyGroup":"Europe","longitude":"6.143158","latitude":"46.204391","physicalLocation":"Geneva","pairedRegion":[{"name":"switzerlandnorth","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/switzerlandnorth"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/uaecentral","name":"uaecentral","type":"Region","displayName":"UAE Central","regionalDisplayName":"(Middle East) UAE Central","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"UAE","geographyGroup":"Middle East","longitude":"54.366669","latitude":"24.466667","physicalLocation":"Abu Dhabi","pairedRegion":[{"name":"uaenorth","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/uaenorth"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/brazilsoutheast","name":"brazilsoutheast","type":"Region","displayName":"Brazil Southeast","regionalDisplayName":"(South America) Brazil Southeast","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Brazil","geographyGroup":"South America","longitude":"-43.2075","latitude":"-22.90278","physicalLocation":"Rio","pairedRegion":[{"name":"brazilsouth","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/brazilsouth"}]}},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/ukwest","name":"ukwest","type":"Region","displayName":"UK West","regionalDisplayName":"(UK) UK West","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"United Kingdom","geographyGroup":"UK","longitude":"-3.084","latitude":"53.427","physicalLocation":"Cardiff","pairedRegion":[{"name":"uksouth","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations/uksouth"}]}}]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "51404"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:02:06 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - 30b62072-183e-27ca-e08b-7f2f2b957065
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "3749"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "249"
+            X-Ms-Request-Id:
+                - 561aaf18-c54a-4718-9e67-627c6c81dbf5
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20261119T220206Z:561aaf18-c54a-4718-9e67-627c6c81dbf5
+            X-Msedge-Ref:
+                - 'Ref A: 28550877900D42F7A4E079BE6B26B2F1 Ref B: CO1AA3060816062 Ref C: 2026-11-19T22:02:04Z'
+        status: 200 OK
+        code: 200
+        duration: 1.904595176s
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: management.azure.com
+        form:
+            api-version:
+                - "2021-04-01"
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 30b62072-183e-27ca-e08b-7f2f2b957065
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: 2126598
+        body: '{"nextLink":"https://management.azure.com/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/?api-version=2021-04-01\u0026%24skiptoken=1VHLaoNAFP0WZ52AoxFKdpN4a0gzdzrXq5DsQrBBIyO0BjXBf6%2bW9iO6O5wXHM5TXBrXlu5%2bbsvGcXMr3JdYPwWolLN0Rq7o2%2ffzZ1vOhrdiEGshvRePIE%2bsD0ux%2bHFQ0%2f1pMgw8BNthvAf7OCXEEGJ8jAzAoP3T68RtDNie%2bLaiij5IojmkfmfibIWxCrC6hvoBEhkCwyrSW2nZ7%2fdW1kD5RrOskbIoM1WeaFY9chZO2UhPOazUYGI1dR2XYlz8zgj%2b%2fQ40xLstIJM6zLe4e12P4zc%3d","value":[]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "2126598"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:02:11 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - 30b62072-183e-27ca-e08b-7f2f2b957065
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "3749"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "249"
+            X-Ms-Request-Id:
+                - cb6cebba-471e-4576-ba01-455414f62748
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20261119T220212Z:cb6cebba-471e-4576-ba01-455414f62748
+            X-Msedge-Ref:
+                - 'Ref A: A335679312F4432289D2DACB32BBB401 Ref B: CO1AA3060816062 Ref C: 2026-11-19T22:02:06Z'
+        status: 200 OK
+        code: 200
+        duration: 5.822414081s
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: management.azure.com
+        form:
+            $skiptoken:
+                - 1VHLaoNAFP0WZ52AoxFKdpN4a0gzdzrXq5DsQrBBIyO0BjXBf6+W9iO6O5wXHM5TXBrXlu5+bsvGcXMr3JdYPwWolLN0Rq7o2/fzZ1vOhrdiEGshvRePIE+sD0ux+HFQ0/1pMgw8BNthvAf7OCXEEGJ8jAzAoP3T68RtDNie+Laiij5IojmkfmfibIWxCrC6hvoBEhkCwyrSW2nZ7/dW1kD5RrOskbIoM1WeaFY9chZO2UhPOazUYGI1dR2XYlz8zgj+/Q40xLstIJM6zLe4e12P4zc=
+            api-version:
+                - "2021-04-01"
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 30b62072-183e-27ca-e08b-7f2f2b957065
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/?%24skiptoken=1VHLaoNAFP0WZ52AoxFKdpN4a0gzdzrXq5DsQrBBIyO0BjXBf6%2BW9iO6O5wXHM5TXBrXlu5%2BbsvGcXMr3JdYPwWolLN0Rq7o2%2FfzZ1vOhrdiEGshvRePIE%2BsD0ux%2BHFQ0%2F1pMgw8BNthvAf7OCXEEGJ8jAzAoP3T68RtDNie%2BLaiij5IojmkfmfibIWxCrC6hvoBEhkCwyrSW2nZ7%2FdW1kD5RrOskbIoM1WeaFY9chZO2UhPOazUYGI1dR2XYlz8zgj%2B%2FQ40xLstIJM6zLe4e12P4zc%3D&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: 68400
+        body: '{"value":[]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "68400"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:02:13 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - 30b62072-183e-27ca-e08b-7f2f2b957065
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "3749"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "249"
+            X-Ms-Request-Id:
+                - 7e20acf1-3e40-4074-9720-c41bf5662fd2
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20261119T220213Z:7e20acf1-3e40-4074-9720-c41bf5662fd2
+            X-Msedge-Ref:
+                - 'Ref A: 1645C10F26F04F2AB90BD43975A415C8 Ref B: CO1AA3060816062 Ref C: 2026-11-19T22:02:12Z'
+        status: 200 OK
+        code: 200
+        duration: 1.075487912s
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4477
+        host: management.azure.com
+        body: '{"location":"eastus2","properties":{"mode":"Incremental","parameters":{"environmentName":{"value":"azdtest-lac8779","reference":null},"location":{"value":"eastus2","reference":null},"principalId":{"value":"4070b897-9ee6-4cec-ac9f-addac5f3c6e2","reference":null}},"template":{"$schema":"https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#","contentVersion":"1.0.0.0","metadata":{"_generator":{"name":"bicep","version":"0.49.2.45890","templateHash":"3792206735336834583"}},"parameters":{"environmentName":{"type":"string","minLength":1,"maxLength":64,"metadata":{"description":"Name of the the environment which is used to generate a short unique hash used in all resources."}},"location":{"type":"string","metadata":{"description":"Primary location for all resources"}},"principalId":{"type":"string","metadata":{"description":"Id of the principal running azd, granted access to upload static website content."}},"deleteAfterTime":{"type":"string","defaultValue":"[dateTimeAdd(utcNow(''o''), ''PT1H'')]","metadata":{"description":"A time to mark on created resource groups, so they can be cleaned up via an automated process."}}},"variables":{"tags":{"azd-env-name":"[parameters(''environmentName'')]","DeleteAfter":"[parameters(''deleteAfterTime'')]"}},"resources":[{"type":"Microsoft.Resources/resourceGroups","apiVersion":"2021-04-01","name":"[format(''rg-{0}'', parameters(''environmentName''))]","location":"[parameters(''location'')]","tags":"[variables(''tags'')]"},{"type":"Microsoft.Resources/deployments","apiVersion":"2025-04-01","name":"resources","resourceGroup":"[format(''rg-{0}'', parameters(''environmentName''))]","properties":{"expressionEvaluationOptions":{"scope":"inner"},"mode":"Incremental","parameters":{"environmentName":{"value":"[parameters(''environmentName'')]"},"location":{"value":"[parameters(''location'')]"},"principalId":{"value":"[parameters(''principalId'')]"}},"template":{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#","contentVersion":"1.0.0.0","metadata":{"_generator":{"name":"bicep","version":"0.49.2.45890","templateHash":"16105797405595162413"}},"parameters":{"environmentName":{"type":"string"},"location":{"type":"string","defaultValue":"[resourceGroup().location]"},"principalId":{"type":"string"}},"variables":{"tags":{"azd-env-name":"[parameters(''environmentName'')]"},"resourceToken":"[toLower(uniqueString(subscription().id, parameters(''environmentName''), parameters(''location'')))]","storageBlobDataContributorRole":"[subscriptionResourceId(''Microsoft.Authorization/roleDefinitions'', ''ba92f5b4-2d11-453d-a403-e96b0029c9fe'')]"},"resources":[{"type":"Microsoft.Storage/storageAccounts","apiVersion":"2023-05-01","name":"[format(''st{0}'', variables(''resourceToken''))]","location":"[parameters(''location'')]","tags":"[union(variables(''tags''), createObject(''azd-service-name'', ''web''))]","kind":"StorageV2","sku":{"name":"Standard_LRS"},"properties":{"allowBlobPublicAccess":false,"allowSharedKeyAccess":false,"minimumTlsVersion":"TLS1_2"}},{"type":"Microsoft.Authorization/roleAssignments","apiVersion":"2022-04-01","scope":"[resourceId(''Microsoft.Storage/storageAccounts'', format(''st{0}'', variables(''resourceToken'')))]","name":"[guid(resourceId(''Microsoft.Storage/storageAccounts'', format(''st{0}'', variables(''resourceToken''))), parameters(''principalId''), variables(''storageBlobDataContributorRole''))]","properties":{"principalId":"[parameters(''principalId'')]","roleDefinitionId":"[variables(''storageBlobDataContributorRole'')]"},"dependsOn":["[resourceId(''Microsoft.Storage/storageAccounts'', format(''st{0}'', variables(''resourceToken'')))]"]}],"outputs":{"WEBSITE_URL":{"type":"string","value":"[reference(resourceId(''Microsoft.Storage/storageAccounts'', format(''st{0}'', variables(''resourceToken''))), ''2023-05-01'').primaryEndpoints.web]"}}}},"dependsOn":["[subscriptionResourceId(''Microsoft.Resources/resourceGroups'', format(''rg-{0}'', parameters(''environmentName'')))]"]}],"outputs":{"WEBSITE_URL":{"type":"string","value":"[reference(extensionResourceId(format(''/subscriptions/{0}/resourceGroups/{1}'', subscription().subscriptionId, format(''rg-{0}'', parameters(''environmentName''))), ''Microsoft.Resources/deployments'', ''resources''), ''2025-04-01'').outputs.WEBSITE_URL.value]"}}}},"tags":{"azd-env-name":"azdtest-lac8779","azd-layer-name":"","azd-project-name":"storage-staticwebsite","azd-provision-param-hash":"42b52cf3b0e48089de7a3c7f8cc86a87018cb2c89cc0206753ae06fe666ff3d2"}}'
+        form:
+            api-version:
+                - "2021-04-01"
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            Content-Length:
+                - "4477"
+            Content-Type:
+                - application/json
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 30b62072-183e-27ca-e08b-7f2f2b957065
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-lac8779-1795125720/validate?api-version=2021-04-01
+        method: POST
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: 2192
+        body: '{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-lac8779-1795125720","name":"azdtest-lac8779-1795125720","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-lac8779","azd-layer-name":"","azd-project-name":"storage-staticwebsite","azd-provision-param-hash":"42b52cf3b0e48089de7a3c7f8cc86a87018cb2c89cc0206753ae06fe666ff3d2"},"properties":{"templateHash":"3792206735336834583","parameters":{"environmentName":{"type":"String","value":"azdtest-lac8779"},"location":{"type":"String","value":"eastus2"},"principalId":{"type":"String","value":"4070b897-9ee6-4cec-ac9f-addac5f3c6e2"},"deleteAfterTime":{"type":"String","value":"2026-11-19T23:02:25Z"}},"mode":"Incremental","provisioningState":"Succeeded","timestamp":"2026-11-19T22:02:27.1559026Z","duration":"PT0S","correlationId":"30b62072-183e-27ca-e08b-7f2f2b957065","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-lac8779"}],"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}],"validatedResources":[{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779"},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779/providers/Microsoft.Resources/deployments/resources"},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779/providers/Microsoft.Storage/storageAccounts/st3wmocpsvc5vpi"},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779/providers/Microsoft.Storage/storageAccounts/st3wmocpsvc5vpi/providers/Microsoft.Authorization/roleAssignments/03594bf1-f2e3-55fc-840f-9a2d9fd11d48"}]}}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "2192"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:02:28 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - 30b62072-183e-27ca-e08b-7f2f2b957065
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Writes:
+                - "2999"
+            X-Ms-Ratelimit-Remaining-Subscription-Writes:
+                - "199"
+            X-Ms-Request-Id:
+                - 68e14826-1b04-4bc9-89c1-bfe8192afec7
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20261119T220228Z:68e14826-1b04-4bc9-89c1-bfe8192afec7
+            X-Msedge-Ref:
+                - 'Ref A: 84B15A84B66148CFBBCC58D8C0336AC8 Ref B: CO1AA3060816062 Ref C: 2026-11-19T22:02:25Z'
+        status: 200 OK
+        code: 200
+        duration: 3.599358757s
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4477
+        host: management.azure.com
+        body: '{"location":"eastus2","properties":{"mode":"Incremental","parameters":{"environmentName":{"value":"azdtest-lac8779","reference":null},"location":{"value":"eastus2","reference":null},"principalId":{"value":"4070b897-9ee6-4cec-ac9f-addac5f3c6e2","reference":null}},"template":{"$schema":"https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#","contentVersion":"1.0.0.0","metadata":{"_generator":{"name":"bicep","version":"0.49.2.45890","templateHash":"3792206735336834583"}},"parameters":{"environmentName":{"type":"string","minLength":1,"maxLength":64,"metadata":{"description":"Name of the the environment which is used to generate a short unique hash used in all resources."}},"location":{"type":"string","metadata":{"description":"Primary location for all resources"}},"principalId":{"type":"string","metadata":{"description":"Id of the principal running azd, granted access to upload static website content."}},"deleteAfterTime":{"type":"string","defaultValue":"[dateTimeAdd(utcNow(''o''), ''PT1H'')]","metadata":{"description":"A time to mark on created resource groups, so they can be cleaned up via an automated process."}}},"variables":{"tags":{"azd-env-name":"[parameters(''environmentName'')]","DeleteAfter":"[parameters(''deleteAfterTime'')]"}},"resources":[{"type":"Microsoft.Resources/resourceGroups","apiVersion":"2021-04-01","name":"[format(''rg-{0}'', parameters(''environmentName''))]","location":"[parameters(''location'')]","tags":"[variables(''tags'')]"},{"type":"Microsoft.Resources/deployments","apiVersion":"2025-04-01","name":"resources","resourceGroup":"[format(''rg-{0}'', parameters(''environmentName''))]","properties":{"expressionEvaluationOptions":{"scope":"inner"},"mode":"Incremental","parameters":{"environmentName":{"value":"[parameters(''environmentName'')]"},"location":{"value":"[parameters(''location'')]"},"principalId":{"value":"[parameters(''principalId'')]"}},"template":{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#","contentVersion":"1.0.0.0","metadata":{"_generator":{"name":"bicep","version":"0.49.2.45890","templateHash":"16105797405595162413"}},"parameters":{"environmentName":{"type":"string"},"location":{"type":"string","defaultValue":"[resourceGroup().location]"},"principalId":{"type":"string"}},"variables":{"tags":{"azd-env-name":"[parameters(''environmentName'')]"},"resourceToken":"[toLower(uniqueString(subscription().id, parameters(''environmentName''), parameters(''location'')))]","storageBlobDataContributorRole":"[subscriptionResourceId(''Microsoft.Authorization/roleDefinitions'', ''ba92f5b4-2d11-453d-a403-e96b0029c9fe'')]"},"resources":[{"type":"Microsoft.Storage/storageAccounts","apiVersion":"2023-05-01","name":"[format(''st{0}'', variables(''resourceToken''))]","location":"[parameters(''location'')]","tags":"[union(variables(''tags''), createObject(''azd-service-name'', ''web''))]","kind":"StorageV2","sku":{"name":"Standard_LRS"},"properties":{"allowBlobPublicAccess":false,"allowSharedKeyAccess":false,"minimumTlsVersion":"TLS1_2"}},{"type":"Microsoft.Authorization/roleAssignments","apiVersion":"2022-04-01","scope":"[resourceId(''Microsoft.Storage/storageAccounts'', format(''st{0}'', variables(''resourceToken'')))]","name":"[guid(resourceId(''Microsoft.Storage/storageAccounts'', format(''st{0}'', variables(''resourceToken''))), parameters(''principalId''), variables(''storageBlobDataContributorRole''))]","properties":{"principalId":"[parameters(''principalId'')]","roleDefinitionId":"[variables(''storageBlobDataContributorRole'')]"},"dependsOn":["[resourceId(''Microsoft.Storage/storageAccounts'', format(''st{0}'', variables(''resourceToken'')))]"]}],"outputs":{"WEBSITE_URL":{"type":"string","value":"[reference(resourceId(''Microsoft.Storage/storageAccounts'', format(''st{0}'', variables(''resourceToken''))), ''2023-05-01'').primaryEndpoints.web]"}}}},"dependsOn":["[subscriptionResourceId(''Microsoft.Resources/resourceGroups'', format(''rg-{0}'', parameters(''environmentName'')))]"]}],"outputs":{"WEBSITE_URL":{"type":"string","value":"[reference(extensionResourceId(format(''/subscriptions/{0}/resourceGroups/{1}'', subscription().subscriptionId, format(''rg-{0}'', parameters(''environmentName''))), ''Microsoft.Resources/deployments'', ''resources''), ''2025-04-01'').outputs.WEBSITE_URL.value]"}}}},"tags":{"azd-env-name":"azdtest-lac8779","azd-layer-name":"","azd-project-name":"storage-staticwebsite","azd-provision-param-hash":"42b52cf3b0e48089de7a3c7f8cc86a87018cb2c89cc0206753ae06fe666ff3d2"}}'
+        form:
+            api-version:
+                - "2021-04-01"
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            Content-Length:
+                - "4477"
+            Content-Type:
+                - application/json
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 30b62072-183e-27ca-e08b-7f2f2b957065
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-lac8779-1795125720?api-version=2021-04-01
+        method: PUT
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: 1537
+        body: '{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-lac8779-1795125720","name":"azdtest-lac8779-1795125720","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-lac8779","azd-layer-name":"","azd-project-name":"storage-staticwebsite","azd-provision-param-hash":"42b52cf3b0e48089de7a3c7f8cc86a87018cb2c89cc0206753ae06fe666ff3d2"},"properties":{"templateHash":"3792206735336834583","parameters":{"environmentName":{"type":"String","value":"azdtest-lac8779"},"location":{"type":"String","value":"eastus2"},"principalId":{"type":"String","value":"4070b897-9ee6-4cec-ac9f-addac5f3c6e2"},"deleteAfterTime":{"type":"String","value":"2026-11-19T23:02:29Z"}},"mode":"Incremental","provisioningState":"Accepted","timestamp":"2026-11-19T22:02:30.5883607Z","duration":"PT0.0004642S","correlationId":"30b62072-183e-27ca-e08b-7f2f2b957065","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-lac8779"}],"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}]}}'
+        headers:
+            Azure-Asyncoperation:
+                - https://management.azure.com/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-lac8779-1795125720/operationStatuses/08584064811348863975?api-version=2021-04-01&t=639307225531507199&c=MIIIJzCCBw-gAwIBAgIRAKX75XrmIgSzvHkZO1LNLU0wDQYJKoZIhvcNAQELBQAwNjE0MDIGA1UEAxMrQ0NNRSBHMSBUTFMgUlNBIDIwNDggU0hBMjU2IDIwNDkgV0NVUyBDQSAwMTAeFw0yNjEwMzAyMDMzMzJaFw0yNzAxMjYwMjMzMzJaMEAxPjA8BgNVBAMTNWFzeW5jb3BlcmF0aW9uc2lnbmluZ2NlcnRpZmljYXRlLm1hbmFnZW1lbnQuYXp1cmUuY29tMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwmZzd488HZ0-GC9ZEjIJnDv7eqlsceSxzsSMegycwT8l0ia-n3h7A2ufarkhE5QF03oec2YTHvg_KmdFyF23fMwGVvtiJY4S7rw1qvvvrZ3aObM7enULiaUoObVVWoqz261s2UW49Ek3f01JVtLJN6goZQ2MBtawVP3etYQckA41UAiazaDFG8-Vy8AzeB3pxl15ffQWX7Xczuk68J-nDHIRh1CMHyCdDCscf1xrz1uAd8BwqoQmPZrbNZHU-hGCnIbZa2KQKswSI85iiw8aeU9yKCl4Dl5e2zSWsUaDn21DNzFhdIZPm49_0VkPKV8WEeym4r5C6OKv2Me64oCr6QIDAQABo4IFJDCCBSAwgZ0GA1UdIASBlTCBkjAMBgorBgEEAYI3ewEBMGYGCisGAQQBgjd7AgIwWDBWBggrBgEFBQcCAjBKHkgAMwAzAGUAMAAxADkAMgAxAC0ANABkADYANAAtADQAZgA4AGMALQBhADAANQA1AC0ANQBiAGQAYQBmAGYAZAA1AGUAMwAzAGQwDAYKKwYBBAGCN3sDAjAMBgorBgEEAYI3ewQCMAwGA1UdEwEB_wQCMAAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMA4GA1UdDwEB_wQEAwIFoDAdBgNVHQ4EFgQUkQFLuTaeU575QV1TXwEUr9Q4etgwHwYDVR0jBBgwFoAUFNI34PbWfX7djbq6ZasElCXglh0wggH7BgNVHR8EggHyMIIB7jB7oHmgd4Z1aHR0cDovL3ByaW1hcnktY2RuLnBraS5jb3JlLndpbmRvd3MubmV0L3dlc3RjZW50cmFsdXMvY3Jscy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzExL2N1cnJlbnQuY3JsMH2ge6B5hndodHRwOi8vc2Vjb25kYXJ5LWNkbi5wa2kuY29yZS53aW5kb3dzLm5ldC93ZXN0Y2VudHJhbHVzL2NybHMvY2NtZXdlc3RjZW50cmFsdXNwa2kvY2NtZXdlc3RjZW50cmFsdXNpY2EwMS8xMS9jdXJyZW50LmNybDBsoGqgaIZmaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3dlc3RjZW50cmFsdXMvY3Jscy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzExL2N1cnJlbnQuY3JsMIGBoH-gfYZ7aHR0cDovL2NjbWV3ZXN0Y2VudHJhbHVzcGtpLndlc3RjZW50cmFsdXMucGtpLmNvcmUud2luZG93cy5uZXQvY2VydGlmaWNhdGVBdXRob3JpdGllcy9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzExL2N1cnJlbnQuY3JsMIICAAYIKwYBBQUHAQEEggHyMIIB7jB-BggrBgEFBQcwAoZyaHR0cDovL3ByaW1hcnktY2RuLnBraS5jb3JlLndpbmRvd3MubmV0L3dlc3RjZW50cmFsdXMvY2FjZXJ0cy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxL2NlcnQuY2VyMIGABggrBgEFBQcwAoZ0aHR0cDovL3NlY29uZGFyeS1jZG4ucGtpLmNvcmUud2luZG93cy5uZXQvd2VzdGNlbnRyYWx1cy9jYWNlcnRzL2NjbWV3ZXN0Y2VudHJhbHVzcGtpL2NjbWV3ZXN0Y2VudHJhbHVzaWNhMDEvY2VydC5jZXIwbwYIKwYBBQUHMAKGY2h0dHA6Ly9jcmwubWljcm9zb2Z0LmNvbS93ZXN0Y2VudHJhbHVzL2NhY2VydHMvY2NtZXdlc3RjZW50cmFsdXNwa2kvY2NtZXdlc3RjZW50cmFsdXNpY2EwMS9jZXJ0LmNlcjB4BggrBgEFBQcwAoZsaHR0cDovL2NjbWV3ZXN0Y2VudHJhbHVzcGtpLndlc3RjZW50cmFsdXMucGtpLmNvcmUud2luZG93cy5uZXQvY2VydGlmaWNhdGVBdXRob3JpdGllcy9jY21ld2VzdGNlbnRyYWx1c2ljYTAxMA0GCSqGSIb3DQEBCwUAA4IBAQAzg-bbZgla1KOrmtKGzjVZJ58H49wdDyW7obqMYbgwxgMXiDZSQd0xZPEb94JP-ILK8fdJjIAfDwBkS2-OaPj8PdpSERBvIQZS2Mrbol9LRWSWeRUGERtWoxeUuCPtQbWF9kVrL3JtMgx47zgouiwvWBkzQVOPnvl_sAXbvbaxGF02OS_Cnxodi1CHIHa3uo8-FspE-31fm9V2q3l3x2TAB-12iSlGUM_k1KHPRJwF-JXF3ikk0EzCxVv3AvuAOVKQlX7iOb-jwqWpten_Eq-BNbCgar1OSg_yDqqeS_FZB7SHtUz1QyiBnMHl8u4PhkrSOG0tnoYAdtsMP9ddRT9n&s=JC1Ckh_FQdItUpLcOiExY0R0UACdJpD6sQth4K2SCxfraXEiBMWEfuLX6ehaiQNMGw331_l5HjuruXON3aGjcpUknxAaGpzIsU00PfrTM70bLOzTaVDu30LX5QLNINDALNZ6lIn6IDnFDKOvk1ophk3xO6wNINddnP8Q6Fx0pJ4tiSrqxyMn_jHYAP-CbZu3H1relk4JpKalFdbDFKy2gwMpY0kFSIIncQTeMabNUO4ZAq8lUqfCDmMjH6wtMxNNJiRD1lMol9ekBeIP3Ztv0U5u-kyENrc1LKQ3tbpwMat4D383CKW6DqYX4HFEx88MSOvWxbaOvftRhdd4E9EZ2A&h=JNXtElNwazX0SD_WWqjNurWZfjEnRi8BEAqyg6ZzSTE
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "1537"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:02:32 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - 30b62072-183e-27ca-e08b-7f2f2b957065
+            X-Ms-Deployment-Engine-Version:
+                - 1.822.1
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Writes:
+                - "2999"
+            X-Ms-Ratelimit-Remaining-Subscription-Writes:
+                - "199"
+            X-Ms-Request-Id:
+                - 96eac75a-df81-4fb1-868d-b6b6aee7bf08
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20261119T220233Z:96eac75a-df81-4fb1-868d-b6b6aee7bf08
+            X-Msedge-Ref:
+                - 'Ref A: CF9225C49A794A22804594C11AFCB233 Ref B: CO1AA3060816062 Ref C: 2026-11-19T22:02:28Z'
+        status: 201 Created
+        code: 201
+        duration: 4.409303895s
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: management.azure.com
+        form:
+            api-version:
+                - "2021-04-01"
+            c:
+                - MIIIJzCCBw-gAwIBAgIRAKX75XrmIgSzvHkZO1LNLU0wDQYJKoZIhvcNAQELBQAwNjE0MDIGA1UEAxMrQ0NNRSBHMSBUTFMgUlNBIDIwNDggU0hBMjU2IDIwNDkgV0NVUyBDQSAwMTAeFw0yNjEwMzAyMDMzMzJaFw0yNzAxMjYwMjMzMzJaMEAxPjA8BgNVBAMTNWFzeW5jb3BlcmF0aW9uc2lnbmluZ2NlcnRpZmljYXRlLm1hbmFnZW1lbnQuYXp1cmUuY29tMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwmZzd488HZ0-GC9ZEjIJnDv7eqlsceSxzsSMegycwT8l0ia-n3h7A2ufarkhE5QF03oec2YTHvg_KmdFyF23fMwGVvtiJY4S7rw1qvvvrZ3aObM7enULiaUoObVVWoqz261s2UW49Ek3f01JVtLJN6goZQ2MBtawVP3etYQckA41UAiazaDFG8-Vy8AzeB3pxl15ffQWX7Xczuk68J-nDHIRh1CMHyCdDCscf1xrz1uAd8BwqoQmPZrbNZHU-hGCnIbZa2KQKswSI85iiw8aeU9yKCl4Dl5e2zSWsUaDn21DNzFhdIZPm49_0VkPKV8WEeym4r5C6OKv2Me64oCr6QIDAQABo4IFJDCCBSAwgZ0GA1UdIASBlTCBkjAMBgorBgEEAYI3ewEBMGYGCisGAQQBgjd7AgIwWDBWBggrBgEFBQcCAjBKHkgAMwAzAGUAMAAxADkAMgAxAC0ANABkADYANAAtADQAZgA4AGMALQBhADAANQA1AC0ANQBiAGQAYQBmAGYAZAA1AGUAMwAzAGQwDAYKKwYBBAGCN3sDAjAMBgorBgEEAYI3ewQCMAwGA1UdEwEB_wQCMAAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMA4GA1UdDwEB_wQEAwIFoDAdBgNVHQ4EFgQUkQFLuTaeU575QV1TXwEUr9Q4etgwHwYDVR0jBBgwFoAUFNI34PbWfX7djbq6ZasElCXglh0wggH7BgNVHR8EggHyMIIB7jB7oHmgd4Z1aHR0cDovL3ByaW1hcnktY2RuLnBraS5jb3JlLndpbmRvd3MubmV0L3dlc3RjZW50cmFsdXMvY3Jscy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzExL2N1cnJlbnQuY3JsMH2ge6B5hndodHRwOi8vc2Vjb25kYXJ5LWNkbi5wa2kuY29yZS53aW5kb3dzLm5ldC93ZXN0Y2VudHJhbHVzL2NybHMvY2NtZXdlc3RjZW50cmFsdXNwa2kvY2NtZXdlc3RjZW50cmFsdXNpY2EwMS8xMS9jdXJyZW50LmNybDBsoGqgaIZmaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3dlc3RjZW50cmFsdXMvY3Jscy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzExL2N1cnJlbnQuY3JsMIGBoH-gfYZ7aHR0cDovL2NjbWV3ZXN0Y2VudHJhbHVzcGtpLndlc3RjZW50cmFsdXMucGtpLmNvcmUud2luZG93cy5uZXQvY2VydGlmaWNhdGVBdXRob3JpdGllcy9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzExL2N1cnJlbnQuY3JsMIICAAYIKwYBBQUHAQEEggHyMIIB7jB-BggrBgEFBQcwAoZyaHR0cDovL3ByaW1hcnktY2RuLnBraS5jb3JlLndpbmRvd3MubmV0L3dlc3RjZW50cmFsdXMvY2FjZXJ0cy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxL2NlcnQuY2VyMIGABggrBgEFBQcwAoZ0aHR0cDovL3NlY29uZGFyeS1jZG4ucGtpLmNvcmUud2luZG93cy5uZXQvd2VzdGNlbnRyYWx1cy9jYWNlcnRzL2NjbWV3ZXN0Y2VudHJhbHVzcGtpL2NjbWV3ZXN0Y2VudHJhbHVzaWNhMDEvY2VydC5jZXIwbwYIKwYBBQUHMAKGY2h0dHA6Ly9jcmwubWljcm9zb2Z0LmNvbS93ZXN0Y2VudHJhbHVzL2NhY2VydHMvY2NtZXdlc3RjZW50cmFsdXNwa2kvY2NtZXdlc3RjZW50cmFsdXNpY2EwMS9jZXJ0LmNlcjB4BggrBgEFBQcwAoZsaHR0cDovL2NjbWV3ZXN0Y2VudHJhbHVzcGtpLndlc3RjZW50cmFsdXMucGtpLmNvcmUud2luZG93cy5uZXQvY2VydGlmaWNhdGVBdXRob3JpdGllcy9jY21ld2VzdGNlbnRyYWx1c2ljYTAxMA0GCSqGSIb3DQEBCwUAA4IBAQAzg-bbZgla1KOrmtKGzjVZJ58H49wdDyW7obqMYbgwxgMXiDZSQd0xZPEb94JP-ILK8fdJjIAfDwBkS2-OaPj8PdpSERBvIQZS2Mrbol9LRWSWeRUGERtWoxeUuCPtQbWF9kVrL3JtMgx47zgouiwvWBkzQVOPnvl_sAXbvbaxGF02OS_Cnxodi1CHIHa3uo8-FspE-31fm9V2q3l3x2TAB-12iSlGUM_k1KHPRJwF-JXF3ikk0EzCxVv3AvuAOVKQlX7iOb-jwqWpten_Eq-BNbCgar1OSg_yDqqeS_FZB7SHtUz1QyiBnMHl8u4PhkrSOG0tnoYAdtsMP9ddRT9n
+            h:
+                - JNXtElNwazX0SD_WWqjNurWZfjEnRi8BEAqyg6ZzSTE
+            s:
+                - JC1Ckh_FQdItUpLcOiExY0R0UACdJpD6sQth4K2SCxfraXEiBMWEfuLX6ehaiQNMGw331_l5HjuruXON3aGjcpUknxAaGpzIsU00PfrTM70bLOzTaVDu30LX5QLNINDALNZ6lIn6IDnFDKOvk1ophk3xO6wNINddnP8Q6Fx0pJ4tiSrqxyMn_jHYAP-CbZu3H1relk4JpKalFdbDFKy2gwMpY0kFSIIncQTeMabNUO4ZAq8lUqfCDmMjH6wtMxNNJiRD1lMol9ekBeIP3Ztv0U5u-kyENrc1LKQ3tbpwMat4D383CKW6DqYX4HFEx88MSOvWxbaOvftRhdd4E9EZ2A
+            t:
+                - "639307225531507199"
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 30b62072-183e-27ca-e08b-7f2f2b957065
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-lac8779-1795125720/operationStatuses/08584064811348863975?api-version=2021-04-01&t=639307225531507199&c=MIIIJzCCBw-gAwIBAgIRAKX75XrmIgSzvHkZO1LNLU0wDQYJKoZIhvcNAQELBQAwNjE0MDIGA1UEAxMrQ0NNRSBHMSBUTFMgUlNBIDIwNDggU0hBMjU2IDIwNDkgV0NVUyBDQSAwMTAeFw0yNjEwMzAyMDMzMzJaFw0yNzAxMjYwMjMzMzJaMEAxPjA8BgNVBAMTNWFzeW5jb3BlcmF0aW9uc2lnbmluZ2NlcnRpZmljYXRlLm1hbmFnZW1lbnQuYXp1cmUuY29tMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwmZzd488HZ0-GC9ZEjIJnDv7eqlsceSxzsSMegycwT8l0ia-n3h7A2ufarkhE5QF03oec2YTHvg_KmdFyF23fMwGVvtiJY4S7rw1qvvvrZ3aObM7enULiaUoObVVWoqz261s2UW49Ek3f01JVtLJN6goZQ2MBtawVP3etYQckA41UAiazaDFG8-Vy8AzeB3pxl15ffQWX7Xczuk68J-nDHIRh1CMHyCdDCscf1xrz1uAd8BwqoQmPZrbNZHU-hGCnIbZa2KQKswSI85iiw8aeU9yKCl4Dl5e2zSWsUaDn21DNzFhdIZPm49_0VkPKV8WEeym4r5C6OKv2Me64oCr6QIDAQABo4IFJDCCBSAwgZ0GA1UdIASBlTCBkjAMBgorBgEEAYI3ewEBMGYGCisGAQQBgjd7AgIwWDBWBggrBgEFBQcCAjBKHkgAMwAzAGUAMAAxADkAMgAxAC0ANABkADYANAAtADQAZgA4AGMALQBhADAANQA1AC0ANQBiAGQAYQBmAGYAZAA1AGUAMwAzAGQwDAYKKwYBBAGCN3sDAjAMBgorBgEEAYI3ewQCMAwGA1UdEwEB_wQCMAAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMA4GA1UdDwEB_wQEAwIFoDAdBgNVHQ4EFgQUkQFLuTaeU575QV1TXwEUr9Q4etgwHwYDVR0jBBgwFoAUFNI34PbWfX7djbq6ZasElCXglh0wggH7BgNVHR8EggHyMIIB7jB7oHmgd4Z1aHR0cDovL3ByaW1hcnktY2RuLnBraS5jb3JlLndpbmRvd3MubmV0L3dlc3RjZW50cmFsdXMvY3Jscy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzExL2N1cnJlbnQuY3JsMH2ge6B5hndodHRwOi8vc2Vjb25kYXJ5LWNkbi5wa2kuY29yZS53aW5kb3dzLm5ldC93ZXN0Y2VudHJhbHVzL2NybHMvY2NtZXdlc3RjZW50cmFsdXNwa2kvY2NtZXdlc3RjZW50cmFsdXNpY2EwMS8xMS9jdXJyZW50LmNybDBsoGqgaIZmaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3dlc3RjZW50cmFsdXMvY3Jscy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzExL2N1cnJlbnQuY3JsMIGBoH-gfYZ7aHR0cDovL2NjbWV3ZXN0Y2VudHJhbHVzcGtpLndlc3RjZW50cmFsdXMucGtpLmNvcmUud2luZG93cy5uZXQvY2VydGlmaWNhdGVBdXRob3JpdGllcy9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzExL2N1cnJlbnQuY3JsMIICAAYIKwYBBQUHAQEEggHyMIIB7jB-BggrBgEFBQcwAoZyaHR0cDovL3ByaW1hcnktY2RuLnBraS5jb3JlLndpbmRvd3MubmV0L3dlc3RjZW50cmFsdXMvY2FjZXJ0cy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxL2NlcnQuY2VyMIGABggrBgEFBQcwAoZ0aHR0cDovL3NlY29uZGFyeS1jZG4ucGtpLmNvcmUud2luZG93cy5uZXQvd2VzdGNlbnRyYWx1cy9jYWNlcnRzL2NjbWV3ZXN0Y2VudHJhbHVzcGtpL2NjbWV3ZXN0Y2VudHJhbHVzaWNhMDEvY2VydC5jZXIwbwYIKwYBBQUHMAKGY2h0dHA6Ly9jcmwubWljcm9zb2Z0LmNvbS93ZXN0Y2VudHJhbHVzL2NhY2VydHMvY2NtZXdlc3RjZW50cmFsdXNwa2kvY2NtZXdlc3RjZW50cmFsdXNpY2EwMS9jZXJ0LmNlcjB4BggrBgEFBQcwAoZsaHR0cDovL2NjbWV3ZXN0Y2VudHJhbHVzcGtpLndlc3RjZW50cmFsdXMucGtpLmNvcmUud2luZG93cy5uZXQvY2VydGlmaWNhdGVBdXRob3JpdGllcy9jY21ld2VzdGNlbnRyYWx1c2ljYTAxMA0GCSqGSIb3DQEBCwUAA4IBAQAzg-bbZgla1KOrmtKGzjVZJ58H49wdDyW7obqMYbgwxgMXiDZSQd0xZPEb94JP-ILK8fdJjIAfDwBkS2-OaPj8PdpSERBvIQZS2Mrbol9LRWSWeRUGERtWoxeUuCPtQbWF9kVrL3JtMgx47zgouiwvWBkzQVOPnvl_sAXbvbaxGF02OS_Cnxodi1CHIHa3uo8-FspE-31fm9V2q3l3x2TAB-12iSlGUM_k1KHPRJwF-JXF3ikk0EzCxVv3AvuAOVKQlX7iOb-jwqWpten_Eq-BNbCgar1OSg_yDqqeS_FZB7SHtUz1QyiBnMHl8u4PhkrSOG0tnoYAdtsMP9ddRT9n&s=JC1Ckh_FQdItUpLcOiExY0R0UACdJpD6sQth4K2SCxfraXEiBMWEfuLX6ehaiQNMGw331_l5HjuruXON3aGjcpUknxAaGpzIsU00PfrTM70bLOzTaVDu30LX5QLNINDALNZ6lIn6IDnFDKOvk1ophk3xO6wNINddnP8Q6Fx0pJ4tiSrqxyMn_jHYAP-CbZu3H1relk4JpKalFdbDFKy2gwMpY0kFSIIncQTeMabNUO4ZAq8lUqfCDmMjH6wtMxNNJiRD1lMol9ekBeIP3Ztv0U5u-kyENrc1LKQ3tbpwMat4D383CKW6DqYX4HFEx88MSOvWxbaOvftRhdd4E9EZ2A&h=JNXtElNwazX0SD_WWqjNurWZfjEnRi8BEAqyg6ZzSTE
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: 22
+        body: '{"status":"Succeeded"}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "22"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:03:05 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - 30b62072-183e-27ca-e08b-7f2f2b957065
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "3749"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "249"
+            X-Ms-Request-Id:
+                - 325ec0df-0310-4e7d-84b9-2bfa5349b932
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20261119T220306Z:325ec0df-0310-4e7d-84b9-2bfa5349b932
+            X-Msedge-Ref:
+                - 'Ref A: 4B77568FA73547CE9E059B43070FDF00 Ref B: CO1AA3060816062 Ref C: 2026-11-19T22:03:05Z'
+        status: 200 OK
+        code: 200
+        duration: 569.518901ms
+    - id: 6
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: management.azure.com
+        form:
+            api-version:
+                - "2021-04-01"
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 30b62072-183e-27ca-e08b-7f2f2b957065
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-lac8779-1795125720?api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: 2155
+        body: '{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-lac8779-1795125720","name":"azdtest-lac8779-1795125720","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-lac8779","azd-layer-name":"","azd-project-name":"storage-staticwebsite","azd-provision-param-hash":"42b52cf3b0e48089de7a3c7f8cc86a87018cb2c89cc0206753ae06fe666ff3d2"},"properties":{"templateHash":"3792206735336834583","parameters":{"environmentName":{"type":"String","value":"azdtest-lac8779"},"location":{"type":"String","value":"eastus2"},"principalId":{"type":"String","value":"4070b897-9ee6-4cec-ac9f-addac5f3c6e2"},"deleteAfterTime":{"type":"String","value":"2026-11-19T23:02:29Z"}},"mode":"Incremental","provisioningState":"Succeeded","timestamp":"2026-11-19T22:03:05.0844794Z","duration":"PT34.4961187S","correlationId":"30b62072-183e-27ca-e08b-7f2f2b957065","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-lac8779"}],"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}],"outputs":{"websitE_URL":{"type":"String","value":"https://st3wmocpsvc5vpi.z20.web.core.windows.net/"}},"outputResources":[{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779"},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779/providers/Microsoft.Storage/storageAccounts/st3wmocpsvc5vpi"},{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779/providers/Microsoft.Storage/storageAccounts/st3wmocpsvc5vpi/providers/Microsoft.Authorization/roleAssignments/03594bf1-f2e3-55fc-840f-9a2d9fd11d48"}]}}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "2155"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:03:06 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - 30b62072-183e-27ca-e08b-7f2f2b957065
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "3749"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "249"
+            X-Ms-Request-Id:
+                - 17886a1b-c1e1-4e75-a422-322dfddb4187
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20261119T220306Z:17886a1b-c1e1-4e75-a422-322dfddb4187
+            X-Msedge-Ref:
+                - 'Ref A: 91F85EBF38364FD6BF7810C7EDA7CB33 Ref B: CO1AA3060816062 Ref C: 2026-11-19T22:03:06Z'
+        status: 200 OK
+        code: 200
+        duration: 637.248596ms
+    - id: 7
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: management.azure.com
+        form:
+            $filter:
+                - tagName eq 'azd-env-name' and tagValue eq 'azdtest-lac8779'
+            api-version:
+                - "2021-04-01"
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 30b62072-183e-27ca-e08b-7f2f2b957065
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-lac8779%27&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: 325
+        body: '{"value":[{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779","name":"rg-azdtest-lac8779","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-lac8779","DeleteAfter":"2026-11-19T23:02:29Z"},"properties":{"provisioningState":"Succeeded"}}]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "325"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:03:06 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - 30b62072-183e-27ca-e08b-7f2f2b957065
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "3749"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "249"
+            X-Ms-Request-Id:
+                - 6b31e100-0afe-4862-8c71-ba163f38125a
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20261119T220307Z:6b31e100-0afe-4862-8c71-ba163f38125a
+            X-Msedge-Ref:
+                - 'Ref A: F8D2E71112814787904B940040B597B7 Ref B: CO1AA3060816062 Ref C: 2026-11-19T22:03:06Z'
+        status: 200 OK
+        code: 200
+        duration: 437.888315ms
+    - id: 8
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: management.azure.com
+        form:
+            $filter:
+                - tagName eq 'azd-env-name' and tagValue eq 'azdtest-lac8779'
+            api-version:
+                - "2021-04-01"
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 6465a1bd-fe42-2c86-88e3-97e8f0da563f
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-lac8779%27&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: 325
+        body: '{"value":[{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779","name":"rg-azdtest-lac8779","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-lac8779","DeleteAfter":"2026-11-19T23:02:29Z"},"properties":{"provisioningState":"Succeeded"}}]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "325"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:03:08 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - 6465a1bd-fe42-2c86-88e3-97e8f0da563f
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "3749"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "249"
+            X-Ms-Request-Id:
+                - 2774e36a-c93c-48fe-8b09-5b669904ce0c
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20261119T220309Z:2774e36a-c93c-48fe-8b09-5b669904ce0c
+            X-Msedge-Ref:
+                - 'Ref A: 1BC8B83DB947447CA413DEB362C2F791 Ref B: CO1AA3060816062 Ref C: 2026-11-19T22:03:07Z'
+        status: 200 OK
+        code: 200
+        duration: 1.343757288s
+    - id: 9
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: management.azure.com
+        form:
+            $filter:
+                - tagName eq 'azd-service-name' and tagValue eq 'web'
+            api-version:
+                - "2021-04-01"
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 6465a1bd-fe42-2c86-88e3-97e8f0da563f
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27web%27&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: 404
+        body: '{"value":[{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779/providers/Microsoft.Storage/storageAccounts/st3wmocpsvc5vpi","name":"st3wmocpsvc5vpi","type":"Microsoft.Storage/storageAccounts","sku":{"name":"Standard_LRS","tier":"Standard"},"kind":"StorageV2","managedBy":"","location":"eastus2","tags":{"azd-env-name":"azdtest-lac8779","azd-service-name":"web"}}]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "404"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:03:08 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - 6465a1bd-fe42-2c86-88e3-97e8f0da563f
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "3749"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "249"
+            X-Ms-Request-Id:
+                - 62b82912-1f2a-403a-ba37-39018ab93c12
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20261119T220309Z:62b82912-1f2a-403a-ba37-39018ab93c12
+            X-Msedge-Ref:
+                - 'Ref A: 934CA9F8042242A98A1A17A68B6628B5 Ref B: CO1AA3060816062 Ref C: 2026-11-19T22:03:09Z'
+        status: 200 OK
+        code: 200
+        duration: 589.034528ms
+    - id: 10
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: management.azure.com
+        form:
+            api-version:
+                - "2023-05-01"
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 6465a1bd-fe42-2c86-88e3-97e8f0da563f
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779/providers/Microsoft.Storage/storageAccounts/st3wmocpsvc5vpi?api-version=2023-05-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: 1547
+        body: '{"sku":{"name":"Standard_LRS","tier":"Standard"},"kind":"StorageV2","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779/providers/Microsoft.Storage/storageAccounts/st3wmocpsvc5vpi","name":"st3wmocpsvc5vpi","type":"Microsoft.Storage/storageAccounts","location":"eastus2","tags":{"azd-env-name":"azdtest-lac8779","azd-service-name":"web"},"properties":{"keyCreationTime":{"key1":"2026-11-19T22:02:37.3656605Z","key2":"2026-11-19T22:02:37.3656605Z"},"allowCrossTenantReplication":false,"privateEndpointConnections":[],"minimumTlsVersion":"TLS1_2","allowBlobPublicAccess":false,"allowSharedKeyAccess":false,"networkAcls":{"ipv6Rules":[],"bypass":"None","virtualNetworkRules":[],"ipRules":[],"defaultAction":"Allow"},"supportsHttpsTrafficOnly":true,"encryption":{"services":{"file":{"keyType":"Account","enabled":true,"lastEnabledTime":"2026-11-19T22:02:37.3758301Z"},"blob":{"keyType":"Account","enabled":true,"lastEnabledTime":"2026-11-19T22:02:37.3758301Z"}},"keySource":"Microsoft.Storage"},"accessTier":"Hot","provisioningState":"Succeeded","creationTime":"2026-11-19T22:02:36.9743635Z","primaryEndpoints":{"dfs":"https://st3wmocpsvc5vpi.dfs.core.windows.net/","web":"https://st3wmocpsvc5vpi.z20.web.core.windows.net/","blob":"https://st3wmocpsvc5vpi.blob.core.windows.net/","queue":"https://st3wmocpsvc5vpi.queue.core.windows.net/","table":"https://st3wmocpsvc5vpi.table.core.windows.net/","file":"https://st3wmocpsvc5vpi.file.core.windows.net/"},"primaryLocation":"eastus2","statusOfPrimary":"available"}}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "1547"
+            Content-Type:
+                - application/json
+            Date:
+                - Thu, 19 Nov 2026 22:03:09 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - 6465a1bd-fe42-2c86-88e3-97e8f0da563f
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "3749"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "249"
+            X-Ms-Request-Id:
+                - 4b9e03d9-a899-4620-bd7b-05bd244a8a07
+            X-Ms-Routing-Request-Id:
+                - EASTUS2:20261119T220309Z:12556b3a-9d6a-439c-96ed-8f15dde2174e
+            X-Msedge-Ref:
+                - 'Ref A: 708D3788E6864AF4B8F5B5C9877E4156 Ref B: CO1AA3060816062 Ref C: 2026-11-19T22:03:09Z'
+        status: 200 OK
+        code: 200
+        duration: 142.060299ms
+    - id: 11
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: st3wmocpsvc5vpi.blob.core.windows.net
+        form:
+            comp:
+                - properties
+            restype:
+                - service
+        headers:
+            Accept:
+                - application/xml
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-azblob/v1.8.2 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 6465a1bd-fe42-2c86-88e3-97e8f0da563f
+            X-Ms-Version:
+                - "2026-12-06"
+        url: https://st3wmocpsvc5vpi.blob.core.windows.net:443/?comp=properties&restype=service
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        content_length: -1
+        body: "\uFEFF\x3C\x3F\x78\x6D\x6C\x20\x76\x65\x72\x73\x69\x6F\x6E\x3D\"\x31\x2E\x30\"\x20\x65\x6E\x63\x6F\x64\x69\x6E\x67\x3D\"\x75\x74\x66\x2D\x38\"\x3F\x3E\x3C\x53\x74\x6F\x72\x61\x67\x65\x53\x65\x72\x76\x69\x63\x65\x50\x72\x6F\x70\x65\x72\x74\x69\x65\x73\x3E\x3C\x4C\x6F\x67\x67\x69\x6E\x67\x3E\x3C\x56\x65\x72\x73\x69\x6F\x6E\x3E\x31\x2E\x30\x3C\x2F\x56\x65\x72\x73\x69\x6F\x6E\x3E\x3C\x52\x65\x61\x64\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x52\x65\x61\x64\x3E\x3C\x57\x72\x69\x74\x65\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x57\x72\x69\x74\x65\x3E\x3C\x44\x65\x6C\x65\x74\x65\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x44\x65\x6C\x65\x74\x65\x3E\x3C\x52\x65\x74\x65\x6E\x74\x69\x6F\x6E\x50\x6F\x6C\x69\x63\x79\x3E\x3C\x45\x6E\x61\x62\x6C\x65\x64\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x45\x6E\x61\x62\x6C\x65\x64\x3E\x3C\x2F\x52\x65\x74\x65\x6E\x74\x69\x6F\x6E\x50\x6F\x6C\x69\x63\x79\x3E\x3C\x2F\x4C\x6F\x67\x67\x69\x6E\x67\x3E\x3C\x48\x6F\x75\x72\x4D\x65\x74\x72\x69\x63\x73\x3E\x3C\x56\x65\x72\x73\x69\x6F\x6E\x3E\x31\x2E\x30\x3C\x2F\x56\x65\x72\x73\x69\x6F\x6E\x3E\x3C\x45\x6E\x61\x62\x6C\x65\x64\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x45\x6E\x61\x62\x6C\x65\x64\x3E\x3C\x52\x65\x74\x65\x6E\x74\x69\x6F\x6E\x50\x6F\x6C\x69\x63\x79\x3E\x3C\x45\x6E\x61\x62\x6C\x65\x64\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x45\x6E\x61\x62\x6C\x65\x64\x3E\x3C\x2F\x52\x65\x74\x65\x6E\x74\x69\x6F\x6E\x50\x6F\x6C\x69\x63\x79\x3E\x3C\x2F\x48\x6F\x75\x72\x4D\x65\x74\x72\x69\x63\x73\x3E\x3C\x4D\x69\x6E\x75\x74\x65\x4D\x65\x74\x72\x69\x63\x73\x3E\x3C\x56\x65\x72\x73\x69\x6F\x6E\x3E\x31\x2E\x30\x3C\x2F\x56\x65\x72\x73\x69\x6F\x6E\x3E\x3C\x45\x6E\x61\x62\x6C\x65\x64\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x45\x6E\x61\x62\x6C\x65\x64\x3E\x3C\x52\x65\x74\x65\x6E\x74\x69\x6F\x6E\x50\x6F\x6C\x69\x63\x79\x3E\x3C\x45\x6E\x61\x62\x6C\x65\x64\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x45\x6E\x61\x62\x6C\x65\x64\x3E\x3C\x2F\x52\x65\x74\x65\x6E\x74\x69\x6F\x6E\x50\x6F\x6C\x69\x63\x79\x3E\x3C\x2F\x4D\x69\x6E\x75\x74\x65\x4D\x65\x74\x72\x69\x63\x73\x3E\x3C\x43\x6F\x72\x73\x20\x2F\x3E\x3C\x44\x65\x6C\x65\x74\x65\x52\x65\x74\x65\x6E\x74\x69\x6F\x6E\x50\x6F\x6C\x69\x63\x79\x3E\x3C\x45\x6E\x61\x62\x6C\x65\x64\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x45\x6E\x61\x62\x6C\x65\x64\x3E\x3C\x41\x6C\x6C\x6F\x77\x50\x65\x72\x6D\x61\x6E\x65\x6E\x74\x44\x65\x6C\x65\x74\x65\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x41\x6C\x6C\x6F\x77\x50\x65\x72\x6D\x61\x6E\x65\x6E\x74\x44\x65\x6C\x65\x74\x65\x3E\x3C\x2F\x44\x65\x6C\x65\x74\x65\x52\x65\x74\x65\x6E\x74\x69\x6F\x6E\x50\x6F\x6C\x69\x63\x79\x3E\x3C\x53\x74\x61\x74\x69\x63\x57\x65\x62\x73\x69\x74\x65\x3E\x3C\x45\x6E\x61\x62\x6C\x65\x64\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x45\x6E\x61\x62\x6C\x65\x64\x3E\x3C\x2F\x53\x74\x61\x74\x69\x63\x57\x65\x62\x73\x69\x74\x65\x3E\x3C\x2F\x53\x74\x6F\x72\x61\x67\x65\x53\x65\x72\x76\x69\x63\x65\x50\x72\x6F\x70\x65\x72\x74\x69\x65\x73\x3E"
+        headers:
+            Content-Type:
+                - application/xml
+            Date:
+                - Thu, 19 Nov 2026 22:03:11 GMT
+            Server:
+                - Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Request-Id:
+                - 39a0e0e5-601e-0066-2771-78f06b000000
+            X-Ms-Version:
+                - "2026-12-06"
+        status: 200 OK
+        code: 200
+        duration: 1.232865033s
+    - id: 12
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: st3wmocpsvc5vpi.blob.core.windows.net
+        form:
+            restype:
+                - container
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            Content-Length:
+                - "0"
+            User-Agent:
+                - azsdk-go-azblob/v1.8.2 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 6465a1bd-fe42-2c86-88e3-97e8f0da563f
+            X-Ms-Version:
+                - "2026-12-06"
+        url: https://st3wmocpsvc5vpi.blob.core.windows.net:443/$web?restype=container
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Content-Length:
+                - "0"
+            Date:
+                - Thu, 19 Nov 2026 22:03:11 GMT
+            Etag:
+                - '"0x8DF4688E7638629"'
+            Last-Modified:
+                - Thu, 19 Nov 2026 22:03:12 GMT
+            Server:
+                - Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Request-Id:
+                - 39a0e2a5-601e-0066-1271-78f06b000000
+            X-Ms-Version:
+                - "2026-12-06"
+        status: 201 Created
+        code: 201
+        duration: 76.423408ms
+    - id: 13
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: st3wmocpsvc5vpi.blob.core.windows.net
+        form:
+            comp:
+                - list
+            restype:
+                - container
+        headers:
+            Accept:
+                - application/xml
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-azblob/v1.8.2 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 6465a1bd-fe42-2c86-88e3-97e8f0da563f
+            X-Ms-Version:
+                - "2026-12-06"
+        url: https://st3wmocpsvc5vpi.blob.core.windows.net:443/$web?comp=list&restype=container
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        content_length: -1
+        body: "\uFEFF\x3C\x3F\x78\x6D\x6C\x20\x76\x65\x72\x73\x69\x6F\x6E\x3D\"\x31\x2E\x30\"\x20\x65\x6E\x63\x6F\x64\x69\x6E\x67\x3D\"\x75\x74\x66\x2D\x38\"\x3F\x3E\x3C\x45\x6E\x75\x6D\x65\x72\x61\x74\x69\x6F\x6E\x52\x65\x73\x75\x6C\x74\x73\x20\x53\x65\x72\x76\x69\x63\x65\x45\x6E\x64\x70\x6F\x69\x6E\x74\x3D\"\x68\x74\x74\x70\x73\x3A\x2F\x2F\x73\x74\x33\x77\x6D\x6F\x63\x70\x73\x76\x63\x35\x76\x70\x69\x2E\x62\x6C\x6F\x62\x2E\x63\x6F\x72\x65\x2E\x77\x69\x6E\x64\x6F\x77\x73\x2E\x6E\x65\x74\x2F\"\x20\x43\x6F\x6E\x74\x61\x69\x6E\x65\x72\x4E\x61\x6D\x65\x3D\"\x24\x77\x65\x62\"\x3E\x3C\x42\x6C\x6F\x62\x73\x20\x2F\x3E\x3C\x4E\x65\x78\x74\x4D\x61\x72\x6B\x65\x72\x20\x2F\x3E\x3C\x2F\x45\x6E\x75\x6D\x65\x72\x61\x74\x69\x6F\x6E\x52\x65\x73\x75\x6C\x74\x73\x3E"
+        headers:
+            Content-Type:
+                - application/xml
+            Date:
+                - Thu, 19 Nov 2026 22:03:11 GMT
+            Server:
+                - Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Request-Id:
+                - 39a0e2d7-601e-0066-3d71-78f06b000000
+            X-Ms-Version:
+                - "2026-12-06"
+        status: 200 OK
+        code: 200
+        duration: 73.152503ms
+    - id: 14
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 81
+        host: st3wmocpsvc5vpi.blob.core.windows.net
+        body: |
+            <!DOCTYPE html>
+            <html><body><h1>azd storage static website v1</h1></body></html>
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            Content-Length:
+                - "81"
+            Content-Type:
+                - application/octet-stream
+            User-Agent:
+                - azsdk-go-azblob/v1.8.2 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Blob-Content-Type:
+                - text/html; charset=utf-8
+            X-Ms-Blob-Type:
+                - BlockBlob
+            X-Ms-Correlation-Request-Id:
+                - 6465a1bd-fe42-2c86-88e3-97e8f0da563f
+            X-Ms-Version:
+                - "2026-12-06"
+        url: https://st3wmocpsvc5vpi.blob.core.windows.net:443/$web/index.html
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Content-Length:
+                - "0"
+            Content-Md5:
+                - icm3tVKr0JShNU6VPCZ/tA==
+            Date:
+                - Thu, 19 Nov 2026 22:03:11 GMT
+            Etag:
+                - '"0x8DF4688E77C97CA"'
+            Last-Modified:
+                - Thu, 19 Nov 2026 22:03:12 GMT
+            Server:
+                - Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Content-Crc64:
+                - CzrSNJtF51U=
+            X-Ms-Request-Id:
+                - 39a0e3c6-601e-0066-6771-78f06b000000
+            X-Ms-Request-Server-Encrypted:
+                - "true"
+            X-Ms-Version:
+                - "2026-12-06"
+        status: 201 Created
+        code: 201
+        duration: 96.087935ms
+    - id: 15
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 61
+        host: st3wmocpsvc5vpi.blob.core.windows.net
+        body: |
+            <!DOCTYPE html>
+            <html><body><h1>Not found</h1></body></html>
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            Content-Length:
+                - "61"
+            Content-Type:
+                - application/octet-stream
+            User-Agent:
+                - azsdk-go-azblob/v1.8.2 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Blob-Content-Type:
+                - text/html; charset=utf-8
+            X-Ms-Blob-Type:
+                - BlockBlob
+            X-Ms-Correlation-Request-Id:
+                - 6465a1bd-fe42-2c86-88e3-97e8f0da563f
+            X-Ms-Version:
+                - "2026-12-06"
+        url: https://st3wmocpsvc5vpi.blob.core.windows.net:443/$web/404.html
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Content-Length:
+                - "0"
+            Content-Md5:
+                - 4V4H9pucRZVT94uejM3nPw==
+            Date:
+                - Thu, 19 Nov 2026 22:03:11 GMT
+            Etag:
+                - '"0x8DF4688E78B14A3"'
+            Last-Modified:
+                - Thu, 19 Nov 2026 22:03:12 GMT
+            Server:
+                - Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Content-Crc64:
+                - gIpT3qLeuwM=
+            X-Ms-Request-Id:
+                - 39a0e408-601e-0066-1c71-78f06b000000
+            X-Ms-Request-Server-Encrypted:
+                - "true"
+            X-Ms-Version:
+                - "2026-12-06"
+        status: 201 Created
+        code: 201
+        duration: 197.503477ms
+    - id: 16
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 20
+        host: st3wmocpsvc5vpi.blob.core.windows.net
+        body: |
+            removed on redeploy
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            Content-Length:
+                - "20"
+            Content-Type:
+                - application/octet-stream
+            User-Agent:
+                - azsdk-go-azblob/v1.8.2 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Blob-Content-Type:
+                - text/plain; charset=utf-8
+            X-Ms-Blob-Type:
+                - BlockBlob
+            X-Ms-Correlation-Request-Id:
+                - 6465a1bd-fe42-2c86-88e3-97e8f0da563f
+            X-Ms-Version:
+                - "2026-12-06"
+        url: https://st3wmocpsvc5vpi.blob.core.windows.net:443/$web/old.txt
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Content-Length:
+                - "0"
+            Content-Md5:
+                - VQ44X3T5qr78VAWvRypceg==
+            Date:
+                - Thu, 19 Nov 2026 22:03:11 GMT
+            Etag:
+                - '"0x8DF4688E79AF0CC"'
+            Last-Modified:
+                - Thu, 19 Nov 2026 22:03:12 GMT
+            Server:
+                - Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Content-Crc64:
+                - p/cCZkuSdpo=
+            X-Ms-Request-Id:
+                - 39a0e432-601e-0066-3e71-78f06b000000
+            X-Ms-Request-Server-Encrypted:
+                - "true"
+            X-Ms-Version:
+                - "2026-12-06"
+        status: 201 Created
+        code: 201
+        duration: 271.269181ms
+    - id: 17
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 240
+        host: st3wmocpsvc5vpi.blob.core.windows.net
+        body: |-
+            <?xml version="1.0" encoding="UTF-8"?>
+            <StorageServiceProperties><StaticWebsite><Enabled>true</Enabled><ErrorDocument404Path>404.html</ErrorDocument404Path><IndexDocument>index.html</IndexDocument></StaticWebsite></StorageServiceProperties>
+        form:
+            comp:
+                - properties
+            restype:
+                - service
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            Content-Length:
+                - "240"
+            Content-Type:
+                - application/xml
+            User-Agent:
+                - azsdk-go-azblob/v1.8.2 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 6465a1bd-fe42-2c86-88e3-97e8f0da563f
+            X-Ms-Version:
+                - "2026-12-06"
+        url: https://st3wmocpsvc5vpi.blob.core.windows.net:443/?comp=properties&restype=service
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Content-Length:
+                - "0"
+            Date:
+                - Thu, 19 Nov 2026 22:03:12 GMT
+            Server:
+                - Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Request-Id:
+                - 7e65a0a5-601e-006d-6e71-78e81f000000
+            X-Ms-Version:
+                - "2026-12-06"
+        status: 202 Accepted
+        code: 202
+        duration: 204.296687ms
+    - id: 18
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: management.azure.com
+        form:
+            $filter:
+                - tagName eq 'azd-env-name' and tagValue eq 'azdtest-lac8779'
+            api-version:
+                - "2021-04-01"
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 6465a1bd-fe42-2c86-88e3-97e8f0da563f
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-lac8779%27&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: 325
+        body: '{"value":[{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779","name":"rg-azdtest-lac8779","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-lac8779","DeleteAfter":"2026-11-19T23:02:29Z"},"properties":{"provisioningState":"Succeeded"}}]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "325"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:03:12 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - 6465a1bd-fe42-2c86-88e3-97e8f0da563f
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "3749"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "249"
+            X-Ms-Request-Id:
+                - 459c7de9-fee1-49f6-860e-5483b1c22782
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20261119T220313Z:459c7de9-fee1-49f6-860e-5483b1c22782
+            X-Msedge-Ref:
+                - 'Ref A: A7CAB1C502914E43B4576558CB3F63A0 Ref B: CO1AA3060816062 Ref C: 2026-11-19T22:03:12Z'
+        status: 200 OK
+        code: 200
+        duration: 429.964804ms
+    - id: 19
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: st3wmocpsvc5vpi.z20.web.core.windows.net
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - Go-http-client/1.1
+        url: https://st3wmocpsvc5vpi.z20.web.core.windows.net:443/
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 318
+        body: '<!DOCTYPE html><html><head><title>WebsiteDisabled</title></head><body><h1>The requested website is not configured.</h1><p><ul><li>HttpStatusCode: 404</li><li>ErrorCode: WebsiteDisabled</li><li>RequestId : a25f0946-901e-0078-3e71-782a86000000</li><li>TimeStamp : 2026-11-19T22:03:13.5868185Z</li></ul></p></body></html>'
+        headers:
+            Content-Length:
+                - "318"
+            Content-Type:
+                - text/html
+            Date:
+                - Thu, 19 Nov 2026 22:03:13 GMT
+            Server:
+                - Windows-Azure-Web/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Error-Code:
+                - WebsiteDisabled
+            X-Ms-Request-Id:
+                - a25f0946-901e-0078-3e71-782a86000000
+            X-Ms-Version:
+                - "2018-03-28"
+        status: 404 The requested website is not configured.
+        code: 404
+        duration: 364.217812ms
+    - id: 20
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: st3wmocpsvc5vpi.z20.web.core.windows.net
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - Go-http-client/1.1
+        url: https://st3wmocpsvc5vpi.z20.web.core.windows.net:443/
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 318
+        body: '<!DOCTYPE html><html><head><title>WebsiteDisabled</title></head><body><h1>The requested website is not configured.</h1><p><ul><li>HttpStatusCode: 404</li><li>ErrorCode: WebsiteDisabled</li><li>RequestId : a25f1e47-901e-0078-2e71-782a86000000</li><li>TimeStamp : 2026-11-19T22:03:23.6668489Z</li></ul></p></body></html>'
+        headers:
+            Content-Length:
+                - "318"
+            Content-Type:
+                - text/html
+            Date:
+                - Thu, 19 Nov 2026 22:03:23 GMT
+            Server:
+                - Windows-Azure-Web/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Error-Code:
+                - WebsiteDisabled
+            X-Ms-Request-Id:
+                - a25f1e47-901e-0078-2e71-782a86000000
+            X-Ms-Version:
+                - "2018-03-28"
+        status: 404 The requested website is not configured.
+        code: 404
+        duration: 67.453095ms
+    - id: 21
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: st3wmocpsvc5vpi.z20.web.core.windows.net
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - Go-http-client/1.1
+        url: https://st3wmocpsvc5vpi.z20.web.core.windows.net:443/
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 318
+        body: '<!DOCTYPE html><html><head><title>WebsiteDisabled</title></head><body><h1>The requested website is not configured.</h1><p><ul><li>HttpStatusCode: 404</li><li>ErrorCode: WebsiteDisabled</li><li>RequestId : a25f3280-901e-0078-0371-782a86000000</li><li>TimeStamp : 2026-11-19T22:03:33.7444078Z</li></ul></p></body></html>'
+        headers:
+            Content-Length:
+                - "318"
+            Content-Type:
+                - text/html
+            Date:
+                - Thu, 19 Nov 2026 22:03:33 GMT
+            Server:
+                - Windows-Azure-Web/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Error-Code:
+                - WebsiteDisabled
+            X-Ms-Request-Id:
+                - a25f3280-901e-0078-0371-782a86000000
+            X-Ms-Version:
+                - "2018-03-28"
+        status: 404 The requested website is not configured.
+        code: 404
+        duration: 67.825495ms
+    - id: 22
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: st3wmocpsvc5vpi.z20.web.core.windows.net
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - Go-http-client/1.1
+        url: https://st3wmocpsvc5vpi.z20.web.core.windows.net:443/
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 81
+        body: |
+            <!DOCTYPE html>
+            <html><body><h1>azd storage static website v1</h1></body></html>
+        headers:
+            Accept-Ranges:
+                - bytes
+            Content-Length:
+                - "81"
+            Content-Md5:
+                - icm3tVKr0JShNU6VPCZ/tA==
+            Content-Type:
+                - text/html; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:03:43 GMT
+            Etag:
+                - '"0x8DF4688E77C97CA"'
+            Last-Modified:
+                - Thu, 19 Nov 2026 22:03:12 GMT
+            Server:
+                - Windows-Azure-Web/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Request-Id:
+                - a25f4799-901e-0078-0971-782a86000000
+            X-Ms-Version:
+                - "2018-03-28"
+        status: 200 OK
+        code: 200
+        duration: 69.900998ms
+    - id: 23
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: st3wmocpsvc5vpi.z20.web.core.windows.net
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - Go-http-client/1.1
+        url: https://st3wmocpsvc5vpi.z20.web.core.windows.net:443/old.txt
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 20
+        body: |
+            removed on redeploy
+        headers:
+            Accept-Ranges:
+                - bytes
+            Content-Length:
+                - "20"
+            Content-Md5:
+                - VQ44X3T5qr78VAWvRypceg==
+            Content-Type:
+                - text/plain; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:03:43 GMT
+            Etag:
+                - '"0x8DF4688E79AF0CC"'
+            Last-Modified:
+                - Thu, 19 Nov 2026 22:03:12 GMT
+            Server:
+                - Windows-Azure-Web/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Request-Id:
+                - a25f47ba-901e-0078-2271-782a86000000
+            X-Ms-Version:
+                - "2018-03-28"
+        status: 200 OK
+        code: 200
+        duration: 69.588298ms
+    - id: 24
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: management.azure.com
+        form:
+            $filter:
+                - tagName eq 'azd-env-name' and tagValue eq 'azdtest-lac8779'
+            api-version:
+                - "2021-04-01"
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 64e126f2-9fcf-e0f3-d52b-d9fd89b48b85
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-lac8779%27&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: 325
+        body: '{"value":[{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779","name":"rg-azdtest-lac8779","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-lac8779","DeleteAfter":"2026-11-19T23:02:29Z"},"properties":{"provisioningState":"Succeeded"}}]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "325"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:03:44 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - 64e126f2-9fcf-e0f3-d52b-d9fd89b48b85
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "3749"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "249"
+            X-Ms-Request-Id:
+                - a1e2d636-7b3c-421a-aaf4-8d1f756139e6
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20261119T220344Z:a1e2d636-7b3c-421a-aaf4-8d1f756139e6
+            X-Msedge-Ref:
+                - 'Ref A: D0E8240F3E764298A7840C82A110E4A8 Ref B: CO1AA3060816062 Ref C: 2026-11-19T22:03:44Z'
+        status: 200 OK
+        code: 200
+        duration: 441.932121ms
+    - id: 25
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: management.azure.com
+        form:
+            $filter:
+                - tagName eq 'azd-service-name' and tagValue eq 'web'
+            api-version:
+                - "2021-04-01"
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 64e126f2-9fcf-e0f3-d52b-d9fd89b48b85
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27web%27&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: 404
+        body: '{"value":[{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779/providers/Microsoft.Storage/storageAccounts/st3wmocpsvc5vpi","name":"st3wmocpsvc5vpi","type":"Microsoft.Storage/storageAccounts","sku":{"name":"Standard_LRS","tier":"Standard"},"kind":"StorageV2","managedBy":"","location":"eastus2","tags":{"azd-env-name":"azdtest-lac8779","azd-service-name":"web"}}]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "404"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:03:44 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - 64e126f2-9fcf-e0f3-d52b-d9fd89b48b85
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "3749"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "249"
+            X-Ms-Request-Id:
+                - e269d314-8661-45bc-9066-6d144e909588
+            X-Ms-Routing-Request-Id:
+                - EASTUS2:20261119T220345Z:e269d314-8661-45bc-9066-6d144e909588
+            X-Msedge-Ref:
+                - 'Ref A: 72165EDFFBB54EE3B2F57702CAF85050 Ref B: CO1AA3060816062 Ref C: 2026-11-19T22:03:44Z'
+        status: 200 OK
+        code: 200
+        duration: 274.311385ms
+    - id: 26
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: management.azure.com
+        form:
+            api-version:
+                - "2023-05-01"
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 64e126f2-9fcf-e0f3-d52b-d9fd89b48b85
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779/providers/Microsoft.Storage/storageAccounts/st3wmocpsvc5vpi?api-version=2023-05-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: 1547
+        body: '{"sku":{"name":"Standard_LRS","tier":"Standard"},"kind":"StorageV2","id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779/providers/Microsoft.Storage/storageAccounts/st3wmocpsvc5vpi","name":"st3wmocpsvc5vpi","type":"Microsoft.Storage/storageAccounts","location":"eastus2","tags":{"azd-env-name":"azdtest-lac8779","azd-service-name":"web"},"properties":{"keyCreationTime":{"key1":"2026-11-19T22:02:37.3656605Z","key2":"2026-11-19T22:02:37.3656605Z"},"allowCrossTenantReplication":false,"privateEndpointConnections":[],"minimumTlsVersion":"TLS1_2","allowBlobPublicAccess":false,"allowSharedKeyAccess":false,"networkAcls":{"ipv6Rules":[],"bypass":"None","virtualNetworkRules":[],"ipRules":[],"defaultAction":"Allow"},"supportsHttpsTrafficOnly":true,"encryption":{"services":{"file":{"keyType":"Account","enabled":true,"lastEnabledTime":"2026-11-19T22:02:37.3758301Z"},"blob":{"keyType":"Account","enabled":true,"lastEnabledTime":"2026-11-19T22:02:37.3758301Z"}},"keySource":"Microsoft.Storage"},"accessTier":"Hot","provisioningState":"Succeeded","creationTime":"2026-11-19T22:02:36.9743635Z","primaryEndpoints":{"dfs":"https://st3wmocpsvc5vpi.dfs.core.windows.net/","web":"https://st3wmocpsvc5vpi.z20.web.core.windows.net/","blob":"https://st3wmocpsvc5vpi.blob.core.windows.net/","queue":"https://st3wmocpsvc5vpi.queue.core.windows.net/","table":"https://st3wmocpsvc5vpi.table.core.windows.net/","file":"https://st3wmocpsvc5vpi.file.core.windows.net/"},"primaryLocation":"eastus2","statusOfPrimary":"available"}}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "1547"
+            Content-Type:
+                - application/json
+            Date:
+                - Thu, 19 Nov 2026 22:03:44 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - 64e126f2-9fcf-e0f3-d52b-d9fd89b48b85
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "3749"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "249"
+            X-Ms-Request-Id:
+                - 20e7d66c-2d35-4fc0-aa93-a9d9eccc21e1
+            X-Ms-Routing-Request-Id:
+                - EASTUS2:20261119T220345Z:66713350-31cd-4267-8604-d0886c1d8c65
+            X-Msedge-Ref:
+                - 'Ref A: 1B54E7109AFA47609D825633DB07EF6C Ref B: CO1AA3060816062 Ref C: 2026-11-19T22:03:45Z'
+        status: 200 OK
+        code: 200
+        duration: 158.556623ms
+    - id: 27
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: st3wmocpsvc5vpi.blob.core.windows.net
+        form:
+            comp:
+                - properties
+            restype:
+                - service
+        headers:
+            Accept:
+                - application/xml
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-azblob/v1.8.2 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 64e126f2-9fcf-e0f3-d52b-d9fd89b48b85
+            X-Ms-Version:
+                - "2026-12-06"
+        url: https://st3wmocpsvc5vpi.blob.core.windows.net:443/?comp=properties&restype=service
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        content_length: -1
+        body: "\uFEFF\x3C\x3F\x78\x6D\x6C\x20\x76\x65\x72\x73\x69\x6F\x6E\x3D\"\x31\x2E\x30\"\x20\x65\x6E\x63\x6F\x64\x69\x6E\x67\x3D\"\x75\x74\x66\x2D\x38\"\x3F\x3E\x3C\x53\x74\x6F\x72\x61\x67\x65\x53\x65\x72\x76\x69\x63\x65\x50\x72\x6F\x70\x65\x72\x74\x69\x65\x73\x3E\x3C\x4C\x6F\x67\x67\x69\x6E\x67\x3E\x3C\x56\x65\x72\x73\x69\x6F\x6E\x3E\x31\x2E\x30\x3C\x2F\x56\x65\x72\x73\x69\x6F\x6E\x3E\x3C\x52\x65\x61\x64\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x52\x65\x61\x64\x3E\x3C\x57\x72\x69\x74\x65\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x57\x72\x69\x74\x65\x3E\x3C\x44\x65\x6C\x65\x74\x65\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x44\x65\x6C\x65\x74\x65\x3E\x3C\x52\x65\x74\x65\x6E\x74\x69\x6F\x6E\x50\x6F\x6C\x69\x63\x79\x3E\x3C\x45\x6E\x61\x62\x6C\x65\x64\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x45\x6E\x61\x62\x6C\x65\x64\x3E\x3C\x2F\x52\x65\x74\x65\x6E\x74\x69\x6F\x6E\x50\x6F\x6C\x69\x63\x79\x3E\x3C\x2F\x4C\x6F\x67\x67\x69\x6E\x67\x3E\x3C\x48\x6F\x75\x72\x4D\x65\x74\x72\x69\x63\x73\x3E\x3C\x56\x65\x72\x73\x69\x6F\x6E\x3E\x31\x2E\x30\x3C\x2F\x56\x65\x72\x73\x69\x6F\x6E\x3E\x3C\x45\x6E\x61\x62\x6C\x65\x64\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x45\x6E\x61\x62\x6C\x65\x64\x3E\x3C\x52\x65\x74\x65\x6E\x74\x69\x6F\x6E\x50\x6F\x6C\x69\x63\x79\x3E\x3C\x45\x6E\x61\x62\x6C\x65\x64\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x45\x6E\x61\x62\x6C\x65\x64\x3E\x3C\x2F\x52\x65\x74\x65\x6E\x74\x69\x6F\x6E\x50\x6F\x6C\x69\x63\x79\x3E\x3C\x2F\x48\x6F\x75\x72\x4D\x65\x74\x72\x69\x63\x73\x3E\x3C\x4D\x69\x6E\x75\x74\x65\x4D\x65\x74\x72\x69\x63\x73\x3E\x3C\x56\x65\x72\x73\x69\x6F\x6E\x3E\x31\x2E\x30\x3C\x2F\x56\x65\x72\x73\x69\x6F\x6E\x3E\x3C\x45\x6E\x61\x62\x6C\x65\x64\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x45\x6E\x61\x62\x6C\x65\x64\x3E\x3C\x52\x65\x74\x65\x6E\x74\x69\x6F\x6E\x50\x6F\x6C\x69\x63\x79\x3E\x3C\x45\x6E\x61\x62\x6C\x65\x64\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x45\x6E\x61\x62\x6C\x65\x64\x3E\x3C\x2F\x52\x65\x74\x65\x6E\x74\x69\x6F\x6E\x50\x6F\x6C\x69\x63\x79\x3E\x3C\x2F\x4D\x69\x6E\x75\x74\x65\x4D\x65\x74\x72\x69\x63\x73\x3E\x3C\x43\x6F\x72\x73\x20\x2F\x3E\x3C\x44\x65\x6C\x65\x74\x65\x52\x65\x74\x65\x6E\x74\x69\x6F\x6E\x50\x6F\x6C\x69\x63\x79\x3E\x3C\x45\x6E\x61\x62\x6C\x65\x64\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x45\x6E\x61\x62\x6C\x65\x64\x3E\x3C\x41\x6C\x6C\x6F\x77\x50\x65\x72\x6D\x61\x6E\x65\x6E\x74\x44\x65\x6C\x65\x74\x65\x3E\x66\x61\x6C\x73\x65\x3C\x2F\x41\x6C\x6C\x6F\x77\x50\x65\x72\x6D\x61\x6E\x65\x6E\x74\x44\x65\x6C\x65\x74\x65\x3E\x3C\x2F\x44\x65\x6C\x65\x74\x65\x52\x65\x74\x65\x6E\x74\x69\x6F\x6E\x50\x6F\x6C\x69\x63\x79\x3E\x3C\x53\x74\x61\x74\x69\x63\x57\x65\x62\x73\x69\x74\x65\x3E\x3C\x45\x6E\x61\x62\x6C\x65\x64\x3E\x74\x72\x75\x65\x3C\x2F\x45\x6E\x61\x62\x6C\x65\x64\x3E\x3C\x49\x6E\x64\x65\x78\x44\x6F\x63\x75\x6D\x65\x6E\x74\x3E\x69\x6E\x64\x65\x78\x2E\x68\x74\x6D\x6C\x3C\x2F\x49\x6E\x64\x65\x78\x44\x6F\x63\x75\x6D\x65\x6E\x74\x3E\x3C\x45\x72\x72\x6F\x72\x44\x6F\x63\x75\x6D\x65\x6E\x74\x34\x30\x34\x50\x61\x74\x68\x3E\x34\x30\x34\x2E\x68\x74\x6D\x6C\x3C\x2F\x45\x72\x72\x6F\x72\x44\x6F\x63\x75\x6D\x65\x6E\x74\x34\x30\x34\x50\x61\x74\x68\x3E\x3C\x2F\x53\x74\x61\x74\x69\x63\x57\x65\x62\x73\x69\x74\x65\x3E\x3C\x2F\x53\x74\x6F\x72\x61\x67\x65\x53\x65\x72\x76\x69\x63\x65\x50\x72\x6F\x70\x65\x72\x74\x69\x65\x73\x3E"
+        headers:
+            Content-Type:
+                - application/xml
+            Date:
+                - Thu, 19 Nov 2026 22:03:44 GMT
+            Server:
+                - Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Request-Id:
+                - 7e65e2be-601e-006d-0971-78e81f000000
+            X-Ms-Version:
+                - "2026-12-06"
+        status: 200 OK
+        code: 200
+        duration: 73.850104ms
+    - id: 28
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: st3wmocpsvc5vpi.blob.core.windows.net
+        form:
+            restype:
+                - container
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            Content-Length:
+                - "0"
+            User-Agent:
+                - azsdk-go-azblob/v1.8.2 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 64e126f2-9fcf-e0f3-d52b-d9fd89b48b85
+            X-Ms-Version:
+                - "2026-12-06"
+        url: https://st3wmocpsvc5vpi.blob.core.windows.net:443/$web?restype=container
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 230
+        body: "\uFEFF\x3C\x3F\x78\x6D\x6C\x20\x76\x65\x72\x73\x69\x6F\x6E\x3D\"\x31\x2E\x30\"\x20\x65\x6E\x63\x6F\x64\x69\x6E\x67\x3D\"\x75\x74\x66\x2D\x38\"\x3F\x3E\x3C\x45\x72\x72\x6F\x72\x3E\x3C\x43\x6F\x64\x65\x3E\x43\x6F\x6E\x74\x61\x69\x6E\x65\x72\x41\x6C\x72\x65\x61\x64\x79\x45\x78\x69\x73\x74\x73\x3C\x2F\x43\x6F\x64\x65\x3E\x3C\x4D\x65\x73\x73\x61\x67\x65\x3E\x54\x68\x65\x20\x73\x70\x65\x63\x69\x66\x69\x65\x64\x20\x63\x6F\x6E\x74\x61\x69\x6E\x65\x72\x20\x61\x6C\x72\x65\x61\x64\x79\x20\x65\x78\x69\x73\x74\x73\x2E\n\x52\x65\x71\x75\x65\x73\x74\x49\x64\x3A\x37\x65\x36\x35\x65\x32\x65\x37\x2D\x36\x30\x31\x65\x2D\x30\x30\x36\x64\x2D\x33\x31\x37\x31\x2D\x37\x38\x65\x38\x31\x66\x30\x30\x30\x30\x30\x30\n\x54\x69\x6D\x65\x3A\x32\x30\x32\x36\x2D\x31\x31\x2D\x31\x39\x54\x32\x32\x3A\x30\x33\x3A\x34\x35\x2E\x33\x37\x33\x39\x37\x35\x39\x5A\x3C\x2F\x4D\x65\x73\x73\x61\x67\x65\x3E\x3C\x2F\x45\x72\x72\x6F\x72\x3E"
+        headers:
+            Content-Length:
+                - "230"
+            Content-Type:
+                - application/xml
+            Date:
+                - Thu, 19 Nov 2026 22:03:45 GMT
+            Server:
+                - Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Error-Code:
+                - ContainerAlreadyExists
+            X-Ms-Request-Id:
+                - 7e65e2e7-601e-006d-3171-78e81f000000
+            X-Ms-Version:
+                - "2026-12-06"
+        status: 409 The specified container already exists.
+        code: 409
+        duration: 73.387603ms
+    - id: 29
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: st3wmocpsvc5vpi.blob.core.windows.net
+        form:
+            comp:
+                - list
+            restype:
+                - container
+        headers:
+            Accept:
+                - application/xml
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-azblob/v1.8.2 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 64e126f2-9fcf-e0f3-d52b-d9fd89b48b85
+            X-Ms-Version:
+                - "2026-12-06"
+        url: https://st3wmocpsvc5vpi.blob.core.windows.net:443/$web?comp=list&restype=container
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        content_length: -1
+        body: "\uFEFF\x3C\x3F\x78\x6D\x6C\x20\x76\x65\x72\x73\x69\x6F\x6E\x3D\"\x31\x2E\x30\"\x20\x65\x6E\x63\x6F\x64\x69\x6E\x67\x3D\"\x75\x74\x66\x2D\x38\"\x3F\x3E\x3C\x45\x6E\x75\x6D\x65\x72\x61\x74\x69\x6F\x6E\x52\x65\x73\x75\x6C\x74\x73\x20\x53\x65\x72\x76\x69\x63\x65\x45\x6E\x64\x70\x6F\x69\x6E\x74\x3D\"\x68\x74\x74\x70\x73\x3A\x2F\x2F\x73\x74\x33\x77\x6D\x6F\x63\x70\x73\x76\x63\x35\x76\x70\x69\x2E\x62\x6C\x6F\x62\x2E\x63\x6F\x72\x65\x2E\x77\x69\x6E\x64\x6F\x77\x73\x2E\x6E\x65\x74\x2F\"\x20\x43\x6F\x6E\x74\x61\x69\x6E\x65\x72\x4E\x61\x6D\x65\x3D\"\x24\x77\x65\x62\"\x3E\x3C\x42\x6C\x6F\x62\x73\x3E\x3C\x42\x6C\x6F\x62\x3E\x3C\x4E\x61\x6D\x65\x3E\x34\x30\x34\x2E\x68\x74\x6D\x6C\x3C\x2F\x4E\x61\x6D\x65\x3E\x3C\x50\x72\x6F\x70\x65\x72\x74\x69\x65\x73\x3E\x3C\x43\x72\x65\x61\x74\x69\x6F\x6E\x2D\x54\x69\x6D\x65\x3E\x54\x68\x75\x2C\x20\x31\x39\x20\x4E\x6F\x76\x20\x32\x30\x32\x36\x20\x32\x32\x3A\x30\x33\x3A\x31\x32\x20\x47\x4D\x54\x3C\x2F\x43\x72\x65\x61\x74\x69\x6F\x6E\x2D\x54\x69\x6D\x65\x3E\x3C\x4C\x61\x73\x74\x2D\x4D\x6F\x64\x69\x66\x69\x65\x64\x3E\x54\x68\x75\x2C\x20\x31\x39\x20\x4E\x6F\x76\x20\x32\x30\x32\x36\x20\x32\x32\x3A\x30\x33\x3A\x31\x32\x20\x47\x4D\x54\x3C\x2F\x4C\x61\x73\x74\x2D\x4D\x6F\x64\x69\x66\x69\x65\x64\x3E\x3C\x45\x74\x61\x67\x3E\x30\x78\x38\x44\x46\x34\x36\x38\x38\x45\x37\x38\x42\x31\x34\x41\x33\x3C\x2F\x45\x74\x61\x67\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x4C\x65\x6E\x67\x74\x68\x3E\x36\x31\x3C\x2F\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x4C\x65\x6E\x67\x74\x68\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x54\x79\x70\x65\x3E\x74\x65\x78\x74\x2F\x68\x74\x6D\x6C\x3B\x20\x63\x68\x61\x72\x73\x65\x74\x3D\x75\x74\x66\x2D\x38\x3C\x2F\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x54\x79\x70\x65\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x45\x6E\x63\x6F\x64\x69\x6E\x67\x20\x2F\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x4C\x61\x6E\x67\x75\x61\x67\x65\x20\x2F\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x43\x52\x43\x36\x34\x20\x2F\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x4D\x44\x35\x3E\x34\x56\x34\x48\x39\x70\x75\x63\x52\x5A\x56\x54\x39\x34\x75\x65\x6A\x4D\x33\x6E\x50\x77\x3D\x3D\x3C\x2F\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x4D\x44\x35\x3E\x3C\x43\x61\x63\x68\x65\x2D\x43\x6F\x6E\x74\x72\x6F\x6C\x20\x2F\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x44\x69\x73\x70\x6F\x73\x69\x74\x69\x6F\x6E\x20\x2F\x3E\x3C\x42\x6C\x6F\x62\x54\x79\x70\x65\x3E\x42\x6C\x6F\x63\x6B\x42\x6C\x6F\x62\x3C\x2F\x42\x6C\x6F\x62\x54\x79\x70\x65\x3E\x3C\x41\x63\x63\x65\x73\x73\x54\x69\x65\x72\x3E\x48\x6F\x74\x3C\x2F\x41\x63\x63\x65\x73\x73\x54\x69\x65\x72\x3E\x3C\x41\x63\x63\x65\x73\x73\x54\x69\x65\x72\x49\x6E\x66\x65\x72\x72\x65\x64\x3E\x74\x72\x75\x65\x3C\x2F\x41\x63\x63\x65\x73\x73\x54\x69\x65\x72\x49\x6E\x66\x65\x72\x72\x65\x64\x3E\x3C\x4C\x65\x61\x73\x65\x53\x74\x61\x74\x75\x73\x3E\x75\x6E\x6C\x6F\x63\x6B\x65\x64\x3C\x2F\x4C\x65\x61\x73\x65\x53\x74\x61\x74\x75\x73\x3E\x3C\x4C\x65\x61\x73\x65\x53\x74\x61\x74\x65\x3E\x61\x76\x61\x69\x6C\x61\x62\x6C\x65\x3C\x2F\x4C\x65\x61\x73\x65\x53\x74\x61\x74\x65\x3E\x3C\x53\x65\x72\x76\x65\x72\x45\x6E\x63\x72\x79\x70\x74\x65\x64\x3E\x74\x72\x75\x65\x3C\x2F\x53\x65\x72\x76\x65\x72\x45\x6E\x63\x72\x79\x70\x74\x65\x64\x3E\x3C\x2F\x50\x72\x6F\x70\x65\x72\x74\x69\x65\x73\x3E\x3C\x4F\x72\x4D\x65\x74\x61\x64\x61\x74\x61\x20\x2F\x3E\x3C\x2F\x42\x6C\x6F\x62\x3E\x3C\x42\x6C\x6F\x62\x3E\x3C\x4E\x61\x6D\x65\x3E\x69\x6E\x64\x65\x78\x2E\x68\x74\x6D\x6C\x3C\x2F\x4E\x61\x6D\x65\x3E\x3C\x50\x72\x6F\x70\x65\x72\x74\x69\x65\x73\x3E\x3C\x43\x72\x65\x61\x74\x69\x6F\x6E\x2D\x54\x69\x6D\x65\x3E\x54\x68\x75\x2C\x20\x31\x39\x20\x4E\x6F\x76\x20\x32\x30\x32\x36\x20\x32\x32\x3A\x30\x33\x3A\x31\x32\x20\x47\x4D\x54\x3C\x2F\x43\x72\x65\x61\x74\x69\x6F\x6E\x2D\x54\x69\x6D\x65\x3E\x3C\x4C\x61\x73\x74\x2D\x4D\x6F\x64\x69\x66\x69\x65\x64\x3E\x54\x68\x75\x2C\x20\x31\x39\x20\x4E\x6F\x76\x20\x32\x30\x32\x36\x20\x32\x32\x3A\x30\x33\x3A\x31\x32\x20\x47\x4D\x54\x3C\x2F\x4C\x61\x73\x74\x2D\x4D\x6F\x64\x69\x66\x69\x65\x64\x3E\x3C\x45\x74\x61\x67\x3E\x30\x78\x38\x44\x46\x34\x36\x38\x38\x45\x37\x37\x43\x39\x37\x43\x41\x3C\x2F\x45\x74\x61\x67\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x4C\x65\x6E\x67\x74\x68\x3E\x38\x31\x3C\x2F\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x4C\x65\x6E\x67\x74\x68\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x54\x79\x70\x65\x3E\x74\x65\x78\x74\x2F\x68\x74\x6D\x6C\x3B\x20\x63\x68\x61\x72\x73\x65\x74\x3D\x75\x74\x66\x2D\x38\x3C\x2F\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x54\x79\x70\x65\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x45\x6E\x63\x6F\x64\x69\x6E\x67\x20\x2F\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x4C\x61\x6E\x67\x75\x61\x67\x65\x20\x2F\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x43\x52\x43\x36\x34\x20\x2F\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x4D\x44\x35\x3E\x69\x63\x6D\x33\x74\x56\x4B\x72\x30\x4A\x53\x68\x4E\x55\x36\x56\x50\x43\x5A\x2F\x74\x41\x3D\x3D\x3C\x2F\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x4D\x44\x35\x3E\x3C\x43\x61\x63\x68\x65\x2D\x43\x6F\x6E\x74\x72\x6F\x6C\x20\x2F\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x44\x69\x73\x70\x6F\x73\x69\x74\x69\x6F\x6E\x20\x2F\x3E\x3C\x42\x6C\x6F\x62\x54\x79\x70\x65\x3E\x42\x6C\x6F\x63\x6B\x42\x6C\x6F\x62\x3C\x2F\x42\x6C\x6F\x62\x54\x79\x70\x65\x3E\x3C\x41\x63\x63\x65\x73\x73\x54\x69\x65\x72\x3E\x48\x6F\x74\x3C\x2F\x41\x63\x63\x65\x73\x73\x54\x69\x65\x72\x3E\x3C\x41\x63\x63\x65\x73\x73\x54\x69\x65\x72\x49\x6E\x66\x65\x72\x72\x65\x64\x3E\x74\x72\x75\x65\x3C\x2F\x41\x63\x63\x65\x73\x73\x54\x69\x65\x72\x49\x6E\x66\x65\x72\x72\x65\x64\x3E\x3C\x4C\x65\x61\x73\x65\x53\x74\x61\x74\x75\x73\x3E\x75\x6E\x6C\x6F\x63\x6B\x65\x64\x3C\x2F\x4C\x65\x61\x73\x65\x53\x74\x61\x74\x75\x73\x3E\x3C\x4C\x65\x61\x73\x65\x53\x74\x61\x74\x65\x3E\x61\x76\x61\x69\x6C\x61\x62\x6C\x65\x3C\x2F\x4C\x65\x61\x73\x65\x53\x74\x61\x74\x65\x3E\x3C\x53\x65\x72\x76\x65\x72\x45\x6E\x63\x72\x79\x70\x74\x65\x64\x3E\x74\x72\x75\x65\x3C\x2F\x53\x65\x72\x76\x65\x72\x45\x6E\x63\x72\x79\x70\x74\x65\x64\x3E\x3C\x2F\x50\x72\x6F\x70\x65\x72\x74\x69\x65\x73\x3E\x3C\x4F\x72\x4D\x65\x74\x61\x64\x61\x74\x61\x20\x2F\x3E\x3C\x2F\x42\x6C\x6F\x62\x3E\x3C\x42\x6C\x6F\x62\x3E\x3C\x4E\x61\x6D\x65\x3E\x6F\x6C\x64\x2E\x74\x78\x74\x3C\x2F\x4E\x61\x6D\x65\x3E\x3C\x50\x72\x6F\x70\x65\x72\x74\x69\x65\x73\x3E\x3C\x43\x72\x65\x61\x74\x69\x6F\x6E\x2D\x54\x69\x6D\x65\x3E\x54\x68\x75\x2C\x20\x31\x39\x20\x4E\x6F\x76\x20\x32\x30\x32\x36\x20\x32\x32\x3A\x30\x33\x3A\x31\x32\x20\x47\x4D\x54\x3C\x2F\x43\x72\x65\x61\x74\x69\x6F\x6E\x2D\x54\x69\x6D\x65\x3E\x3C\x4C\x61\x73\x74\x2D\x4D\x6F\x64\x69\x66\x69\x65\x64\x3E\x54\x68\x75\x2C\x20\x31\x39\x20\x4E\x6F\x76\x20\x32\x30\x32\x36\x20\x32\x32\x3A\x30\x33\x3A\x31\x32\x20\x47\x4D\x54\x3C\x2F\x4C\x61\x73\x74\x2D\x4D\x6F\x64\x69\x66\x69\x65\x64\x3E\x3C\x45\x74\x61\x67\x3E\x30\x78\x38\x44\x46\x34\x36\x38\x38\x45\x37\x39\x41\x46\x30\x43\x43\x3C\x2F\x45\x74\x61\x67\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x4C\x65\x6E\x67\x74\x68\x3E\x32\x30\x3C\x2F\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x4C\x65\x6E\x67\x74\x68\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x54\x79\x70\x65\x3E\x74\x65\x78\x74\x2F\x70\x6C\x61\x69\x6E\x3B\x20\x63\x68\x61\x72\x73\x65\x74\x3D\x75\x74\x66\x2D\x38\x3C\x2F\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x54\x79\x70\x65\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x45\x6E\x63\x6F\x64\x69\x6E\x67\x20\x2F\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x4C\x61\x6E\x67\x75\x61\x67\x65\x20\x2F\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x43\x52\x43\x36\x34\x20\x2F\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x4D\x44\x35\x3E\x56\x51\x34\x34\x58\x33\x54\x35\x71\x72\x37\x38\x56\x41\x57\x76\x52\x79\x70\x63\x65\x67\x3D\x3D\x3C\x2F\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x4D\x44\x35\x3E\x3C\x43\x61\x63\x68\x65\x2D\x43\x6F\x6E\x74\x72\x6F\x6C\x20\x2F\x3E\x3C\x43\x6F\x6E\x74\x65\x6E\x74\x2D\x44\x69\x73\x70\x6F\x73\x69\x74\x69\x6F\x6E\x20\x2F\x3E\x3C\x42\x6C\x6F\x62\x54\x79\x70\x65\x3E\x42\x6C\x6F\x63\x6B\x42\x6C\x6F\x62\x3C\x2F\x42\x6C\x6F\x62\x54\x79\x70\x65\x3E\x3C\x41\x63\x63\x65\x73\x73\x54\x69\x65\x72\x3E\x48\x6F\x74\x3C\x2F\x41\x63\x63\x65\x73\x73\x54\x69\x65\x72\x3E\x3C\x41\x63\x63\x65\x73\x73\x54\x69\x65\x72\x49\x6E\x66\x65\x72\x72\x65\x64\x3E\x74\x72\x75\x65\x3C\x2F\x41\x63\x63\x65\x73\x73\x54\x69\x65\x72\x49\x6E\x66\x65\x72\x72\x65\x64\x3E\x3C\x4C\x65\x61\x73\x65\x53\x74\x61\x74\x75\x73\x3E\x75\x6E\x6C\x6F\x63\x6B\x65\x64\x3C\x2F\x4C\x65\x61\x73\x65\x53\x74\x61\x74\x75\x73\x3E\x3C\x4C\x65\x61\x73\x65\x53\x74\x61\x74\x65\x3E\x61\x76\x61\x69\x6C\x61\x62\x6C\x65\x3C\x2F\x4C\x65\x61\x73\x65\x53\x74\x61\x74\x65\x3E\x3C\x53\x65\x72\x76\x65\x72\x45\x6E\x63\x72\x79\x70\x74\x65\x64\x3E\x74\x72\x75\x65\x3C\x2F\x53\x65\x72\x76\x65\x72\x45\x6E\x63\x72\x79\x70\x74\x65\x64\x3E\x3C\x2F\x50\x72\x6F\x70\x65\x72\x74\x69\x65\x73\x3E\x3C\x4F\x72\x4D\x65\x74\x61\x64\x61\x74\x61\x20\x2F\x3E\x3C\x2F\x42\x6C\x6F\x62\x3E\x3C\x2F\x42\x6C\x6F\x62\x73\x3E\x3C\x4E\x65\x78\x74\x4D\x61\x72\x6B\x65\x72\x20\x2F\x3E\x3C\x2F\x45\x6E\x75\x6D\x65\x72\x61\x74\x69\x6F\x6E\x52\x65\x73\x75\x6C\x74\x73\x3E"
+        headers:
+            Content-Type:
+                - application/xml
+            Date:
+                - Thu, 19 Nov 2026 22:03:45 GMT
+            Server:
+                - Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Request-Id:
+                - 7e65e316-601e-006d-5671-78e81f000000
+            X-Ms-Version:
+                - "2026-12-06"
+        status: 200 OK
+        code: 200
+        duration: 73.214403ms
+    - id: 30
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 61
+        host: st3wmocpsvc5vpi.blob.core.windows.net
+        body: |
+            <!DOCTYPE html>
+            <html><body><h1>Not found</h1></body></html>
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            Content-Length:
+                - "61"
+            Content-Type:
+                - application/octet-stream
+            User-Agent:
+                - azsdk-go-azblob/v1.8.2 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Blob-Content-Type:
+                - text/html; charset=utf-8
+            X-Ms-Blob-Type:
+                - BlockBlob
+            X-Ms-Correlation-Request-Id:
+                - 64e126f2-9fcf-e0f3-d52b-d9fd89b48b85
+            X-Ms-Version:
+                - "2026-12-06"
+        url: https://st3wmocpsvc5vpi.blob.core.windows.net:443/$web/404.html
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Content-Length:
+                - "0"
+            Content-Md5:
+                - 4V4H9pucRZVT94uejM3nPw==
+            Date:
+                - Thu, 19 Nov 2026 22:03:45 GMT
+            Etag:
+                - '"0x8DF4688FB53FE53"'
+            Last-Modified:
+                - Thu, 19 Nov 2026 22:03:45 GMT
+            Server:
+                - Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Content-Crc64:
+                - gIpT3qLeuwM=
+            X-Ms-Request-Id:
+                - 7e65e361-601e-006d-1771-78e81f000000
+            X-Ms-Request-Server-Encrypted:
+                - "true"
+            X-Ms-Version:
+                - "2026-12-06"
+        status: 201 Created
+        code: 201
+        duration: 74.805605ms
+    - id: 31
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 81
+        host: st3wmocpsvc5vpi.blob.core.windows.net
+        body: |
+            <!DOCTYPE html>
+            <html><body><h1>azd storage static website v2</h1></body></html>
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            Content-Length:
+                - "81"
+            Content-Type:
+                - application/octet-stream
+            User-Agent:
+                - azsdk-go-azblob/v1.8.2 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Blob-Content-Type:
+                - text/html; charset=utf-8
+            X-Ms-Blob-Type:
+                - BlockBlob
+            X-Ms-Correlation-Request-Id:
+                - 64e126f2-9fcf-e0f3-d52b-d9fd89b48b85
+            X-Ms-Version:
+                - "2026-12-06"
+        url: https://st3wmocpsvc5vpi.blob.core.windows.net:443/$web/index.html
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Content-Length:
+                - "0"
+            Content-Md5:
+                - 0EE0J1QNuCDu6SM0Qj0VfQ==
+            Date:
+                - Thu, 19 Nov 2026 22:03:46 GMT
+            Etag:
+                - '"0x8DF4688FBD3E868"'
+            Last-Modified:
+                - Thu, 19 Nov 2026 22:03:46 GMT
+            Server:
+                - Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Content-Crc64:
+                - YrSJuDXIHj0=
+            X-Ms-Request-Id:
+                - 8eefd02b-801e-004e-1071-7887d4000000
+            X-Ms-Request-Server-Encrypted:
+                - "true"
+            X-Ms-Version:
+                - "2026-12-06"
+        status: 201 Created
+        code: 201
+        duration: 962.085951ms
+    - id: 32
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: st3wmocpsvc5vpi.blob.core.windows.net
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-azblob/v1.8.2 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 64e126f2-9fcf-e0f3-d52b-d9fd89b48b85
+            X-Ms-Version:
+                - "2026-12-06"
+        url: https://st3wmocpsvc5vpi.blob.core.windows.net:443/$web/old.txt
+        method: DELETE
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Content-Length:
+                - "0"
+            Date:
+                - Thu, 19 Nov 2026 22:03:46 GMT
+            Server:
+                - Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Delete-Type-Permanent:
+                - "true"
+            X-Ms-Request-Id:
+                - 8eefd20c-801e-004e-6871-7887d4000000
+            X-Ms-Version:
+                - "2026-12-06"
+        status: 202 Accepted
+        code: 202
+        duration: 76.354407ms
+    - id: 33
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: management.azure.com
+        form:
+            $filter:
+                - tagName eq 'azd-env-name' and tagValue eq 'azdtest-lac8779'
+            api-version:
+                - "2021-04-01"
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - 64e126f2-9fcf-e0f3-d52b-d9fd89b48b85
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-lac8779%27&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: 325
+        body: '{"value":[{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-lac8779","name":"rg-azdtest-lac8779","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-lac8779","DeleteAfter":"2026-11-19T23:02:29Z"},"properties":{"provisioningState":"Succeeded"}}]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "325"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:03:46 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - 64e126f2-9fcf-e0f3-d52b-d9fd89b48b85
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "3749"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "249"
+            X-Ms-Request-Id:
+                - 1a8b0247-8000-42fc-9ff4-f7431711f2c7
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20261119T220347Z:1a8b0247-8000-42fc-9ff4-f7431711f2c7
+            X-Msedge-Ref:
+                - 'Ref A: 5C6B7317B9B8447B9EF70C11E908F6B4 Ref B: CO1AA3060816062 Ref C: 2026-11-19T22:03:46Z'
+        status: 200 OK
+        code: 200
+        duration: 438.145316ms
+    - id: 34
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: st3wmocpsvc5vpi.z20.web.core.windows.net
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - Go-http-client/1.1
+        url: https://st3wmocpsvc5vpi.z20.web.core.windows.net:443/
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 81
+        body: |
+            <!DOCTYPE html>
+            <html><body><h1>azd storage static website v2</h1></body></html>
+        headers:
+            Accept-Ranges:
+                - bytes
+            Content-Length:
+                - "81"
+            Content-Md5:
+                - 0EE0J1QNuCDu6SM0Qj0VfQ==
+            Content-Type:
+                - text/html; charset=utf-8
+            Date:
+                - Thu, 19 Nov 2026 22:03:46 GMT
+            Etag:
+                - '"0x8DF4688FBD3E868"'
+            Last-Modified:
+                - Thu, 19 Nov 2026 22:03:46 GMT
+            Server:
+                - Windows-Azure-Web/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Request-Id:
+                - a25f4db2-901e-0078-4e71-782a86000000
+            X-Ms-Version:
+                - "2018-03-28"
+        status: 200 OK
+        code: 200
+        duration: 69.774398ms
+    - id: 35
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: st3wmocpsvc5vpi.z20.web.core.windows.net
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - Go-http-client/1.1
+        url: https://st3wmocpsvc5vpi.z20.web.core.windows.net:443/old.txt
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 61
+        body: |
+            <!DOCTYPE html>
+            <html><body><h1>Not found</h1></body></html>
+        headers:
+            Content-Length:
+                - "61"
+            Content-Type:
+                - text/html
+            Date:
+                - Thu, 19 Nov 2026 22:03:47 GMT
+            Server:
+                - Windows-Azure-Web/1.0 Microsoft-HTTPAPI/2.0
+            X-Ms-Error-Code:
+                - WebContentNotFound
+            X-Ms-Request-Id:
+                - a25f4dc2-901e-0078-5971-782a86000000
+            X-Ms-Version:
+                - "2018-03-28"
+        status: 404 The requested content does not exist.
+        code: 404
+        duration: 71.804401ms
+---
+env_name: azdtest-lac8779
+subscription_id: 4d042dc6-fe17-4698-a23f-ec6a8d1e98f4
+time: "1795125720"

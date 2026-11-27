@@ -216,6 +216,7 @@ Valid values for `project.service.hosts` and `project.service.targets`:
 | `containerapp-dotnet` | Azure Container Apps (Aspire) |
 | `function` | Azure Functions |
 | `staticwebapp` | Azure Static Web Apps |
+| `storage` | Azure Storage static website |
 | `springapp` | Azure Spring Apps |
 | `aks` | Azure Kubernetes Service |
 | `ai.endpoint` | Azure AI endpoint |

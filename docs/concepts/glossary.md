@@ -32,7 +32,7 @@ A deployable unit defined in `azure.yaml`. Each service has a source path, a lan
 
 ### Service Target (Host)
 
-The Azure resource that hosts a deployed service. Supported targets include Azure App Service, Azure Container Apps, Azure Functions, Azure Static Web Apps, Azure Kubernetes Service (AKS), and Azure AI.
+The Azure resource that hosts a deployed service. Supported targets include Azure App Service, Azure Container Apps, Azure Functions, Azure Static Web Apps, Azure Storage static websites, Azure Kubernetes Service (AKS), and Azure AI.
 
 ### Framework Service
 

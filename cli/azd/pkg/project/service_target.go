@@ -28,6 +28,7 @@ const (
 	AksTarget                ServiceTargetKind = "aks"
 	DotNetContainerAppTarget ServiceTargetKind = "containerapp-dotnet"
 	AiEndpointTarget         ServiceTargetKind = "ai.endpoint"
+	StorageTarget            ServiceTargetKind = "storage"
 )
 
 // DotNetContainerAppTarget is intentionally omitted because it is only used internally when
@@ -40,6 +41,7 @@ var builtInServiceTargetKinds = []ServiceTargetKind{
 	StaticWebAppTarget,
 	AksTarget,
 	AiEndpointTarget,
+	StorageTarget,
 }
 
 func builtInServiceTargetNames() []string {

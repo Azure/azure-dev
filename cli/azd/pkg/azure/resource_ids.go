@@ -89,6 +89,14 @@ func StaticWebAppRID(subscriptionId, resourceGroupName, staticSiteName string) s
 	return returnValue
 }
 
+func StorageAccountRID(subscriptionId, resourceGroupName, storageAccountName string) string {
+	return fmt.Sprintf(
+		"%s/providers/Microsoft.Storage/storageAccounts/%s",
+		ResourceGroupRID(subscriptionId, resourceGroupName),
+		storageAccountName,
+	)
+}
+
 func WorkspaceRID(subscriptionId, resourceGroupName, workspaceName string) string {
 	returnValue := fmt.Sprintf(
 		"%s/providers/Microsoft.MachineLearningServices/workspaces/%s",

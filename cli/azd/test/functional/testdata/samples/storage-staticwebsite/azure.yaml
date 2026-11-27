@@ -1,0 +1,7 @@
+name: storage-staticwebsite
+metadata:
+  template: azd-test/storage-staticwebsite@v1
+services:
+  web:
+    project: src
+    host: storage

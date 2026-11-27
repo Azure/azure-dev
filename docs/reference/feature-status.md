@@ -50,6 +50,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 |---|---|
 | Azure App Service | Stable |
 | Azure Static Web Apps | Stable |
+| Azure Storage static website | Beta |
 | Azure Container Apps | Stable |
 | Azure Functions | Stable |
 | Azure Kubernetes Service (AKS) | Beta |

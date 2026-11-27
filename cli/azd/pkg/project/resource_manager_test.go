@@ -177,6 +177,7 @@ func setupGetResourcesMock(mockContext *mocks.MockContext, resources []*armresou
 func Test_ResourceManager_GetServiceResource_DuplicateHostTags(t *testing.T) {
 	tests := []struct {
 		name          string
+		host          ServiceTargetKind
 		resources     []*armresources.GenericResourceExpanded
 		expectError   bool
 		errorContains string
@@ -251,6 +252,57 @@ func Test_ResourceManager_GetServiceResource_DuplicateHostTags(t *testing.T) {
 			//nolint:lll
 			errorContains: "'my-container-app' (type: Microsoft.App/containerApps), 'my-app-service' (type: Microsoft.Web/sites)",
 		},
+		{
+			name: "StorageHostIgnoresOtherTaggedResources_Success",
+			host: StorageTarget,
+			resources: []*armresources.GenericResourceExpanded{
+				{
+					ID:       new("RESOURCE_ID_1"),
+					Name:     new("mystorageaccount"),
+					Type:     new("Microsoft.Storage/storageAccounts"),
+					Location: new("eastus2"),
+				},
+				{
+					ID:       new("RESOURCE_ID_2"),
+					Name:     new("my-app-service"),
+					Type:     new("Microsoft.Web/sites"),
+					Location: new("eastus2"),
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "ContainerAppHostIgnoresTaggedStorageAccount_Success",
+			resources: []*armresources.GenericResourceExpanded{
+				{
+					ID:       new("RESOURCE_ID_1"),
+					Name:     new("my-container-app"),
+					Type:     new("Microsoft.App/containerApps"),
+					Location: new("eastus2"),
+				},
+				{
+					ID:       new("RESOURCE_ID_2"),
+					Name:     new("mystorageaccount"),
+					Type:     new("Microsoft.Storage/storageAccounts"),
+					Location: new("eastus2"),
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "StorageHostWithoutStorageAccount_Error",
+			host: StorageTarget,
+			resources: []*armresources.GenericResourceExpanded{
+				{
+					ID:       new("RESOURCE_ID_1"),
+					Name:     new("my-app-service"),
+					Type:     new("Microsoft.Web/sites"),
+					Location: new("eastus2"),
+				},
+			},
+			expectError:   true,
+			errorContains: "unable to find a resource tagged with",
+		},
 	}
 
 	for _, tt := range tests {
@@ -271,7 +323,11 @@ func Test_ResourceManager_GetServiceResource_DuplicateHostTags(t *testing.T) {
 			azureResourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
 			resourceManager := NewResourceManager(env, deploymentService, resourceService, azureResourceManager)
 
-			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageJavaScript)
+			host := tt.host
+			if host == "" {
+				host = ContainerAppTarget
+			}
+			serviceConfig := createTestServiceConfig("./src/api", host, ServiceLanguageJavaScript)
 			serviceConfig.Name = "test-service"
 
 			resource, err := resourceManager.GetServiceResource(
@@ -319,8 +375,27 @@ func Test_isHostResource(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.resourceType, func(t *testing.T) {
-			result := isHostResource(tt.resourceType)
+			result := isHostResource(AppServiceTarget, tt.resourceType)
 			require.Equal(t, tt.expected, result, "isHostResource(%s) should be %v", tt.resourceType, tt.expected)
+		})
+	}
+}
+
+func Test_isHostResource_StorageTarget(t *testing.T) {
+	tests := []struct {
+		resourceType string
+		expected     bool
+	}{
+		{"Microsoft.Storage/storageAccounts", true},
+		{"microsoft.storage/storageaccounts", true},
+		{"Microsoft.Web/sites", false},
+		{"Microsoft.Web/staticSites", false},
+		{"Microsoft.ManagedIdentity/userAssignedIdentities", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.resourceType, func(t *testing.T) {
+			require.Equal(t, tt.expected, isHostResource(StorageTarget, tt.resourceType))
 		})
 	}
 }

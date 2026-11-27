@@ -56,6 +56,7 @@ const (
 	lookupKindEnvironmentVariable   servicePrincipalLookupKind = "environment-variable"
 	AzurePipelineClientIdEnvVarName string                     = "AZURE_PIPELINE_CLIENT_ID"
 	AzurePipelineMsiResourceId      string                     = "AZURE_PIPELINE_MSI_CLIENT_ID"
+	AzurePipelineAuthTypeEnvVarName string                     = "AZURE_PIPELINE_AUTH_TYPE"
 )
 
 var (
@@ -293,6 +294,22 @@ func (pm *PipelineManager) Configure(
 	usingMsi := msiResourceId != ""
 	subscriptionId := pm.env.GetSubscriptionId()
 
+	// A managed identity always uses federation, so it is the previous method when one is saved.
+	previousAuthType := pm.dotenvPipelineAuthType()
+	if usingMsi {
+		previousAuthType = AuthTypeFederated
+	}
+
+	// An explicit --auth-type client-credentials switches a managed identity pipeline to a service principal.
+	// A saved client-credentials method alongside a managed identity means an earlier switch didn't finish.
+	authTypeArg := PipelineAuthType(strings.TrimSpace(pm.args.PipelineAuthTypeName))
+	switchingFromMsi := usingMsi && (authTypeArg == AuthTypeClientCredentials ||
+		authTypeArg == "" && pm.dotenvPipelineAuthType() == AuthTypeClientCredentials)
+	if switchingFromMsi {
+		usingMsi = false
+		pm.console.Message(ctx, "Switching the pipeline from a managed identity to client credentials.")
+	}
+
 	// see if SP already exists - This step will not create the SP if it doesn't exist.
 	spConfig, err := servicePrincipal(
 		ctx, pm.env.Getenv(AzurePipelineClientIdEnvVarName), subscriptionId, pm.args, pm.entraIdService)
@@ -326,6 +343,8 @@ func (pm *PipelineManager) Configure(
 
 	// Service Principal or MSI are both handled by authConfiguration as a top layer abstraction.
 	var authConfig *authConfiguration
+	// authReminder tells the user how to update an existing pipeline definition after switching methods.
+	var authReminder string
 
 	// *************************** Create or update service principal ***************************
 	if !skipAuth && usingAppRegistration {
@@ -399,8 +418,10 @@ func (pm *PipelineManager) Configure(
 		}
 		pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 
-		// Set in .env to be retrieved for any additional runs
+		// Set in .env to be retrieved for any additional runs. Saving the method now lets a rerun without
+		// --auth-type finish it if credential configuration fails.
 		pm.env.DotenvSet(AzurePipelineClientIdEnvVarName, servicePrincipal.AppId)
+		pm.env.DotenvSet(AzurePipelineAuthTypeEnvVarName, string(authType))
 		if err := pm.envManager.Save(ctx, pm.env); err != nil {
 			return result, fmt.Errorf("failed to save environment: %w", err)
 		}
@@ -521,8 +542,10 @@ func (pm *PipelineManager) Configure(
 			return result, fmt.Errorf("failed to assign role to User Managed Identity (MSI): %w", err)
 		}
 
-		// Set in .env to be retrieved for any additional runs
+		// Set in .env to be retrieved for any additional runs. Clearing the saved method keeps a failed managed
+		// identity run from looking like an unfinished switch to client credentials.
 		pm.env.DotenvSet(AzurePipelineMsiResourceId, *msIdentity.ID)
+		pm.env.DotenvDelete(AzurePipelineAuthTypeEnvVarName)
 		if err := pm.envManager.Save(ctx, pm.env); err != nil {
 			return result, fmt.Errorf("failed to save environment: %w", err)
 		}
@@ -641,6 +664,29 @@ func (pm *PipelineManager) Configure(
 		if err != nil {
 			return result, err
 		}
+
+		if switchingFromMsi {
+			pm.env.DotenvDelete(AzurePipelineMsiResourceId)
+			if err := pm.envManager.Save(ctx, pm.env); err != nil {
+				return result, fmt.Errorf("failed to save environment: %w", err)
+			}
+		}
+
+		// azd doesn't rewrite an existing pipeline definition. GitHub workflows need a different Azure login step.
+		// Azure DevOps signs in through the service connection, but keepAzSessionActive only works with federation.
+		// Azure DevOps definitions generated before the method was saved always had keepAzSessionActive, so its
+		// client credentials reminder also covers environments without a saved method.
+		// The reminder prints after the remaining setup steps so it isn't lost between spinner lines.
+		if pm.configOptions.pipelineFileExisted && previousAuthType != authType {
+			switch {
+			case pm.ciProviderType == ciProviderGitHubActions && previousAuthType != "":
+				authReminder = gitHubWorkflowAuthReminder(authType, usesTerraform(infra.Options))
+			case pm.ciProviderType == ciProviderAzureDevOps && authType == AuthTypeClientCredentials:
+				authReminder = output.WithWarningFormat(azdoClientCredentialsReminder)
+			case pm.ciProviderType == ciProviderAzureDevOps && previousAuthType == AuthTypeClientCredentials:
+				authReminder = output.WithWarningFormat(azdoFederatedReminder)
+			}
+		}
 	}
 
 	defaultAzdSecrets := map[string]string{}
@@ -742,6 +788,12 @@ func (pm *PipelineManager) Configure(
 	ciPipeline, err := pm.ciProvider.configurePipeline(ctx, gitRepoInfo, pm.configOptions)
 	if err != nil {
 		return result, err
+	}
+
+	if authReminder != "" {
+		pm.console.Message(ctx, "")
+		pm.console.Message(ctx, authReminder)
+		pm.console.Message(ctx, "")
 	}
 
 	// The CI pipeline should be set-up and ready at this point.
@@ -1476,6 +1528,7 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context, authTyp
 	}
 
 	// Check and prompt for missing CI/CD files
+	pm.configOptions.pipelineFileExisted = hasPipelineFile(pm.ciProviderType, repoRoot)
 	err = pm.checkAndPromptForProviderFiles(
 		ctx, projectProperties{
 			CiProvider:            pm.ciProviderType,
@@ -1517,18 +1570,48 @@ func (pm *PipelineManager) resolvePipelineAuth(
 		authType = PipelineAuthType(strings.TrimSpace(pm.args.PipelineAuthTypeName))
 	}
 
-	if usingMsi && authType == AuthTypeClientCredentials {
-		return pipelineAuthSelection{}, &errorhandler.ErrorWithSuggestion{
-			Err: fmt.Errorf(
-				"--auth-type %s is not supported with managed identity authentication",
-				AuthTypeClientCredentials,
-			),
-			Message:    "This environment's pipeline uses a managed identity, which doesn't support client credentials.",
-			Suggestion: pm.msiToClientCredentialsSuggestion(),
-		}
-	}
+	const (
+		optionMsi       = "Federated Managed Identity (MSI + OIDC) (Recommended)"
+		optionOidc      = "Federated Service Principal (SP + OIDC)"
+		optionClientSec = "Client Credentials (SP + Secret)"
+		optionSkip      = "Skip authentication setup"
+
+		detailOidc      = "Uses a Microsoft Entra app registration. No client secret to store."
+		detailClientSec = "A fallback for pipelines that can't use OIDC. Stores an expiring client secret."
+	)
 
 	if usingMsi || usingAppRegistration {
+		if usingAppRegistration && authType == "" {
+			saved, err := pm.savedPipelineAuthType()
+			if err != nil {
+				return pipelineAuthSelection{}, err
+			}
+			authType = saved
+		}
+
+		// Azure DevOps reruns update the service connection in place, so ask once for environments configured
+		// before the method was saved instead of silently switching it to federation.
+		if usingAppRegistration && authType == "" && pm.ciProviderType == ciProviderAzureDevOps {
+			options := []string{optionOidc, optionClientSec}
+			selected, err := pm.console.Select(ctx, input.ConsoleOptions{
+				Message:                "Select the authentication method for this Azure DevOps pipeline:",
+				Options:                options,
+				OptionDetails:          []string{detailOidc, detailClientSec},
+				ShowOptionDetailsBelow: true,
+				DefaultValue:           optionOidc,
+				Help: "If you're not sure, check Project settings > Service connections > azconnection. " +
+					"\"Workload identity federation\" means federated, and " +
+					"\"Service principal (secret)\" means client credentials.",
+			})
+			if err != nil {
+				return pipelineAuthSelection{}, fmt.Errorf("prompting for authentication type: %w", err)
+			}
+			authType = AuthTypeFederated
+			if options[selected] == optionClientSec {
+				authType = AuthTypeClientCredentials
+			}
+		}
+
 		return pipelineAuthSelection{
 			usingMsi:             usingMsi,
 			usingAppRegistration: usingAppRegistration,
@@ -1544,27 +1627,17 @@ func (pm *PipelineManager) resolvePipelineAuth(
 	}
 
 	log.Printf("Authentication mode has not been set. Prompt user if they want to set it up now.")
-	const (
-		optionMsi       = "Federated Managed Identity (MSI + OIDC) (Recommended)"
-		optionOidc      = "Federated Service Principal (SP + OIDC)"
-		optionClientSec = "Client Credentials (SP + Secret)"
-		optionSkip      = "Skip authentication setup"
-	)
-
 	options := []string{
 		optionMsi,
 		optionOidc,
 	}
 	optionDetails := []string{
 		"Creates or reuses a user-assigned managed identity. No client secret to store.",
-		"Uses a Microsoft Entra app registration. No client secret to store.",
+		detailOidc,
 	}
 	if authType != AuthTypeFederated {
 		options = append(options, optionClientSec)
-		optionDetails = append(
-			optionDetails,
-			"A fallback for pipelines that can't use OIDC. Stores an expiring client secret.",
-		)
+		optionDetails = append(optionDetails, detailClientSec)
 	}
 	options = append(options, optionSkip)
 	optionDetails = append(
@@ -1609,28 +1682,29 @@ func (pm *PipelineManager) resolvePipelineAuth(
 	}
 }
 
-// msiToClientCredentialsSuggestion explains how to clear the managed identity from the selected environment and,
-// when set, from the process environment, since Environment.Getenv falls back to process values.
-func (pm *PipelineManager) msiToClientCredentialsSuggestion() string {
-	// Environment names can't contain quotes or '$', so double quotes are safe in common shells.
-	envArg := fmt.Sprintf(`-e "%s"`, pm.env.Name())
+// dotenvPipelineAuthType returns the auth method saved in the selected environment's .env, ignoring process values.
+func (pm *PipelineManager) dotenvPipelineAuthType() PipelineAuthType {
+	saved, _ := pm.env.LookupDotenv(AzurePipelineAuthTypeEnvVarName)
+	return PipelineAuthType(strings.TrimSpace(saved))
+}
 
-	var steps []string
-	if _, inDotenv := pm.env.LookupDotenv(AzurePipelineMsiResourceId); inDotenv {
-		steps = append(steps, fmt.Sprintf("run `azd env unset %s %s`", AzurePipelineMsiResourceId, envArg))
+// savedPipelineAuthType returns the auth method saved by a previous run, or an empty value when none was saved.
+func (pm *PipelineManager) savedPipelineAuthType() (PipelineAuthType, error) {
+	saved := pm.dotenvPipelineAuthType()
+	switch saved {
+	case "", AuthTypeFederated, AuthTypeClientCredentials:
+		return saved, nil
+	default:
+		return "", &errorhandler.ErrorWithSuggestion{
+			Err:     fmt.Errorf("invalid %s value %q", AzurePipelineAuthTypeEnvVarName, saved),
+			Message: "The pipeline authentication method saved in this environment isn't valid.",
+			Suggestion: fmt.Sprintf(
+				"Rerun `azd pipeline config` with `--auth-type %s` or `--auth-type %s`.",
+				AuthTypeFederated,
+				AuthTypeClientCredentials,
+			),
+		}
 	}
-	if _, inShell := os.LookupEnv(AzurePipelineMsiResourceId); inShell {
-		steps = append(steps, fmt.Sprintf("remove %s from your shell or CI environment", AzurePipelineMsiResourceId))
-	}
-
-	return fmt.Sprintf(
-		"To switch to client credentials, %s, then rerun `azd pipeline config %s --auth-type %s`. "+
-			"For GitHub Actions, azd doesn't change an existing workflow, "+
-			"so update its Azure login step to use client credentials.",
-		strings.Join(steps, " and "),
-		envArg,
-		AuthTypeClientCredentials,
-	)
 }
 
 type promptForServiceTreeIdOptions struct {

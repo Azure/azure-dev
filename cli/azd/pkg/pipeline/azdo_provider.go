@@ -725,6 +725,15 @@ func (p *AzdoCiProvider) Name() string {
 
 // ***  ciProvider implementation ******
 
+// azdoClientCredentialsReminder and azdoFederatedReminder tell the user how to update an existing pipeline after it
+// switches methods, since azd doesn't rewrite existing pipeline definitions.
+const (
+	azdoClientCredentialsReminder = "azd didn't change your existing pipeline. Remove `keepAzSessionActive: true` " +
+		"from both AzureCLI@2 tasks, if present; it only works with workload identity federation."
+	azdoFederatedReminder = "azd didn't change your existing pipeline. Add `keepAzSessionActive: true` back to both " +
+		"AzureCLI@2 tasks; without it, runs longer than about 10 minutes can fail with AADSTS700024."
+)
+
 func (p *AzdoCiProvider) credentialOptions(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,

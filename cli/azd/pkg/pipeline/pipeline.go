@@ -115,6 +115,8 @@ type configurePipelineOptions struct {
 	// pipelineFile is the name of the default pipeline definition file (azure-dev.yml or azure-dev.yaml) found in the
 	// repository. It is empty when the repository does not contain either file.
 	pipelineFile string
+	// pipelineFileExisted is true when a default pipeline definition file existed before azd offered to create one.
+	pipelineFileExisted bool
 	// clientCredentials is true when the pipeline authenticates with a client secret, which is stored as a CI secret.
 	clientCredentials bool
 }

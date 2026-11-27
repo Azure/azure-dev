@@ -56,7 +56,7 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 		&pc.PipelineAuthTypeName,
 		"auth-type",
 		"",
-		"The authentication type used between the pipeline provider and Azure for deployment. Valid values: federated, client-credentials. Both the GitHub and Azure DevOps providers default to federated (OIDC) credentials.",
+		"The authentication type used between the pipeline provider and Azure for deployment. Valid values: federated, client-credentials. Defaults to federated (OIDC) for new pipelines. Reruns reuse the saved method.",
 	)
 	//nolint:lll
 	local.StringArrayVar(

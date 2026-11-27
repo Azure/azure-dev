@@ -25,17 +25,20 @@ import (
 )
 
 type templatePlanResolver struct {
-	ctx                 context.Context
-	provider            *FoundryProvisioningProvider
-	evidence            *onboarding.AuthorizationEvidence
-	scopes              map[string]planScope
-	functions           map[string]any
-	references          map[*planResource]bool
-	owningSubscriptions map[string]bool
-	nodes               []*planResource
-	account             *planResource
-	unresolved          []string
-	err                 error
+	ctx                  context.Context
+	provider             *FoundryProvisioningProvider
+	evidence             *onboarding.AuthorizationEvidence
+	scopes               map[string]planScope
+	functions            map[string]any
+	references           map[*planResource]bool
+	owningSubscriptions  map[string]bool
+	nodes                []*planResource
+	account              *planResource
+	accountHostingProven bool
+	singleAccountHosting bool
+	unresolved           []string
+	unresolvedAccounts   []string
+	err                  error
 }
 
 type planResource struct {
@@ -228,6 +231,12 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 			if !resource.inactive && typeMissing != "" {
 				r.unresolved = append(r.unresolved, path+": resource type: "+typeMissing)
 			}
+			if !resource.inactive && copyMissing != "" &&
+				(typeMissing != "" ||
+					strings.EqualFold(resource.kind, "Microsoft.CognitiveServices/accounts") ||
+					strings.EqualFold(resource.kind, "Microsoft.Resources/deployments")) {
+				r.unresolvedAccounts = append(r.unresolvedAccounts, path+": "+copyMissing)
+			}
 			env.resources[entry.symbol] = resource
 			r.nodes = append(r.nodes, resource)
 			if !resource.inactive && strings.EqualFold(resource.kind, "Microsoft.Resources/deployments") {
@@ -391,7 +400,20 @@ func (n *planResource) reference(full bool) any {
 		}
 		outputs, _ := child.template["outputs"].(map[string]any)
 		result := map[string]any{}
-		for key, output := range outputs {
+		for _, key := range slices.Sorted(maps.Keys(outputs)) {
+			output := outputs[key]
+			if definition, ok := output.(map[string]any); ok {
+				if condition, hasCond := planObjectField(definition, "condition"); hasCond {
+					active, missing := planBool(child.value(condition))
+					if missing != "" {
+						result[key] = planUnknown{"output " + key + " condition: " + missing}
+						continue
+					}
+					if !active {
+						continue
+					}
+				}
+			}
 			result[key] = child.value(output)
 		}
 		properties := map[string]any{"outputs": result}
@@ -522,6 +544,13 @@ func (r *templatePlanResolver) recordOwningSubscription(kind, subscription strin
 func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	ctx context.Context, source *templateSource, evidence *onboarding.AuthorizationEvidence,
 ) (onboarding.Plan, error) {
+	plan, _, _, err := p.identifyBYOPlan(ctx, source, evidence)
+	return plan, err
+}
+
+func (p *FoundryProvisioningProvider) identifyBYOPlan(
+	ctx context.Context, source *templateSource, evidence *onboarding.AuthorizationEvidence,
+) (onboarding.Plan, bool, bool, error) {
 	if evidence == nil {
 		evidence = onboarding.NewAuthorizationEvidence(p.credential, p.armClientOptions)
 	}
@@ -531,11 +560,11 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	}
 	encoded, err := json.Marshal(source.parameters)
 	if err != nil {
-		return onboarding.Plan{}, fmt.Errorf("encode actual merged BYO plan parameters: %w", err)
+		return onboarding.Plan{}, false, false, fmt.Errorf("encode actual merged BYO plan parameters: %w", err)
 	}
 	var merged map[string]any
 	if err := json.Unmarshal(encoded, &merged); err != nil {
-		return onboarding.Plan{}, fmt.Errorf("decode actual merged BYO plan parameters: %w", err)
+		return onboarding.Plan{}, false, false, fmt.Errorf("decode actual merged BYO plan parameters: %w", err)
 	}
 	parameters := map[string]func() any{}
 	for key, envelope := range merged {
@@ -572,5 +601,5 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	}
 	resolver.bindNetwork(&plan)
 	plan.OwningSubscriptions = append(plan.OwningSubscriptions, slices.Sorted(maps.Keys(resolver.owningSubscriptions))...)
-	return plan, resolver.err
+	return plan, resolver.accountHostingProven, resolver.singleAccountHosting, resolver.err
 }

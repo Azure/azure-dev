@@ -345,3 +345,321 @@ func TestBYOSuppliedIdentityRequiresRealPrincipalBinding(t *testing.T) {
 		assert.Zero(t, fake.base.previews)
 	}
 }
+
+func multiAccountBYOTemplate(
+	accountBProperties, extraResources map[string]any, selectedAccount string,
+) map[string]any {
+	innerResources := map[string]any{
+		"accountA": map[string]any{
+			"type": "Microsoft.CognitiveServices/accounts", "apiVersion": "2026-07-15-preview", "name": "account-a",
+			"properties": map[string]any{
+				"agentHostingConfigurations": []any{map[string]any{
+					"hostingType": "ManagedCluster", "clusterResourceId": offlineClusterID,
+					"storageAccountResourceId":            suppliedStorageID,
+					"hostingManagementIdentityResourceId": suppliedHostingID,
+					"workloadIdentityResourceId":          suppliedWorkloadID,
+				}},
+				"networkInjections": []any{map[string]any{
+					"scenario": "agent", "subnetArmId": offlineVNetID + "/subnets/nodes",
+					"useMicrosoftManagedNetwork": false,
+				}},
+			},
+		},
+		"accountB": map[string]any{
+			"type": "Microsoft.CognitiveServices/accounts", "apiVersion": "2026-07-15-preview", "name": "account-b",
+			"properties": accountBProperties,
+		},
+	}
+	maps.Copy(innerResources, extraResources)
+	return map[string]any{
+		"$schema":         "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+		"languageVersion": "2.0",
+		"contentVersion":  "1.0.0.0",
+		"parameters": map[string]any{
+			"agentHosting": map[string]any{"type": "object", "defaultValue": map[string]any{
+				"enabled": true, "clusterResourceId": offlineClusterID,
+			}},
+			"includeAcr":                        map[string]any{"type": "bool", "defaultValue": false},
+			"acrPullPrincipalId":                map[string]any{"type": "string", "defaultValue": ""},
+			"kubeletObjectId":                   map[string]any{"type": "string", "defaultValue": ""},
+			"federatedIdentityRoleDefinitionId": map[string]any{"type": "string", "defaultValue": ""},
+			"byoAksExistingRoleAssignmentKeys":  map[string]any{"type": "array", "defaultValue": []any{}},
+			"hostingPrincipalId":                map[string]any{"type": "string", "defaultValue": ""},
+			"workloadPrincipalId":               map[string]any{"type": "string", "defaultValue": ""},
+			"monitoringMode":                    map[string]any{"type": "string", "defaultValue": "none"},
+		},
+		"resources": map[string]any{"foundryResources": map[string]any{
+			"type": "Microsoft.Resources/deployments", "apiVersion": "2025-04-01",
+			"name": "foundry-resources", "resourceGroup": "target-rg",
+			"properties": map[string]any{
+				"expressionEvaluationOptions": map[string]any{"scope": "inner"},
+				"template": map[string]any{
+					"$schema":         "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+					"languageVersion": "2.0",
+					"resources":       innerResources,
+				},
+			},
+		}},
+		"outputs": map[string]any{
+			"AZURE_AI_ACCOUNT_NAME":                map[string]any{"type": "string", "value": selectedAccount},
+			"AZURE_AI_PROJECT_ID":                  map[string]any{"type": "string", "value": offlineProjectID},
+			"FOUNDRY_PROJECT_ENDPOINT":             map[string]any{"type": "string", "value": offlineProjectEndpoint},
+			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"type": "string", "value": ""},
+		},
+	}
+}
+
+func TestBYOPreflightSelectedAccountUnresolvedHosting(t *testing.T) {
+	const (
+		clusterB         = offlineClusterGroupID + "/providers/Microsoft.ContainerService/managedClusters/aks-b"
+		kubeletB         = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+		unresolvedConfig = "[reference(resourceId('Microsoft.CognitiveServices/accounts', 'runtime-source'), " +
+			"'2026-07-15-preview').agentHostingConfigurations]"
+		explicitRoleID = "/subscriptions/sub-b/providers/Microsoft.Authorization/roleDefinitions/" +
+			"7e559ce2-48d7-4b27-9128-fa1b247f1308"
+	)
+
+	for _, preview := range []bool{false, true} {
+		t.Run(fmt.Sprintf("blocksRequiredBindingsBeforeWrites/preview=%t", preview), func(t *testing.T) {
+			for _, tc := range []struct {
+				name, wantErr string
+				mask          int
+				params        map[string]any
+			}{
+				{
+					name: "acrAutoKubelet", mask: 7, wantErr: "kubelet principal object ID from preflight",
+					params: map[string]any{
+						"includeAcr":     map[string]any{"value": true},
+						"monitoringMode": map[string]any{"value": "none"},
+					},
+				},
+				{
+					name: "acrExplicitKubelet", mask: 7, wantErr: "kubelet principal object ID from preflight",
+					params: map[string]any{
+						"includeAcr":      map[string]any{"value": true},
+						"kubeletObjectId": map[string]any{"value": kubeletB},
+						"monitoringMode":  map[string]any{"value": "none"},
+					},
+				},
+				{
+					name: "suppliedIdentityBinding", mask: 2,
+					wantErr: "hostingManagementIdentityResourceId deployment binding requires matching resource ID",
+					params: map[string]any{
+						"agentHosting": map[string]any{"value": map[string]any{
+							"enabled": true, "clusterResourceId": offlineClusterID,
+							"hostingManagementIdentityResourceId": suppliedHostingID,
+						}},
+						"includeAcr": map[string]any{"value": false}, "monitoringMode": map[string]any{"value": "none"},
+					},
+				},
+				{
+					name: "unprovenFederationRoleBinding", mask: 0,
+					wantErr: "federatedIdentityRoleDefinitionId deployment binding " +
+						"requires a resolved workload identity scope",
+					params: map[string]any{
+						"includeAcr": map[string]any{"value": false}, "monitoringMode": map[string]any{"value": "none"},
+					},
+				},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					t.Setenv(synthesis.ACRReuseEnvVar, "true")
+					p, fake, _ := suppliedProvider(t, tc.mask)
+					env := &resolveEnvStubEnvServer{envName: "test"}
+					p.azdClient = newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+					template := multiAccountBYOTemplate(
+						map[string]any{"agentHostingConfigurations": unresolvedConfig}, nil, "account-b")
+					params := maps.Clone(tc.params)
+					original := maps.Clone(params)
+					p.armTemplate = template
+					p.onDiskSource = &templateSource{mode: templateModeBicep, armTemplate: template, parameters: params}
+					p.acrRequest = func(_ context.Context, method, path string, _ string, _ any) error {
+						t.Errorf("unexpected registry request: %s %s", method, path)
+						return fmt.Errorf("unexpected registry request")
+					}
+
+					var err error
+					if preview {
+						_, err = p.Preview(t.Context(), func(string) {})
+					} else {
+						_, err = p.Deploy(t.Context(), func(string) {})
+					}
+					require.ErrorContains(t, err, tc.wantErr)
+					require.ErrorContains(t, err, "SKIPPED")
+					assert.NotContains(t, err.Error(), offlineKubeletObjectID)
+					for _, forbidden := range []string{
+						offlineClusterID, suppliedStorageID, suppliedHostingID, suppliedWorkloadID,
+						offlineVNetID + "/subnets/nodes",
+						"/subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
+					} {
+						assert.NotContains(t, fake.requests, "GET "+forbidden)
+					}
+					assert.Equal(t, original, p.onDiskSource.parameters)
+					assert.Zero(t, fake.base.writes)
+					assert.Zero(t, fake.base.previews)
+					assert.Empty(t, env.set)
+					assert.Empty(t, env.config)
+				})
+			}
+		})
+
+		t.Run(fmt.Sprintf("preservesSubnetChecksWithoutUnprovenBindings/preview=%t", preview), func(t *testing.T) {
+			for _, supplyExplicitRole := range []bool{false, true} {
+				t.Run(fmt.Sprintf("explicitRole=%t", supplyExplicitRole), func(t *testing.T) {
+					p, fake, _ := suppliedProvider(t, 0)
+					template := multiAccountBYOTemplate(map[string]any{
+						"agentHostingConfigurations": unresolvedConfig,
+						"networkInjections": []any{map[string]any{
+							"scenario": "agent", "subnetArmId": offlineVNetID + "/subnets/agents",
+							"useMicrosoftManagedNetwork": false,
+						}},
+					}, nil, "account-b")
+					crossSubWorkload := strings.Replace(suppliedWorkloadID, "/target-sub/", "/identity-sub/", 1)
+					params := map[string]any{
+						"agentHosting": map[string]any{"value": map[string]any{
+							"enabled":                    true,
+							"clusterResourceId":          offlineClusterID,
+							"workloadIdentityResourceId": crossSubWorkload,
+						}},
+						"workloadPrincipalId": map[string]any{"value": suppliedWorkloadPrincipal},
+						"includeAcr":          map[string]any{"value": false},
+						"monitoringMode":      map[string]any{"value": "none"},
+					}
+					if supplyExplicitRole {
+						params["federatedIdentityRoleDefinitionId"] = map[string]any{"value": explicitRoleID}
+					} else {
+						delete(template["parameters"].(map[string]any), "federatedIdentityRoleDefinitionId")
+					}
+					p.armTemplate = template
+					p.onDiskSource = &templateSource{mode: templateModeBicep, armTemplate: template, parameters: params}
+
+					var err error
+					if preview {
+						_, err = p.Preview(t.Context(), func(string) {})
+						require.NoError(t, err)
+						assert.Equal(t, 1, fake.base.previews)
+					} else {
+						_, err = p.Deploy(t.Context(), func(string) {})
+						require.NoError(t, err)
+						assert.Equal(t, 1, fake.base.writes)
+					}
+					assert.Contains(t, fake.requests, "GET "+offlineVNetID+"/subnets/agents")
+					assert.NotContains(t, fake.requests, "GET "+offlineClusterID)
+					assert.NotContains(t, fake.requests, "GET "+offlineVNetID+"/subnets/nodes")
+					for _, sub := range []string{"target-sub", "identity-sub"} {
+						assert.NotContains(t, fake.reads,
+							"/subscriptions/"+sub+"/providers/Microsoft.Authorization/roleDefinitions")
+					}
+					assert.Contains(t, p.preflightReport.String(), "agent-subnet PASS ["+offlineVNetID+"/subnets/agents]")
+					assert.Contains(t, p.preflightReport.String(),
+						"agent-subnet SKIPPED ["+offlineVNetID+"/subnets/agents]")
+					assert.Contains(t, p.preflightReport.String(), "role-assignment-keys SKIPPED")
+					if supplyExplicitRole {
+						assert.Equal(t, map[string]any{"value": explicitRoleID},
+							fake.base.parameters["federatedIdentityRoleDefinitionId"])
+					} else {
+						assert.NotContains(t, fake.base.parameters, "federatedIdentityRoleDefinitionId")
+					}
+				})
+			}
+		})
+
+		t.Run(fmt.Sprintf("conditionalAccountDoesNotElevateSuppliedIdentityGate/preview=%t", preview), func(t *testing.T) {
+			p, fake, _ := suppliedProvider(t, 0)
+			accountB := map[string]any{
+				"condition": "[reference(resourceId(" +
+					"'Microsoft.Resources/deployments', 'runtime-cond'), '2025-04-01').outputs.enabled.value]",
+				"type":       "Microsoft.CognitiveServices/accounts",
+				"apiVersion": "2026-07-15-preview",
+				"name":       "account-b",
+				"properties": map[string]any{
+					"agentHostingConfigurations": []any{map[string]any{
+						"hostingType": "ManagedCluster", "clusterResourceId": clusterB,
+						"storageAccountResourceId":            suppliedStorageID,
+						"hostingManagementIdentityResourceId": suppliedHostingID,
+						"workloadIdentityResourceId":          suppliedWorkloadID,
+					}},
+				},
+			}
+			template := multiAccountBYOTemplate(nil, map[string]any{"accountB": accountB}, "account-b")
+			p.armTemplate = template
+			p.onDiskSource = &templateSource{
+				mode: templateModeBicep, armTemplate: template,
+				parameters: map[string]any{
+					"federatedIdentityRoleDefinitionId": map[string]any{"value": explicitRoleID},
+					"includeAcr":                        map[string]any{"value": false},
+					"monitoringMode":                    map[string]any{"value": "none"},
+				},
+			}
+			var err error
+			if preview {
+				_, err = p.Preview(t.Context(), func(string) {})
+				require.NoError(t, err)
+				assert.Equal(t, 1, fake.base.previews)
+			} else {
+				_, err = p.Deploy(t.Context(), func(string) {})
+				require.NoError(t, err)
+				assert.Equal(t, 1, fake.base.writes)
+			}
+			for _, forbidden := range []string{clusterB, suppliedStorageID, suppliedHostingID, suppliedWorkloadID} {
+				assert.NotContains(t, fake.requests, "GET "+forbidden)
+			}
+			assert.NotContains(t, fake.base.parameters, "hostingPrincipalId")
+			assert.NotContains(t, fake.base.parameters, "workloadPrincipalId")
+		})
+
+		t.Run(fmt.Sprintf("resolvedSelectedAccountUsesTargetClusterAndRoleScope/preview=%t", preview), func(t *testing.T) {
+			p, fake, _ := suppliedProvider(t, 0)
+			fake.base.clusterID = clusterB
+			fake.base.kubeletID = kubeletB
+			fake.base.nodeSubnetID = offlineVNetID + "/subnets/pe"
+			const (
+				storageB = suppliedGroupID + "/providers/Microsoft.Storage/storageAccounts/storeb"
+				hostingB = suppliedGroupID + "/providers/Microsoft.ManagedIdentity/userAssignedIdentities/host-b"
+			)
+			runtimeWorkload := "[resourceId('sub-b', 'rg-b', " +
+				"'Microsoft.ManagedIdentity/userAssignedIdentities', " +
+				"reference(resourceId('Microsoft.Resources/deployments', 'runtime-id'), '2025-04-01').outputs.name.value)]"
+			// Use a partial-ID runtime workload name in sub-b so workload scope is proven without an identity GET.
+			template := multiAccountBYOTemplate(map[string]any{
+				"agentHostingConfigurations": []any{map[string]any{
+					"hostingType": "ManagedCluster", "clusterResourceId": clusterB,
+					"storageAccountResourceId": storageB, "hostingManagementIdentityResourceId": hostingB,
+					"workloadIdentityResourceId": runtimeWorkload,
+				}},
+				"networkInjections": []any{map[string]any{
+					"scenario": "agent", "subnetArmId": offlineVNetID + "/subnets/agents",
+					"useMicrosoftManagedNetwork": false,
+				}},
+			}, map[string]any{
+				"storageB": map[string]any{"type": "Microsoft.Storage/storageAccounts", "name": "storeb"},
+				"hostingB": map[string]any{"type": "Microsoft.ManagedIdentity/userAssignedIdentities", "name": "host-b"},
+			}, "account-b")
+			p.armTemplate = template
+			p.onDiskSource = &templateSource{
+				mode: templateModeBicep, armTemplate: template,
+				parameters: map[string]any{
+					"includeAcr": map[string]any{"value": true}, "monitoringMode": map[string]any{"value": "none"},
+				},
+			}
+
+			var err error
+			if preview {
+				_, err = p.Preview(t.Context(), func(string) {})
+				require.NoError(t, err)
+				assert.Equal(t, 1, fake.base.previews)
+			} else {
+				_, err = p.Deploy(t.Context(), func(string) {})
+				require.NoError(t, err)
+				assert.Equal(t, 1, fake.base.writes)
+			}
+			assert.Contains(t, fake.requests, "GET "+clusterB)
+			assert.Contains(t, fake.requests, "GET "+offlineVNetID+"/subnets/agents")
+			assert.NotContains(t, fake.requests, "GET "+offlineClusterID)
+			assert.NotContains(t, fake.requests, "GET "+offlineVNetID+"/subnets/nodes")
+			assert.Equal(t, map[string]any{"value": kubeletB}, fake.base.parameters["kubeletObjectId"])
+			assert.Equal(t, map[string]any{"value": "/subscriptions/sub-b/providers/Microsoft.Authorization/" +
+				"roleDefinitions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
+				fake.base.parameters["federatedIdentityRoleDefinitionId"])
+		})
+	}
+}

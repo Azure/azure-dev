@@ -146,7 +146,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		return err
 	}
 	evidence := onboarding.NewAuthorizationEvidence(p.credential, p.armClientOptions)
-	plan, err := p.identifyBYOTemplatePlan(ctx, source, evidence)
+	plan, accountHostingProven, singleAccountHosting, err := p.identifyBYOPlan(ctx, source, evidence)
 	if err != nil {
 		return err
 	}
@@ -183,15 +183,6 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 				explicitKubeletID, facts.KubeletObjectID, plan.Cluster.ID),
 			"remove kubeletObjectId to resolve it automatically, or set it to the selected AKS cluster's actual kubelet ID")
 	}
-	workloadScope := plan.Workload.ID
-	if workloadScope == "" {
-		workloadScope = plan.Workload.Parent
-	}
-	if resolveFederationRole && workloadScope != "" {
-		if scope, err := arm.ParseResourceID(workloadScope); err == nil && scope.SubscriptionID != "" {
-			roleSubscription = scope.SubscriptionID
-		}
-	}
 	identities[0].fact, identities[1].fact = facts.HostingIdentity, facts.WorkloadIdentity
 	resolvedBindings := map[string]any{"kubeletObjectId": facts.KubeletObjectID}
 	for i := range identities {
@@ -210,6 +201,17 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	}
 	federationRoleID, _ := byoParameterValue(source, "federatedIdentityRoleDefinitionId").(string)
 	if resolveFederationRole {
+		workloadScope := plan.Workload.ID
+		if workloadScope == "" {
+			workloadScope = plan.Workload.Parent
+		}
+		if scope, err := arm.ParseResourceID(workloadScope); accountHostingProven && workloadScope != "" &&
+			err == nil && scope.SubscriptionID != "" {
+			roleSubscription = scope.SubscriptionID
+		} else if !singleAccountHosting {
+			return fmt.Errorf("federatedIdentityRoleDefinitionId deployment binding " +
+				"requires a resolved workload identity scope from preflight")
+		}
 		var err error
 		federationRoleID, err = resolveBYOFederationRoleID(ctx, roleSubscription, evidence)
 		if err != nil {

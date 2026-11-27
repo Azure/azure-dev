@@ -5,13 +5,19 @@ package provisioning
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/synthesis"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -352,6 +358,52 @@ func TestBYOSuppliedIdentityRequiresRealPrincipalBinding(t *testing.T) {
 		require.Error(t, err)
 		assert.Zero(t, fake.base.writes)
 		assert.Zero(t, fake.base.previews)
+	}
+}
+
+func TestBYORejectsSynthesizedHostingWhenOnDiskTemplateLacksAgentHosting(t *testing.T) {
+	for _, preview := range []bool{false, true} {
+		t.Run(fmt.Sprintf("preview=%t", preview), func(t *testing.T) {
+			p, fake := offlineBYOProvider(t)
+			t.Setenv(synthesis.BYOAKSEnvVar, "false")
+			env := &resolveEnvStubEnvServer{envName: "test"}
+			p.azdClient = newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+			p.credential = nil
+			p.acrPromptedEnv = map[string]string{envKeySubscriptionID: p.subID, envKeyLocation: p.location}
+
+			infraDir := filepath.Join(p.projectPath, onDiskInfraDir)
+			require.NoError(t, os.MkdirAll(infraDir, 0o750))
+			file := onDiskBicepFile
+			if preview {
+				file = onDiskBicepParamFile
+			}
+			expectedPath := filepath.Join(infraDir, file)
+			require.NoError(t, os.WriteFile(expectedPath, []byte("// non-AKS\n"), 0o600))
+			p.bicepCliInstance = &stubCompiler{
+				buildResult: bicep.BuildResult{Compiled: minimalARMTemplate()},
+				buildParamResult: bicep.BuildResult{
+					Compiled: fmt.Sprintf(
+						`{"templateJson":%q,"parametersJson":"{\"parameters\":{}}"}`, minimalARMTemplate(),
+					),
+				},
+			}
+
+			var err error
+			if preview {
+				_, err = p.Preview(t.Context(), func(string) {})
+			} else {
+				_, err = p.Deploy(t.Context(), func(string) {})
+			}
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected *azdext.LocalError, got %T: %v", err, err)
+			assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+			assert.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+			assert.Contains(t, localErr.Message, expectedPath)
+			assert.Contains(t, localErr.Suggestion, "regenerate or update")
+			assert.Nil(t, p.credential)
+			assert.Empty(t, fake.requests)
+			assert.Empty(t, env.set)
+		})
 	}
 }
 

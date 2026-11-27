@@ -387,7 +387,7 @@ Embedded provisioning and Bicep eject are supported through `microsoft.foundry`;
 
 Bicep eject includes AKS parameters, preview account resources and `byo-*` modules only when `agentHosting` is configured; enabling the preview switch alone does not include them. Projects without AKS retain the standard networking, monitoring and registry modules. The shared `synthesis/templates/main.bicep.tmpl`, `modules/resources.bicep.tmpl` and `modules/acr.bicep.tmpl` sources render both modes. After editing them, run `go generate` from `synthesis/` with Bicep on PATH to regenerate the full embedded provisioning graph.
 
-For a non-AKS Bicep export, adding `agentHosting` to `azure.yaml` later does not enable AKS: the on-disk template does not declare that parameter, so the provider drops the synthesized value. Regenerate or update the exported Foundry Bicep graph with AKS support first, preserving any custom edits. Hosting overrides in on-disk parameter files likewise require a template that declares `agentHosting`.
+For a non-AKS Bicep export, adding `agentHosting` to `azure.yaml` later is rejected unless the on-disk template declares `agentHosting`. Regenerate or update the exported Foundry Bicep graph with AKS support first, preserving any custom edits. Hosting overrides in on-disk parameter files likewise require a template that declares `agentHosting`.
 
 BYO AKS uses the standard Foundry resource-group creation/update behavior. The deployment applies the configured location and tags; an existing target resource group's location must match the deployment location.
 

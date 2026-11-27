@@ -987,7 +987,9 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 			SelectedIndex:   defaultIndex,
 		})
 
+		endInteraction := input.BeginInteraction()
 		userSelectedIndex, err := resourceSelector.Ask(ctx)
+		endInteraction()
 		if err != nil {
 			return nil, err
 		}

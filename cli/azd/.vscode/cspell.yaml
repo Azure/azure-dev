@@ -181,6 +181,10 @@ overrides:
   - filename: pkg/output/colors.go
     words:
       - termenv
+  - filename: internal/cmd/deploy_progress.go
+    words:
+      - rivo
+      - uniseg
   - filename: "{pkg/containerregistry/remote_build.go,pkg/project/container_helper.go,test/recording/sanitize.go}"
     words:
       - armcontainerregistrytasks

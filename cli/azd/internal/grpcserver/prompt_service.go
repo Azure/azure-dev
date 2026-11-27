@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -713,28 +714,27 @@ func (s *promptService) PromptAiModel(
 		if err := loadModels(ctx, nil); err != nil {
 			return nil, err
 		}
-	} else {
-		spinner := ux.NewSpinner(&ux.SpinnerOptions{
-			Writer: s.promptWriter,
-			Text:   "Loading AI model catalog...",
-		})
-
-		if err := spinner.Run(ctx, func(ctx context.Context) error {
-			return loadModels(ctx, spinner.UpdateText)
-		}); err != nil {
-			return nil, err
-		}
-	}
-
-	if s.globalOptions.NoPrompt {
 		return selectModelNoPrompt(models, req.DefaultValue)
 	}
 
+	// Own the terminal before the loading spinner starts so live renderers (such as the
+	// deploy progress table) don't redraw concurrently with the spinner and the picker.
 	release, err := s.acquirePromptLock(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
+
+	spinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Writer: s.promptWriter,
+		Text:   "Loading AI model catalog...",
+	})
+
+	if err := spinner.Run(ctx, func(ctx context.Context) error {
+		return loadModels(ctx, spinner.UpdateText)
+	}); err != nil {
+		return nil, err
+	}
 
 	message := "Select an AI model"
 	if req.SelectOptions != nil && req.SelectOptions.Message != "" {
@@ -1214,6 +1214,13 @@ func (s *promptService) PromptAiModelLocationWithQuota(
 		)
 	}
 
+	// Own the terminal before the loading spinner starts; see PromptAiModel.
+	release, err := s.acquirePromptLock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
 	spinner := ux.NewSpinner(&ux.SpinnerOptions{
 		Writer: s.promptWriter,
 		Text:   fmt.Sprintf("Checking quota availability for %s...", req.ModelName),
@@ -1224,12 +1231,6 @@ func (s *promptService) PromptAiModelLocationWithQuota(
 	}); err != nil {
 		return nil, err
 	}
-
-	release, err := s.acquirePromptLock(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
 
 	message := "Select a location"
 	if req.SelectOptions != nil && req.SelectOptions.Message != "" {
@@ -1492,9 +1493,13 @@ func newPromptLock() *promptLock {
 func (s *promptService) acquirePromptLock(ctx context.Context) (func(), error) {
 	select {
 	case s.lock.ch <- struct{}{}:
-		return func() {
+		// Extension prompts render directly through pkg/ux, so they must also pause live
+		// terminal renderers such as the deploy progress table.
+		endInteraction := input.BeginInteraction()
+		return sync.OnceFunc(func() {
+			endInteraction()
 			<-s.lock.ch
-		}, nil
+		}), nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

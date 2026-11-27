@@ -289,6 +289,12 @@ func (h *HooksRunner) execHook(
 		hookConfig.Name, scriptPath,
 	)
 
+	// Interactive hooks own the terminal (stdin/stdout), so pause live terminal renderers
+	// such as the deploy progress table while they run. Renderers resume only after any
+	// error diagnostics below are printed, so redraws don't overwrite them.
+	if execCtx.Interactive != nil && *execCtx.Interactive {
+		defer input.BeginInteraction()()
+	}
 	res, err := executor.Execute(ctx, scriptPath, execCtx)
 	if err != nil {
 		execErr := h.handleHookError(

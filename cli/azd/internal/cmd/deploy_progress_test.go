@@ -6,11 +6,14 @@ package cmd
 import (
 	"bytes"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
 func TestDeployProgressTracker_NonInteractive(t *testing.T) {
@@ -170,6 +173,180 @@ func TestDeployProgressTracker_StartTicker(t *testing.T) {
 	output := buf.String()
 	assert.Contains(t, output, "web")
 	assert.Contains(t, output, "Service")
+}
+
+func TestDeployProgressTracker_PauseErasesTableAndSuppressesRender(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := newDeployProgressTracker(&buf, true, []string{"web"})
+	tracker.termWidth = func() int { return 120 }
+
+	tracker.Render()
+	buf.Reset()
+
+	tracker.PauseRendering()
+	// Header + divider + one service row.
+	assert.Equal(t, "\033[3A\033[J", buf.String(), "pause must erase the rendered table")
+
+	buf.Reset()
+	tracker.Update("web", phaseDeploying, "")
+	tracker.Render()
+	assert.Empty(t, buf.String(), "no output while paused")
+
+	tracker.ResumeRendering()
+	output := buf.String()
+	// Resume starts on a new row so output that ends mid-line or with "\r" is kept.
+	assert.True(t, strings.HasPrefix(output, "\r\n"), "resume must start on a new row")
+	assert.Contains(t, output, "Deploying")
+	assert.NotContains(t, output, "\033[3A", "resume must draw below the prompt, not over it")
+}
+
+func TestDeployProgressTracker_PauseErasesWrappedRows(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := newDeployProgressTracker(&buf, true, []string{"web"})
+	// On a 20-column terminal the 41-column header and 55-column divider wrap onto 3 rows
+	// each and the 37-column service row onto 2 rows.
+	tracker.termWidth = func() int { return 20 }
+
+	tracker.Render()
+	buf.Reset()
+
+	tracker.PauseRendering()
+	assert.Equal(t, "\033[8A\033[J", buf.String(), "pause must erase every wrapped row")
+}
+
+func TestDeployProgressTracker_PadsExactWidthRows(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := newDeployProgressTracker(&buf, true, []string{"web"})
+	// The 55-column divider ends exactly at the right edge. It is padded so it wraps onto a
+	// second row on every console, whether the console wraps immediately or defers the wrap.
+	tracker.termWidth = func() int { return 55 }
+
+	tracker.Render()
+	assert.Contains(t, buf.String(), "─ \n", "exact-width rows must be padded")
+	buf.Reset()
+
+	tracker.PauseRendering()
+	assert.Equal(t, "\033[4A\033[J", buf.String())
+}
+
+func TestDeployProgressTracker_RedrawClearsWrappedRows(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := newDeployProgressTracker(&buf, true, []string{"web"})
+	tracker.termWidth = func() int { return 20 }
+
+	tracker.Update("web", phaseDeploying, strings.Repeat("x", 30))
+	tracker.Render()
+	buf.Reset()
+
+	tracker.Update("web", phaseDeploying, "")
+	tracker.Render()
+	// The previous render took 10 rows (3 + 3 + 4); the whole region is erased before redrawing
+	// so characters left on wrapped rows don't linger.
+	assert.True(t, strings.HasPrefix(buf.String(), "\033[10A\033[J"), "redraw must erase the previous table")
+}
+
+func TestDeployProgressTracker_TabsCountedAsSpaces(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := newDeployProgressTracker(&buf, true, []string{"a\tb"})
+	tracker.termWidth = func() int { return 120 }
+
+	tracker.Render()
+	assert.NotContains(t, buf.String(), "\t", "tabs must be written as spaces")
+}
+
+func TestDeployProgressTracker_RecountsRowsAfterResize(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := newDeployProgressTracker(&buf, true, []string{"web"})
+	width := 20
+	tracker.termWidth = func() int { return width }
+
+	tracker.Render() // 8 rows at 20 columns
+	buf.Reset()
+
+	// After widening, reflowing terminals show the table on 3 rows.
+	width = 120
+	tracker.PauseRendering()
+	assert.Equal(t, "\033[3A\033[J", buf.String(), "pause must erase only the reflowed rows")
+}
+
+func TestDeployProgressTracker_MultilineDetail(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := newDeployProgressTracker(&buf, true, []string{"web"})
+	tracker.termWidth = func() int { return 120 }
+
+	tracker.Update("web", phaseDeploying, "first\nsecond")
+	tracker.Render()
+	assert.Contains(t, buf.String(), "first second", "detail must render on one line")
+	buf.Reset()
+
+	tracker.PauseRendering()
+	assert.Equal(t, "\033[3A\033[J", buf.String())
+}
+
+func TestPhysicalRows(t *testing.T) {
+	tests := []struct {
+		name  string
+		line  string
+		width int
+		want  int
+	}{
+		{"Empty", "", 20, 1},
+		{"FitsExactly", strings.Repeat("a", 20), 20, 1},
+		{"Wraps", strings.Repeat("a", 21), 20, 2},
+		{"IgnoresAnsi", "\033[2K" + strings.Repeat("a", 20), 20, 1},
+		// The wide glyph doesn't fit in the last column, so it wraps early: 19 + (2+18) + 1.
+		{"WideGlyphWrapsEarly", strings.Repeat("a", 19) + "界" + strings.Repeat("a", 19), 20, 3},
+		{"UnknownWidth", strings.Repeat("a", 50), 0, 1},
+		{"LineBreaks", "first\nsecond", 20, 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, physicalRows(tt.line, tt.width))
+		})
+	}
+}
+
+// Regression test for https://github.com/Azure/azure-dev/issues/10252: an interactive
+// prompt displayed while the ticker runs must not be overwritten by periodic redraws.
+func TestDeployProgressTracker_StartTicker_PausedDuringInteraction(t *testing.T) {
+	w := &lockedBuffer{}
+	tracker := newDeployProgressTracker(w, true, []string{"web"})
+	stop := tracker.StartTicker(t.Context())
+	defer stop()
+
+	endInteraction := input.BeginInteraction()
+	_, _ = w.Write([]byte("? Select a deployment target\n"))
+	promptEnd := w.Len()
+
+	// Wait for at least one tick while the prompt is active.
+	time.Sleep(1500 * time.Millisecond)
+	assert.Equal(t, promptEnd, w.Len(), "tracker must not write while a prompt is active")
+
+	endInteraction()
+	assert.Contains(t, w.String()[promptEnd:], "web", "tracker must redraw after the prompt completes")
+}
+
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) Len() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Len()
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func TestDeployProgressTracker_StartTicker_NonInteractive(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -65,6 +66,40 @@ func TestPromptServiceSelectUsesInjectedWriterOverSDK(t *testing.T) {
 	assert.Contains(t, stderr.String(), "Select the Foundry Project service")
 	assert.Contains(t, stderr.String(), "First Project")
 	assert.Contains(t, stderr.String(), "Second Project")
+}
+
+type pauseTrackingRenderer struct {
+	paused atomic.Bool
+}
+
+func (r *pauseTrackingRenderer) PauseRendering()  { r.paused.Store(true) }
+func (r *pauseTrackingRenderer) ResumeRendering() { r.paused.Store(false) }
+
+// Extension prompts render through pkg/ux directly and must pause live terminal renderers
+// (such as the deploy progress table) so they are not overwritten. See #10252.
+func TestPromptServicePausesTerminalRenderersWhilePrompting(t *testing.T) {
+	renderer := &pauseTrackingRenderer{}
+	unregister := input.RegisterTerminalRenderer(renderer)
+	defer unregister()
+
+	service := NewPromptService(nil, nil, nil, &internal.GlobalCommandOptions{}, io.Discard)
+	implementation, ok := service.(*promptService)
+	require.True(t, ok)
+	var pausedDuringPrompt bool
+	implementation.askSelect = func(context.Context, *ux.SelectOptions) (*int, error) {
+		pausedDuringPrompt = renderer.paused.Load()
+		return new(0), nil
+	}
+
+	_, err := service.Select(t.Context(), &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message: "Pick",
+			Choices: []*azdext.SelectChoice{{Value: "a", Label: "A"}},
+		},
+	})
+	require.NoError(t, err)
+	assert.True(t, pausedDuringPrompt, "renderer must be paused while the prompt is displayed")
+	assert.False(t, renderer.paused.Load(), "renderer must resume after the prompt completes")
 }
 
 func Test_PromptService_Confirm_NoPromptWithDefault(t *testing.T) {

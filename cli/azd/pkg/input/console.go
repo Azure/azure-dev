@@ -142,7 +142,7 @@ type Console interface {
 	GetWriter() io.Writer
 	// Gets the standard input, output and error stream
 	Handles() ConsoleHandles
-	// Executes an interactive action, managing spinner state
+	// Executes an interactive action, pausing the spinner and any registered TerminalRenderer
 	DoInteraction(action func() error) error
 	ConsoleShim
 }
@@ -1302,6 +1302,10 @@ func GetStepResultFormat(result error) SpinnerUxType {
 
 // Handle doing interactive calls. It checks if there's a spinner running to pause it before doing interactive actions.
 func (c *AskerConsole) doInteraction(promptFn func(c *AskerConsole) error) error {
+	// Pause live terminal renderers (e.g. the deploy progress table) so they don't overwrite the prompt.
+	endInteraction := BeginInteraction()
+	defer endInteraction()
+
 	if c.spinner.Status() == yacspin.SpinnerRunning {
 		_ = c.spinner.Pause()
 
@@ -1324,6 +1328,9 @@ func (c *AskerConsole) doInteraction(promptFn func(c *AskerConsole) error) error
 }
 
 func (c *AskerConsole) DoInteraction(action func() error) error {
+	endInteraction := BeginInteraction()
+	defer endInteraction()
+
 	if c.spinner.Status() == yacspin.SpinnerRunning {
 		_ = c.spinner.Pause()
 

@@ -73,6 +73,7 @@ require (
 	github.com/nathan-fiscaletti/consolesize-go v0.0.0-20260406063853-3bac975de715
 	github.com/otiai10/copy v1.14.1
 	github.com/psanford/memfs v0.0.0-20241019191636-4ef911798f9b
+	github.com/rivo/uniseg v0.4.7
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/sergi/go-diff v1.4.0
 	github.com/sethvargo/go-retry v0.5.0
@@ -152,7 +153,6 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.28 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/spf13/cast v1.10.0 // indirect

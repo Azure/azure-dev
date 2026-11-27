@@ -281,6 +281,16 @@ func TestBYOPlanAccountSelectionAndHostingResolution(t *testing.T) {
 			wantSub: "sub-a", wantClusterMissing: "unknownEntry", wantSubnetMissing: "dyn",
 		},
 		{
+			name: "property-level copy on agentHostingConfigurations is treated as unresolved rather than non-hosting",
+			resources: map[string]any{"modA": mod("mod-a", "sub-a", "rg-a", map[string]any{
+				"accountA": byo("account-a", cfgA),
+				"accountB": acct("account-b", map[string]any{"copy": []any{map[string]any{
+					"name": "agentHostingConfigurations", "count": "[parameters('cfgCount')]", "input": cfgB,
+				}}}),
+			}, nil)},
+			wantSub: "sub-a", wantClusterMissing: "property copy loop", wantSubnetMissing: "property copy loop",
+		},
+		{
 			name: "filtered copy loop above limit or unknown count prevents single-account fallback",
 			resources: map[string]any{
 				"modA": mod("mod-a", "sub-a", "rg-a", map[string]any{"accountA": byo("account-a", cfgA)}, nil),

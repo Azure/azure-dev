@@ -37,6 +37,31 @@ func planObjectField(object map[string]any, key string) (any, bool) {
 	return nil, false
 }
 
+func hasUnexpandedHostingCopy(properties map[string]any) bool {
+	rawCopy, hasCopy := planObjectField(properties, "copy")
+	if !hasCopy || rawCopy == nil {
+		return false
+	}
+	copies, ok := rawCopy.([]any)
+	if !ok {
+		return true
+	}
+	return slices.ContainsFunc(copies, func(item any) bool {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			return true
+		}
+		nameField, _ := planObjectField(entry, "name")
+		name, nameMissing := planString(nameField)
+		if nameMissing == "" && !strings.EqualFold(name, "agentHostingConfigurations") {
+			return false
+		}
+		countField, hasCount := planObjectField(entry, "count")
+		num, isNum := countField.(float64)
+		return !hasCount || !isNum || num > 0
+	})
+}
+
 func (c *accountCandidate) evaluateName() {
 	if c.nameEvaluated {
 		return
@@ -75,6 +100,11 @@ func (c *accountCandidate) evaluateHosting() {
 	}
 	configs, hasConfigs := planObjectField(object, "agentHostingConfigurations")
 	if !hasConfigs || configs == nil {
+		if hasUnexpandedHostingCopy(object) {
+			c.addUnresolved(node.path +
+				"/properties.copy: property copy loop for agentHostingConfigurations is not locally expanded")
+			return
+		}
 		c.nonHosting = true
 		return
 	}

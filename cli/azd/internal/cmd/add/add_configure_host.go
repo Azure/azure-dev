@@ -22,6 +22,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+	"github.com/blang/semver/v4"
 )
 
 // LanguageMap is a map of supported languages.
@@ -31,14 +33,16 @@ var LanguageMap = map[appdetect.Language]project.ServiceLanguageKind{
 	appdetect.JavaScript: project.ServiceLanguageJavaScript,
 	appdetect.TypeScript: project.ServiceLanguageTypeScript,
 	appdetect.Python:     project.ServiceLanguagePython,
+	appdetect.Go:         project.ServiceLanguageGo,
 }
 
 var HostMap = map[project.ResourceType]project.ServiceTargetKind{
 	project.ResourceTypeHostAppService:   project.AppServiceTarget,
 	project.ResourceTypeHostContainerApp: project.ContainerAppTarget,
+	project.ResourceTypeHostFunctionApp:  project.AzureFunctionTarget,
 }
 
-// TODO: Dynamic support for versions using /providers/Microsoft.Web/webAppStacks API
+// TODO: Resolve runtime versions using /providers/Microsoft.Web/webAppStacks instead of static defaults.
 var ServiceLanguageMap = map[project.ServiceLanguageKind]project.AppServiceRuntime{
 	project.ServiceLanguagePython: {
 		Stack:   project.AppServiceRuntimeStackPython,
@@ -54,6 +58,17 @@ var ServiceLanguageMap = map[project.ServiceLanguageKind]project.AppServiceRunti
 	},
 }
 
+// App Service and Functions support different runtime versions and formats, so their defaults cannot share one map.
+// The .NET version is evaluated from the project instead of using a static default.
+var functionRuntimeByLanguage = map[project.ServiceLanguageKind]project.FunctionAppRuntime{
+	project.ServiceLanguagePython:     {Stack: "python", Version: "3.12"},
+	project.ServiceLanguageJavaScript: {Stack: "node", Version: "22"},
+	project.ServiceLanguageTypeScript: {Stack: "node", Version: "22"},
+	project.ServiceLanguageDotNet:     {Stack: "dotnet-isolated"},
+	project.ServiceLanguageJava:       {Stack: "java", Version: "21"},
+	project.ServiceLanguageGo:         {Stack: "go", Version: "1.0"},
+}
+
 func (a *AddAction) configureHost(
 	console input.Console,
 	ctx context.Context,
@@ -64,7 +79,7 @@ func (a *AddAction) configureHost(
 		return nil, nil, fmt.Errorf("unsupported host type: %s", hostType)
 	}
 
-	prj, err := a.promptCodeProject(ctx)
+	prj, err := a.promptCodeProject(ctx, hostType)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -78,7 +93,8 @@ func (a *AddAction) configureHost(
 		ctx,
 		console,
 		svcSpec,
-		*prj)
+		*prj,
+		a.dotnetCli)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -87,7 +103,10 @@ func (a *AddAction) configureHost(
 }
 
 // promptCodeProject prompts the user to add a code project.
-func (a *AddAction) promptCodeProject(ctx context.Context) (*appdetect.Project, error) {
+func (a *AddAction) promptCodeProject(
+	ctx context.Context,
+	hostTypes ...project.ResourceType,
+) (*appdetect.Project, error) {
 	path, err := promptDir(ctx, a.console, "Where is your app code project located?")
 	if err != nil {
 		return nil, err
@@ -99,6 +118,14 @@ func (a *AddAction) promptCodeProject(ctx context.Context) (*appdetect.Project, 
 	}
 
 	if prj == nil {
+		if len(hostTypes) > 0 && hostTypes[0] == project.ResourceTypeHostFunctionApp {
+			if _, err := os.Stat(filepath.Join(path, "go.mod")); err == nil {
+				return &appdetect.Project{Path: path, Language: appdetect.Go}, nil
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return nil, fmt.Errorf("checking Go project: %w", err)
+			}
+		}
+
 		// fallback, prompt for language
 		a.console.MessageUxItem(ctx, &ux.WarningMessage{Description: "Could not automatically detect language"})
 		languages := slices.SortedFunc(maps.Keys(LanguageMap),
@@ -115,6 +142,10 @@ func (a *AddAction) promptCodeProject(ctx context.Context) (*appdetect.Project, 
 		entries := make([]any, 0, len(languages)+len(frameworks))
 
 		for _, lang := range languages {
+			if lang == appdetect.Go && (len(hostTypes) == 0 ||
+				hostTypes[0] != project.ResourceTypeHostFunctionApp) {
+				continue
+			}
 			selections = append(selections, fmt.Sprintf("%s\t%s", lang.Display(), "[Language]"))
 			entries = append(entries, lang)
 		}
@@ -182,6 +213,12 @@ func (a *AddAction) projectAsService(
 	_, supported := LanguageMap[prj.Language]
 	if !supported {
 		return nil, fmt.Errorf("unsupported language: %s", prj.Language)
+	}
+
+	if kind == project.AzureFunctionTarget {
+		if err := validateFunctionCodeProject(prj); err != nil {
+			return nil, err
+		}
 	}
 
 	svcName := azdcontext.ProjectName(prj.Path)
@@ -259,14 +296,49 @@ func (a *AddAction) projectAsService(
 	return svc, nil
 }
 
+func validateFunctionCodeProject(prj *appdetect.Project) error {
+	if prj.Docker != nil {
+		return fmt.Errorf("container-based Function Apps are not supported by `azd add` with Flex Consumption")
+	}
+	if prj.HasWebUIFramework() {
+		return fmt.Errorf("a web UI project cannot be deployed as a Function App")
+	}
+	if _, ok := functionRuntimeByLanguage[LanguageMap[prj.Language]]; !ok {
+		return fmt.Errorf("unsupported Function App language: %s", prj.Language)
+	}
+	return project.ValidateFunctionProject(prj.Path, LanguageMap[prj.Language])
+}
+
 func addServiceAsResource(
 	ctx context.Context,
 	console input.Console,
 	svc *project.ServiceConfig,
 	prj appdetect.Project,
+	dotnetCli *dotnet.Cli,
 ) (*project.ResourceConfig, error) {
 	resSpec := project.ResourceConfig{
 		Name: svc.Name,
+	}
+	if svc.Host == project.AzureFunctionTarget {
+		runtime, ok := functionRuntimeByLanguage[svc.Language]
+		if !ok {
+			return nil, fmt.Errorf("unsupported Function App language: %s", svc.Language)
+		}
+		if svc.Language.IsDotNet() {
+			frameworkVersion, err := dotnetCli.GetMsBuildProperty(ctx, prj.Path, "TargetFrameworkVersion",
+				"-property:Configuration=Release")
+			if err != nil {
+				return nil, fmt.Errorf("evaluating Function App target framework: %w", err)
+			}
+			version, err := semver.ParseTolerant(strings.TrimPrefix(strings.TrimSpace(frameworkVersion), "v"))
+			if err != nil {
+				return nil, fmt.Errorf("invalid Function App target framework version %q: %w", frameworkVersion, err)
+			}
+			runtime.Version = fmt.Sprintf("%d.%d", version.Major, version.Minor)
+		}
+		resSpec.Type = project.ResourceTypeHostFunctionApp
+		resSpec.Props = project.FunctionAppProps{Runtime: runtime}
+		return &resSpec, nil
 	}
 	if svc.Host != project.ContainerAppTarget && svc.Host != project.AppServiceTarget {
 		return nil, fmt.Errorf("unsupported service target: %s", svc.Host)

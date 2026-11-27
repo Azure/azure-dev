@@ -10,8 +10,24 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
+
+func Test_detectConfirm_add_ExcludesGo(t *testing.T) {
+	console := mockinput.NewMockConsole()
+	stop := fmt.Errorf("stop after checking language options")
+	console.WhenSelect(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(opts input.ConsoleOptions) (any, error) {
+			require.NotContains(t, opts.Options, fmt.Sprintf("%s\t%s", appdetect.Go.Display(), "[Language]"))
+			require.Contains(t, opts.Options, fmt.Sprintf("%s\t%s", appdetect.Java.Display(), "[Language]"))
+			return 0, stop
+		})
+	d := &detectConfirm{console: console}
+	d.Init(nil, t.TempDir())
+	require.ErrorIs(t, d.add(t.Context()), stop)
+}
 
 func Test_detectConfirm_confirm(t *testing.T) {
 	dir := t.TempDir()

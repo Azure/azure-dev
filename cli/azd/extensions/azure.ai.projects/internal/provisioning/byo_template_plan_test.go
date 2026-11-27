@@ -106,7 +106,7 @@ func TestBYOPlanConsumedParameters(t *testing.T) {
 				},
 				"speculativeInactive": map[string]any{
 					"type":  "string",
-					"value": "[if(greater(1, 0), reference('inactiveMod').outputs.x.value, 'ok')]",
+					"value": "[if(greater(0, 1), reference('inactiveMod').outputs.x.value, 'ok')]",
 				},
 				"deadRoot": map[string]any{
 					"condition": "[false()]", "type": "string", "value": "[parameters('workloadPrincipalId')]",
@@ -251,8 +251,7 @@ func TestBYOPlanConsumedParameters(t *testing.T) {
 				mode: templateModeBicep, armTemplate: template, parameters: tt.parameters,
 			}, nil)
 			require.NoError(t, err)
-			assert.NotContains(t, fake.requests,
-				"GET /subscriptions/00000000-0000-0000-0000-000000000099?api-version=2022-12-01")
+			assert.NotContains(t, fake.requests, "GET /subscriptions/00000000-0000-0000-0000-000000000099")
 			assert.Equal(t, hostingID, plan.Hosting.ID)
 			assert.Equal(t, workloadID, plan.Workload.ID)
 			assert.False(t, plan.Hosting.Supplied)

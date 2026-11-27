@@ -34,30 +34,103 @@ type byoHostingParameters struct {
 	WorkloadIdentityResourceID          json.RawMessage `json:"workloadIdentityResourceId"`
 }
 
-func (p *FoundryProvisioningProvider) prepareBYO(
-	ctx context.Context, source *templateSource, progress grpcbroker.ProgressFunc,
-) (prepareErr error) {
-	hosting, err := byoHostingParameter(source)
-	if err != nil {
-		return err
+type byoIdentityBinding struct {
+	field, binding, id string
+	value              json.RawMessage
+	fact               onboarding.Identity
+}
+
+type byoLocalPreparation struct {
+	standardHosting       bool
+	confirmedHosting      bool
+	hostBindings          map[string]any
+	identities            [2]byoIdentityBinding
+	roleSubscription      string
+	resolveFederationRole bool
+	includeAcr            bool
+	explicitKubeletID     string
+}
+
+func existingProjectTemplateACRMode(source *templateSource) string {
+	if raw := parameterValue(source, "acrMode"); raw != nil || templateDeclaresParameter(source, "acrMode") {
+		mode, _ := raw.(string)
+		return mode
 	}
-	if !hosting.Enabled {
+	outputs, _ := source.armTemplate["outputs"].(map[string]any)
+	for key, entry := range outputs {
+		if strings.EqualFold(key, "AZD_FOUNDRY_ACR_MODE") {
+			output, _ := entry.(map[string]any)
+			if mode, ok := output["value"].(string); ok && !strings.HasPrefix(strings.TrimSpace(mode), "[") {
+				return mode
+			}
+		}
+	}
+	return ""
+}
+
+func (p *FoundryProvisioningProvider) rejectFallbackBYORegistry(source *templateSource) error {
+	if p != nil && p.brownfieldEndpoint != "" {
+		mode := existingProjectTemplateACRMode(source)
+		if !strings.EqualFold(mode, "create") && !strings.EqualFold(mode, "reuse-connect") {
+			return nil
+		}
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"existing-project container registry routing with BYO AKS hosting is not supported "+
+				"for acrMode create or reuse-connect",
+			"use an already-connected or omitted registry in existing-project mode, "+
+				"or provision a new Foundry account with agentHosting.enabled=true",
+		)
+	}
+	includeAcr, _ := byoParameterValue(source, "includeAcr").(bool)
+	existingACR, _ := parameterValue(source, "existingAcrResourceId").(string)
+	hasExternal := strings.TrimSpace(existingACR) != "" ||
+		(p != nil && (p.acrPending != nil || (p.acrBinding != nil && p.acrBinding.Mode == "reuse-connect")))
+	if !includeAcr && !hasExternal {
 		return nil
 	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		"Foundry container registry routing with BYO AKS hosting requires agentHosting.enabled=true",
+		"declare and enable the standard agentHosting parameter contract for container registry pull-principal routing",
+	)
+}
+
+func (p *FoundryProvisioningProvider) prepareBYOLocal(
+	source *templateSource,
+) (local *byoLocalPreparation, prepareErr error) {
+	p.byoHostingEnabled = false
 	defer func() { prepareErr = redactBYOPreparationError(prepareErr) }()
-	if include, _ := parameterValue(source, "includeAcr").(bool); include &&
-		!templateDeclaresParameter(source, "acrPullPrincipalId") {
-		return errors.New("the ejected Bicep registry access contract is outdated; " +
-			"re-eject the Foundry Bicep templates for kubelet-only registry access")
+	hosting, err := byoHostingParameter(source)
+	if err != nil {
+		return nil, err
 	}
-	var clusterID string
-	if err := json.Unmarshal(hosting.ClusterResourceID, &clusterID); err != nil {
-		return exterrors.Validation(exterrors.CodeInvalidParameter,
-			"agentHosting.clusterResourceId must be a resource ID string for AKS binding lookups",
-			"supply the complete resource ID of the effective AKS cluster")
+	confirmedCount := 0
+	if !hosting.Enabled {
+		candidateCount, confirmed, planErr := p.localBYOPlan(source)
+		if candidateCount == 0 {
+			return nil, nil
+		}
+		if planErr != nil {
+			return nil, planErr
+		}
+		confirmedCount = confirmed
 	}
-	if _, err := onboarding.ParseID(clusterID, "Microsoft.ContainerService/managedClusters"); err != nil {
-		return err
+	if hosting.Enabled {
+		if include, _ := parameterValue(source, "includeAcr").(bool); include &&
+			!templateDeclaresParameter(source, "acrPullPrincipalId") {
+			return nil, errors.New("the ejected Bicep registry access contract is outdated; " +
+				"re-eject the Foundry Bicep templates for kubelet-only registry access")
+		}
+		var clusterID string
+		if err := json.Unmarshal(hosting.ClusterResourceID, &clusterID); err != nil {
+			return nil, exterrors.Validation(exterrors.CodeInvalidParameter,
+				"agentHosting.clusterResourceId must be a resource ID string for AKS binding lookups",
+				"supply the complete resource ID of the effective AKS cluster")
+		}
+		if _, err := onboarding.ParseID(clusterID, "Microsoft.ContainerService/managedClusters"); err != nil {
+			return nil, err
+		}
 	}
 	hostBindings := map[string]any{
 		"federatedIdentityRoleDefinitionId": nil,
@@ -78,14 +151,13 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		}
 	}
 	_, resolveFederationRole := hostBindings["federatedIdentityRoleDefinitionId"]
-	identities := []struct {
-		field, binding, id string
-		value              json.RawMessage
-		fact               onboarding.Identity
-	}{
-		{field: "hostingManagementIdentityResourceId", binding: "hostingPrincipalId",
-			value: hosting.HostingManagementIdentityResourceID},
-		{field: "workloadIdentityResourceId", binding: "workloadPrincipalId", value: hosting.WorkloadIdentityResourceID},
+	identities := [2]byoIdentityBinding{
+		{field: "hostingManagementIdentityResourceId", binding: "hostingPrincipalId"},
+		{field: "workloadIdentityResourceId", binding: "workloadPrincipalId"},
+	}
+	if hosting.Enabled {
+		identities[0].value = hosting.HostingManagementIdentityResourceID
+		identities[1].value = hosting.WorkloadIdentityResourceID
 	}
 	roleSubscription := p.subID
 	for i := range identities {
@@ -96,7 +168,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		}
 		if len(identity.value) > 0 {
 			if err := json.Unmarshal(identity.value, &identity.id); err != nil {
-				return exterrors.Validation(exterrors.CodeInvalidParameter,
+				return nil, exterrors.Validation(exterrors.CodeInvalidParameter,
 					fmt.Sprintf("agentHosting.%s must be a resource ID string to resolve deployment bindings",
 						identity.field),
 					"supply a complete managed identity resource ID or provide the required deployment bindings explicitly")
@@ -107,7 +179,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		}
 		id, err := onboarding.ParseID(identity.id, "Microsoft.ManagedIdentity/userAssignedIdentities")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if identity.binding == "workloadPrincipalId" {
 			roleSubscription = id.SubscriptionID
@@ -115,41 +187,111 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	}
 	enabled, err := strconv.ParseBool(os.Getenv(synthesis.BYOAKSEnvVar))
 	if err != nil || !enabled {
-		return exterrors.Compatibility(
+		return nil, exterrors.Compatibility(
 			exterrors.CodeFeatureNotEnabled,
 			fmt.Sprintf("preview feature %q is disabled", synthesis.BYOAKSFeatureID),
 			fmt.Sprintf("enable by setting %s=true in your shell or CI before running azd", synthesis.BYOAKSEnvVar),
 		)
 	}
-	includeAcr, _ := byoParameterValue(source, "includeAcr").(bool)
-	explicitKubeletID := ""
-	if includeAcr {
-		for name, parameter := range source.parameters {
-			if !strings.EqualFold(name, "kubeletObjectId") {
-				continue
-			}
-			if explicitKubeletID != "" {
-				return exterrors.Validation(exterrors.CodeConflictingArguments,
-					"multiple kubeletObjectId deployment parameters differ only by case",
-					"supply kubeletObjectId only once using the template's parameter name")
-			}
-			envelope, ok := parameter.(map[string]any)
-			principal, literal := envelope["value"].(string)
-			if !ok || len(envelope) != 1 || !literal || uuid.Validate(principal) != nil {
-				return exterrors.Validation(exterrors.CodeInvalidParameter,
-					"kubeletObjectId must use a value envelope containing a literal principal object ID GUID",
-					"omit kubeletObjectId to use the selected AKS cluster's actual kubelet identity")
-			}
-			explicitKubeletID = principal
+	confirmedHosting := hosting.Enabled || confirmedCount > 0
+	if !hosting.Enabled && confirmedHosting {
+		if confirmedCount > 1 {
+			return nil, multipleActiveBYOError()
+		}
+		if err := p.rejectFallbackBYORegistry(source); err != nil {
+			return nil, err
 		}
 	}
+	includeAcr, _ := byoParameterValue(source, "includeAcr").(bool)
+	explicitKubeletID := ""
+	if confirmedHosting {
+		var kubeletErr error
+		explicitKubeletID, kubeletErr = validateBYOKubeletParameter(source, includeAcr)
+		if kubeletErr != nil {
+			return nil, kubeletErr
+		}
+	}
+	return &byoLocalPreparation{
+		standardHosting:       hosting.Enabled,
+		confirmedHosting:      confirmedHosting,
+		hostBindings:          hostBindings,
+		identities:            identities,
+		roleSubscription:      roleSubscription,
+		resolveFederationRole: resolveFederationRole,
+		includeAcr:            includeAcr,
+		explicitKubeletID:     explicitKubeletID,
+	}, nil
+}
+
+func validateBYOKubeletParameter(source *templateSource, includeAcr bool) (string, error) {
+	if !includeAcr {
+		return "", nil
+	}
+	explicitKubeletID := ""
+	for name, parameter := range source.parameters {
+		if !strings.EqualFold(name, "kubeletObjectId") {
+			continue
+		}
+		if explicitKubeletID != "" {
+			return "", exterrors.Validation(exterrors.CodeConflictingArguments,
+				"multiple kubeletObjectId deployment parameters differ only by case",
+				"supply kubeletObjectId only once using the template's parameter name")
+		}
+		envelope, ok := parameter.(map[string]any)
+		principal, literal := envelope["value"].(string)
+		if !ok || len(envelope) != 1 || !literal || uuid.Validate(principal) != nil {
+			return "", exterrors.Validation(exterrors.CodeInvalidParameter,
+				"kubeletObjectId must use a value envelope containing a literal principal object ID GUID",
+				"omit kubeletObjectId to use the selected AKS cluster's actual kubelet identity")
+		}
+		explicitKubeletID = principal
+	}
+	return explicitKubeletID, nil
+}
+
+func (p *FoundryProvisioningProvider) prepareBYO(
+	ctx context.Context, source *templateSource, progress grpcbroker.ProgressFunc,
+) error {
+	local, err := p.prepareBYOLocal(source)
+	if err != nil {
+		return err
+	}
+	return p.prepareBYOWithLocal(ctx, source, local, progress)
+}
+
+func (p *FoundryProvisioningProvider) prepareBYOWithLocal(
+	ctx context.Context, source *templateSource, local *byoLocalPreparation, progress grpcbroker.ProgressFunc,
+) (prepareErr error) {
+	if local == nil {
+		return nil
+	}
+	defer func() { prepareErr = redactBYOPreparationError(prepareErr) }()
+	hostBindings := local.hostBindings
+	identities := local.identities
+	roleSubscription := local.roleSubscription
+	resolveFederationRole := local.resolveFederationRole
+	includeAcr := local.includeAcr
+	explicitKubeletID := local.explicitKubeletID
 	if err := p.ensureCredential(ctx); err != nil {
 		return err
 	}
 	evidence := onboarding.NewAuthorizationEvidence(p.credential, p.armClientOptions)
-	plan, err := p.identifyBYOTemplatePlan(ctx, source, evidence)
+	plan, active, err := p.identifyBYOTemplatePlanWithMode(ctx, source, evidence, !local.standardHosting)
 	if err != nil {
 		return err
+	}
+	if !active {
+		return nil
+	}
+	if !local.confirmedHosting {
+		if err := p.rejectFallbackBYORegistry(source); err != nil {
+			return err
+		}
+		var kubeletErr error
+		explicitKubeletID, kubeletErr = validateBYOKubeletParameter(source, includeAcr)
+		if kubeletErr != nil {
+			return kubeletErr
+		}
 	}
 	// Explicit selectors still need bindings when their effective identities are also ARM deployment targets.
 	for i, resource := range []*onboarding.Resource{&plan.Hosting, &plan.Workload} {
@@ -198,6 +340,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 				explicitKubeletID, facts.KubeletObjectID, plan.Cluster.ID),
 			"remove kubeletObjectId to resolve it automatically, or set it to the selected AKS cluster's actual kubelet ID")
 	}
+	p.byoHostingEnabled = true
 	workloadScope := plan.Workload.ID
 	if workloadScope == "" {
 		workloadScope = plan.Workload.Parent

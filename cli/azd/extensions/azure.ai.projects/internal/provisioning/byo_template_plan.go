@@ -28,6 +28,10 @@ type templatePlanResolver struct {
 	ctx                 context.Context
 	provider            *FoundryProvisioningProvider
 	evidence            *onboarding.AuthorizationEvidence
+	offline             bool
+	fallbackHosting     bool
+	candidateCount      int
+	confirmedCount      int
 	scopes              map[string]planScope
 	functions           map[string]any
 	references          map[*planResource]bool
@@ -58,7 +62,18 @@ func (r *templatePlanResolver) scope(subscription, group string) planScope {
 	scope := planScope{subscriptionID: subscription, group: group}
 	if subscription == "" || strings.ContainsAny(subscription+group, "/\\?#%@:\x00 \t\r\n") {
 		scope.missing = "template deployment subscription/resource-group scope is not resolved"
-		r.err = errors.Join(r.err, fmt.Errorf("resource-plan: actual template subscription/resource-group scope is invalid"))
+		if !r.offline {
+			r.err = errors.Join(r.err,
+				fmt.Errorf("resource-plan: actual template subscription/resource-group scope is invalid"))
+		}
+		return scope
+	}
+	if r.offline {
+		scope.subscriptionARMID = "/subscriptions/" + subscription
+		if group != "" {
+			scope.groupARMID = scope.subscriptionARMID + "/resourceGroups/" + group
+		}
+		r.scopes[key] = scope
 		return scope
 	}
 	subKey := strings.ToLower(subscription + "/")
@@ -119,6 +134,9 @@ func (r *templatePlanResolver) scope(subscription, group string) planScope {
 }
 
 func (r *templatePlanResolver) function(name string, args []string) any {
+	if r.offline {
+		return planUnknown{"local Bicep function evaluation skipped"}
+	}
 	raw, err := json.Marshal(args)
 	if err != nil {
 		r.err = errors.Join(r.err, err)
@@ -186,13 +204,16 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 	for _, entry := range entries {
 		count := 1
 		copyMissing := ""
+		copyName := ""
 		if copy, ok := entry.raw["copy"].(map[string]any); ok {
+			name, _ := copy["name"].(string)
 			value := env.value(copy["count"])
 			number, ok := value.(float64)
 			if !ok || number < 0 || number > 128 || number != float64(int(number)) {
 				copyMissing = "resource copy count cannot be resolved within the local plan limit (128)"
 			} else {
 				count = int(number)
+				copyName = name
 			}
 		}
 		for index := range count {
@@ -202,6 +223,13 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 			}
 			local := *env
 			local.copyIndex = index
+			local.namedCopy = maps.Clone(env.namedCopy)
+			if copyName != "" {
+				if local.namedCopy == nil {
+					local.namedCopy = map[string]int{}
+				}
+				local.namedCopy[strings.ToLower(copyName)] = index
+			}
 			local.variables, local.active = map[string]any{}, map[string]bool{}
 			path := env.path + "/" + entry.symbol
 			if count > 1 {
@@ -519,25 +547,19 @@ func (r *templatePlanResolver) recordOwningSubscription(kind, subscription strin
 	}
 }
 
-func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
-	ctx context.Context, source *templateSource, evidence *onboarding.AuthorizationEvidence,
-) (onboarding.Plan, error) {
-	if evidence == nil {
-		evidence = onboarding.NewAuthorizationEvidence(p.credential, p.armClientOptions)
-	}
-	resolver := &templatePlanResolver{
-		ctx: ctx, provider: p, evidence: evidence, scopes: map[string]planScope{}, functions: map[string]any{},
-		references: map[*planResource]bool{}, owningSubscriptions: map[string]bool{},
+func byoPlanParameters(source *templateSource) (map[string]func() any, error) {
+	if len(source.parameters) == 0 {
+		return nil, nil
 	}
 	encoded, err := json.Marshal(source.parameters)
 	if err != nil {
-		return onboarding.Plan{}, fmt.Errorf("encode actual merged BYO plan parameters: %w", err)
+		return nil, fmt.Errorf("encode actual merged BYO plan parameters: %w", err)
 	}
 	var merged map[string]any
 	if err := json.Unmarshal(encoded, &merged); err != nil {
-		return onboarding.Plan{}, fmt.Errorf("decode actual merged BYO plan parameters: %w", err)
+		return nil, fmt.Errorf("decode actual merged BYO plan parameters: %w", err)
 	}
-	parameters := map[string]func() any{}
+	parameters := make(map[string]func() any, len(merged))
 	for key, envelope := range merged {
 		parameters[strings.ToLower(key)] = func() any {
 			if value, ok := envelope.(map[string]any); ok {
@@ -548,12 +570,68 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 			return planUnknown{"parameter " + key + " requires a runtime parameter reference"}
 		}
 	}
+	return parameters, nil
+}
+
+func (p *FoundryProvisioningProvider) localBYOPlan(source *templateSource) (candidateCount, confirmedCount int, err error) {
+	if source == nil || source.armTemplate == nil {
+		return 0, 0, nil
+	}
+	parameters, err := byoPlanParameters(source)
+	if err != nil {
+		return 0, 0, err
+	}
+	subID, deploymentName := "", ""
+	if p != nil {
+		subID = p.subID
+		deploymentName = p.deploymentName()
+	}
+	resolver := &templatePlanResolver{
+		offline: true, scopes: map[string]planScope{}, functions: map[string]any{},
+		references: map[*planResource]bool{}, owningSubscriptions: map[string]bool{},
+	}
+	scope := resolver.scope(subID, "")
+	env := resolver.environment(source.armTemplate, parameters, scope, "compiled template", deploymentName)
+	resolver.walk(env, "", 0)
+	var plan onboarding.Plan
+	resolver.bindResources(&plan, env)
+	if resolver.candidateCount == 0 {
+		return 0, 0, nil
+	}
+	return resolver.candidateCount, resolver.confirmedCount, resolver.err
+}
+
+func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
+	ctx context.Context, source *templateSource, evidence *onboarding.AuthorizationEvidence,
+) (onboarding.Plan, error) {
+	plan, _, err := p.identifyBYOTemplatePlanWithMode(ctx, source, evidence, false)
+	return plan, err
+}
+
+func (p *FoundryProvisioningProvider) identifyBYOTemplatePlanWithMode(
+	ctx context.Context, source *templateSource, evidence *onboarding.AuthorizationEvidence, fallbackHosting bool,
+) (onboarding.Plan, bool, error) {
+	if evidence == nil {
+		evidence = onboarding.NewAuthorizationEvidence(p.credential, p.armClientOptions)
+	}
+	resolver := &templatePlanResolver{
+		ctx: ctx, provider: p, evidence: evidence, fallbackHosting: fallbackHosting,
+		scopes: map[string]planScope{}, functions: map[string]any{},
+		references: map[*planResource]bool{}, owningSubscriptions: map[string]bool{},
+	}
+	parameters, err := byoPlanParameters(source)
+	if err != nil {
+		return onboarding.Plan{}, false, err
+	}
 	scope := resolver.scope(p.subID, "")
 	env := resolver.environment(source.armTemplate, parameters, scope, "compiled template", p.deploymentName())
 	resolver.walk(env, "", 0)
 	plan := onboarding.Plan{SubscriptionID: p.subID}
 	resolver.owningSubscriptions[strings.ToLower(p.subID)] = true
 	resolver.bindResources(&plan, env)
+	if fallbackHosting && resolver.candidateCount == 0 {
+		return plan, false, resolver.err
+	}
 	_, missing := planString(env.parameter("resourceGroupName"))
 	unresolvedScope := missing != ""
 	if resolver.account != nil {
@@ -573,5 +651,5 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	}
 	resolver.bindNetwork(&plan)
 	plan.OwningSubscriptions = append(plan.OwningSubscriptions, slices.Sorted(maps.Keys(resolver.owningSubscriptions))...)
-	return plan, resolver.err
+	return plan, true, resolver.err
 }

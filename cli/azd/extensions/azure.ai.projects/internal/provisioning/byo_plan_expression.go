@@ -166,6 +166,7 @@ type planEnvironment struct {
 	variables  map[string]any
 	active     map[string]bool
 	copyIndex  int
+	namedCopy  map[string]int
 	function   func(string, []string) any
 	walked     bool
 }
@@ -218,6 +219,59 @@ func planScalar(value any) bool {
 	}
 }
 
+func parseCopyLoops(raw any) ([]map[string]any, bool) {
+	items, ok := raw.([]any)
+	if !ok || len(items) == 0 {
+		return nil, false
+	}
+	loops := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		loop, ok := item.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		_, hasName := loop["name"]
+		_, hasCount := loop["count"]
+		_, hasInput := loop["input"]
+		if !hasName || !hasCount || !hasInput {
+			return nil, false
+		}
+		loops = append(loops, loop)
+	}
+	return loops, true
+}
+
+func (e *planEnvironment) evaluateCopyLoop(loop map[string]any) (string, any, string) {
+	name, missing := planString(e.value(loop["name"]))
+	if missing != "" {
+		return "", nil, missing
+	}
+	value := e.value(loop["count"])
+	number, ok := value.(float64)
+	if !ok || number < 0 || number > 128 || number != math.Trunc(number) {
+		return name, planUnknown{"property copy count cannot be resolved within the local plan limit (128)"}, ""
+	}
+	count := int(number)
+	items := make([]any, count)
+	key := strings.ToLower(name)
+	if e.namedCopy == nil {
+		e.namedCopy = map[string]int{}
+	}
+	prev, hadPrev := e.namedCopy[key]
+	defer func() {
+		if hadPrev {
+			e.namedCopy[key] = prev
+		} else {
+			delete(e.namedCopy, key)
+		}
+	}()
+	for index := range count {
+		e.namedCopy[key] = index
+		items[index] = e.value(loop["input"])
+	}
+	return name, items, ""
+}
+
 func (e *planEnvironment) value(raw any) any {
 	switch value := raw.(type) {
 	case string:
@@ -243,6 +297,18 @@ func (e *planEnvironment) value(raw any) any {
 			name, missing := planString(e.value(key))
 			if missing != "" {
 				return planUnknown{"object key cannot be resolved: " + missing}
+			}
+			if strings.EqualFold(name, "copy") {
+				if loops, ok := parseCopyLoops(value[key]); ok {
+					for _, loop := range loops {
+						loopName, expanded, loopMissing := e.evaluateCopyLoop(loop)
+						if loopMissing != "" {
+							return planUnknown{"object copy name cannot be resolved: " + loopMissing}
+						}
+						result[loopName] = expanded
+					}
+					continue
+				}
 			}
 			result[name] = e.value(value[key])
 		}
@@ -270,6 +336,19 @@ func (e *planEnvironment) variable(name string) any {
 	e.active[key] = true
 	defer delete(e.active, key)
 	for variable, raw := range definitions {
+		if strings.EqualFold(variable, "copy") {
+			if loops, ok := parseCopyLoops(raw); ok {
+				for _, loop := range loops {
+					if loopName, missing := planString(e.value(loop["name"])); missing == "" &&
+						strings.EqualFold(loopName, name) {
+						_, expanded, _ := e.evaluateCopyLoop(loop)
+						e.variables[key] = expanded
+						return expanded
+					}
+				}
+				continue
+			}
+		}
 		if strings.EqualFold(variable, name) {
 			result := e.value(raw)
 			e.variables[key] = result
@@ -434,6 +513,9 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 			return planUnknown{partial.missing}
 		}
 	}
+	if name == "union" && len(args) > 0 {
+		return planUnion(args)
+	}
 	if len(args) == 0 {
 		switch name {
 		case "true":
@@ -464,6 +546,18 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 	}
 	if len(args) == 1 {
 		switch name {
+		case "copyindex":
+			switch arg := args[0].(type) {
+			case string:
+				if index, found := e.namedCopy[strings.ToLower(arg)]; found {
+					return float64(index)
+				}
+				return planUnknown{"copyIndex loop " + arg + " is not active"}
+			case float64:
+				if arg == math.Trunc(arg) {
+					return float64(e.copyIndex) + arg
+				}
+			}
 		case "parameters":
 			if key, ok := args[0].(string); ok {
 				return e.parameter(key)
@@ -568,6 +662,15 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 	}
 	if len(args) == 2 {
 		switch name {
+		case "copyindex":
+			loopName, okName := args[0].(string)
+			offset, okOffset := args[1].(float64)
+			if okName && okOffset && offset == math.Trunc(offset) {
+				if index, found := e.namedCopy[strings.ToLower(loopName)]; found {
+					return float64(index) + offset
+				}
+				return planUnknown{"copyIndex loop " + loopName + " is not active"}
+			}
 		case "equals":
 			if !planScalar(args[0]) || !planScalar(args[1]) {
 				return planUnknown{"structured or runtime-symbolic equality is not locally resolved"}
@@ -617,6 +720,9 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 			}
 		}
 	}
+	if name == "format" && len(args) > 0 {
+		return planFormat(args)
+	}
 	stringsOnly := make([]string, len(args))
 	for i, arg := range args {
 		value, ok := arg.(string)
@@ -628,17 +734,6 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 	switch name {
 	case "concat":
 		return strings.Join(stringsOnly, "")
-	case "format":
-		if len(stringsOnly) > 0 {
-			result := stringsOnly[0]
-			for i, value := range stringsOnly[1:] {
-				result = strings.ReplaceAll(result, "{"+strconv.Itoa(i)+"}", value)
-			}
-			if strings.ContainsAny(result, "{}") {
-				return planUnknown{"format uses unsupported placeholders"}
-			}
-			return result
-		}
 	case "replace":
 		if len(stringsOnly) == 3 {
 			return strings.ReplaceAll(stringsOnly[0], stringsOnly[1], stringsOnly[2])
@@ -649,6 +744,57 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 		}
 	}
 	return planUnknown{"ARM function " + expression.name + " is not supported by the local plan adapter"}
+}
+
+func planFormat(args []any) any {
+	const maxExactFloatInt = 1<<53 - 1
+	pattern, ok := args[0].(string)
+	if !ok {
+		return planUnknown{"ARM function format requires a string format pattern"}
+	}
+	values := make([]string, len(args)-1)
+	for i, arg := range args[1:] {
+		switch current := arg.(type) {
+		case string:
+			values[i] = current
+		case float64:
+			if math.IsNaN(current) || math.IsInf(current, 0) || current != math.Trunc(current) ||
+				current < -maxExactFloatInt || current > maxExactFloatInt {
+				return planUnknown{"ARM function format numeric argument is not an exact integer"}
+			}
+			values[i] = strconv.FormatInt(int64(current), 10)
+		default:
+			return planUnknown{"ARM function format has unsupported plan argument types"}
+		}
+	}
+	var out strings.Builder
+	for pos := 0; pos < len(pattern); {
+		switch pattern[pos] {
+		case '{':
+			end := strings.IndexByte(pattern[pos+1:], '}')
+			if end <= 0 {
+				return planUnknown{"format uses unsupported placeholders"}
+			}
+			token := pattern[pos+1 : pos+1+end]
+			for j := range len(token) {
+				if token[j] < '0' || token[j] > '9' {
+					return planUnknown{"format uses unsupported placeholders"}
+				}
+			}
+			index, err := strconv.Atoi(token)
+			if err != nil || index < 0 || index >= len(values) {
+				return planUnknown{"format uses unsupported placeholders"}
+			}
+			out.WriteString(values[index])
+			pos += end + 2
+		case '}':
+			return planUnknown{"format uses unsupported placeholders"}
+		default:
+			out.WriteByte(pattern[pos])
+			pos++
+		}
+	}
+	return out.String()
 }
 
 func (e *planEnvironment) resourceID(function string, args []any) any {
@@ -741,4 +887,30 @@ func (e *planEnvironment) resourceID(function string, args []any) any {
 		result.WriteString("/" + types[i+1] + "/" + name)
 	}
 	return result.String()
+}
+
+func planUnion(args []any) any {
+	result := map[string]any{}
+	for _, entry := range args {
+		object, ok := entry.(map[string]any)
+		if !ok {
+			return planUnknown{"union input is not a resolved object"}
+		}
+		mergePlanMaps(result, object)
+	}
+	return result
+}
+
+func mergePlanMaps(dst, src map[string]any) {
+	for key, val := range src {
+		if srcMap, isMap := val.(map[string]any); isMap {
+			if dstMap, hasDst := dst[key].(map[string]any); hasDst {
+				cloned := maps.Clone(dstMap)
+				mergePlanMaps(cloned, srcMap)
+				dst[key] = cloned
+				continue
+			}
+		}
+		dst[key] = val
+	}
 }

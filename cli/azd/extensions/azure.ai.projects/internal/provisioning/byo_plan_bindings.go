@@ -9,8 +9,59 @@ import (
 	"slices"
 	"strings"
 
+	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/onboarding"
 )
+
+func accountHostingConfigs(properties any) (any, bool) {
+	object, ok := properties.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	for name, value := range object {
+		if strings.EqualFold(name, "agentHostingConfigurations") {
+			return value, value != nil
+		}
+	}
+	return nil, false
+}
+
+func configBYOHostingState(config map[string]any) (candidate, confirmed bool) {
+	for name, value := range config {
+		switch {
+		case strings.EqualFold(name, "hostingType"):
+			if kind, ok := value.(string); ok && strings.EqualFold(kind, "ManagedCluster") {
+				return true, true
+			}
+			if _, unknown := value.(planUnknown); unknown {
+				candidate = true
+			}
+		case strings.EqualFold(name, "clusterResourceId"):
+			if value == nil {
+				continue
+			}
+			if id, ok := value.(string); ok {
+				if strings.TrimSpace(id) != "" {
+					return true, true
+				}
+				continue
+			}
+			if _, partial := value.(planPartialID); partial {
+				return true, true
+			}
+			candidate = true
+		}
+	}
+	return candidate, false
+}
+
+func multipleActiveBYOError() error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		"multiple active agentHostingConfigurations in a custom template are not supported",
+		"retain a single active AKS hosting configuration in the Foundry deployment template",
+	)
+}
 
 func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEnvironment) {
 	type accountSelection struct {
@@ -24,9 +75,31 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 			continue
 		}
 		properties := node.env.value(node.raw["properties"])
-		configs := planField(properties, "agentHostingConfigurations")
+		configs, present := accountHostingConfigs(properties)
+		if !present {
+			continue
+		}
+		nodeConfirmed := node.missing == ""
 		if values, ok := configs.([]any); ok {
 			for _, config := range values {
+				if config == nil {
+					continue
+				}
+				if entry, isMap := config.(map[string]any); isMap {
+					if candidate, confirmed := configBYOHostingState(entry); candidate {
+						r.candidateCount++
+						if nodeConfirmed && confirmed {
+							r.confirmedCount++
+						}
+					}
+				} else if unknown, isUnknown := config.(planUnknown); isUnknown {
+					r.candidateCount++
+					unresolved = node.path + ": " + unknown.reason
+					continue
+				}
+				if r.offline && !nodeConfirmed {
+					continue
+				}
 				id, missing := planString(planField(config, "clusterResourceId"))
 				typeValue := planField(config, "hostingType")
 				hostingType, typeMissing := planString(typeValue)
@@ -43,7 +116,29 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 				}
 			}
 		} else if unknown, ok := configs.(planUnknown); ok {
+			r.candidateCount++
 			unresolved = node.path + ": " + unknown.reason
+		}
+	}
+	if r.offline {
+		if r.confirmedCount != 1 {
+			return
+		}
+	} else if r.fallbackHosting {
+		if r.candidateCount == 0 {
+			return
+		}
+		if r.confirmedCount > 1 {
+			r.err = errors.Join(r.err, multipleActiveBYOError())
+			return
+		}
+		if r.candidateCount > 1 {
+			r.err = errors.Join(r.err, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"cannot verify a unique active agentHostingConfigurations target in the custom template",
+				"resolve account hosting conditions to a single active configuration in the Foundry deployment template",
+			))
+			return
 		}
 	}
 	if len(accounts) > 1 {

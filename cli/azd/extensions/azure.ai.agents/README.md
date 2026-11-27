@@ -80,11 +80,7 @@ capabilities, so templates are checked after staging and before adoption.
 Explicit remote `--template` inputs are staged and checked before Azure
 authentication, including `$ref` definitions. Adoption reuses that directory.
 
-BYO AKS checks cover inline and referenced project configuration during init/adoption.
-The Projects provider also requires the BYO AKS switch for `azd provision` and
-`azd provision --preview` when effective `agentHosting.enabled=true`.
-Foundry provider initialization, lifecycle hooks, and Bicep eject do not check
-the BYO AKS switch. Ordinary Foundry provisioning without AKS hosting is unchanged.
+BYO AKS checks cover inline and referenced project configuration during init/adoption. The Projects provider also requires the BYO AKS switch for `azd provision` and `azd provision --preview` when effective AKS hosting is enabled through `agentHosting` or locally resolved `agentHostingConfigurations` on an active Foundry account. Foundry provider initialization, validation checks, lifecycle hooks, and Bicep eject do not check the BYO AKS switch. Ordinary Foundry provisioning without AKS hosting is unchanged.
 
 The RBAC warnings switch controls retention only, not whether checks run.
 With it off, `predeploy` uses the stable event API and prints warnings and

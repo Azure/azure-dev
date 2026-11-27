@@ -117,6 +117,7 @@ type FoundryProvisioningProvider struct {
 	acrDeferPromptedEnv       bool
 	acrPromptedEnv            map[string]string
 	acrRequest                func(context.Context, string, string, string, any) error
+	byoHostingEnabled         bool
 	modelPolicyCheck          func(
 		ctx context.Context,
 		cred azcore.TokenCredential,
@@ -1505,6 +1506,10 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
+	byoLocal, err := p.prepareBYOLocal(src)
+	if err != nil {
+		return nil, err
+	}
 	if err := p.validateExistingProjectTemplateIdentity(ctx, src); err != nil {
 		return nil, err
 	}
@@ -1531,11 +1536,16 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err := p.validateACRRemoteBuild(ctx, src); err != nil {
 		return nil, err
 	}
-	if err := p.prepareBYO(ctx, src, progress); err != nil {
+	if err := p.prepareBYOWithLocal(ctx, src, byoLocal, progress); err != nil {
 		return nil, err
 	}
 	if err := p.recoverDeployedACRBinding(ctx); err != nil {
 		return nil, err
+	}
+	if p.byoHostingEnabled && !byoLocal.standardHosting {
+		if err := p.rejectFallbackBYORegistry(src); err != nil {
+			return nil, err
+		}
 	}
 	if err := p.prepareACRAccess(ctx, src); err != nil {
 		return nil, err
@@ -1905,17 +1915,33 @@ func (p *FoundryProvisioningProvider) Preview(
 	if err != nil {
 		return nil, err
 	}
+	byoLocal, err := p.prepareBYOLocal(src)
+	if err != nil {
+		return nil, err
+	}
 	if err := p.validateExistingProjectTemplateIdentity(ctx, src); err != nil {
 		return nil, err
 	}
-	if err := p.prepareBYO(ctx, src, progress); err != nil {
+	if err := p.prepareBYOWithLocal(ctx, src, byoLocal, progress); err != nil {
 		return nil, err
 	}
 	if p.greenfieldAcrMode == "reuse-connect" {
 		if err := p.recoverDeployedACRBinding(ctx); err != nil {
 			return nil, err
 		}
+		if p.byoHostingEnabled && !byoLocal.standardHosting {
+			if err := p.rejectFallbackBYORegistry(src); err != nil {
+				return nil, err
+			}
+		}
 		if err := p.validateACRTemplate(src); err != nil {
+			return nil, err
+		}
+	} else if p.byoHostingEnabled && !byoLocal.standardHosting {
+		if err := p.recoverDeployedACRBinding(ctx); err != nil {
+			return nil, err
+		}
+		if err := p.rejectFallbackBYORegistry(src); err != nil {
 			return nil, err
 		}
 	}
@@ -2708,7 +2734,7 @@ func (p *FoundryProvisioningProvider) deploymentsClient(ctx context.Context) (*a
 		return nil, err
 	}
 	options := p.armClientOptions
-	if p.synthResult != nil && p.synthResult.Hosting != nil {
+	if p.byoHostingEnabled || p.synthResult != nil && p.synthResult.Hosting != nil {
 		options = byoARMOptions(options)
 	}
 	factory, err := armdeployments.NewClientFactory(p.subID, p.credential, options)

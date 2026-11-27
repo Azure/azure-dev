@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"azure.ai.projects/internal/onboarding"
 
@@ -32,6 +33,9 @@ type templatePlanResolver struct {
 	functions           map[string]any
 	references          map[*planResource]bool
 	owningSubscriptions map[string]bool
+	skipFunctions       bool
+	skippedCount        int
+	root                *planEnvironment
 	nodes               []*planResource
 	account             *planResource
 	unresolved          []string
@@ -121,17 +125,23 @@ func (r *templatePlanResolver) scope(subscription, group string) planScope {
 func (r *templatePlanResolver) function(name string, args []string) any {
 	raw, err := json.Marshal(args)
 	if err != nil {
-		r.err = errors.Join(r.err, err)
-		return planUnknown{"local Bicep arguments could not be encoded"}
+		if !r.skipFunctions {
+			r.err = errors.Join(r.err, err)
+		}
+		return planUnknown{reason: "local Bicep arguments could not be encoded"}
 	}
 	key := name + string(raw)
 	if value, present := r.functions[key]; present {
 		return value
 	}
+	if r.skipFunctions {
+		r.skippedCount++
+		return planUnknown{reason: "local Bicep function evaluation skipped"}
+	}
 	value, err := evaluateBYOPlanFunction(r.ctx, r.provider.bicepCli(), name, args)
 	if err != nil {
 		r.err = errors.Join(r.err, err)
-		unknown := planUnknown{"azd-managed Bicep could not evaluate " + name + ": " + err.Error()}
+		unknown := planUnknown{reason: "azd-managed Bicep could not evaluate " + name + ": " + err.Error()}
 		r.functions[key] = unknown
 		return unknown
 	}
@@ -144,7 +154,7 @@ func (r *templatePlanResolver) environment(
 ) *planEnvironment {
 	return &planEnvironment{
 		template: template, parameters: parameters, scope: scope, path: path,
-		deployment: deployment, function: r.function,
+		deployment: deployment, function: r.function, resolver: r,
 		variables: map[string]any{}, active: map[string]bool{}, resources: map[string]*planResource{},
 	}
 }
@@ -376,25 +386,27 @@ func (n *planResource) id() (string, string) {
 
 func (n *planResource) reference(full bool) any {
 	if n.resolver.references[n] {
-		return planUnknown{"cyclic local resource/module reference at " + n.path}
+		return planUnknown{reason: "cyclic local resource/module reference at " + n.path}
 	}
 	n.resolver.references[n] = true
 	defer delete(n.resolver.references, n)
 	if strings.EqualFold(n.kind, "Microsoft.Resources/deployments") {
+		if n.inactive {
+			return planUnknown{reason: "deployment module " + n.path + " is not active"}
+		}
+		if n.resolver.skipFunctions && (n.child == nil || !n.child.walked) {
+			n.resolver.skippedCount++
+			return planUnknown{reason: "speculative deployment module reference deferred"}
+		}
 		child := n.module()
 		if child == nil {
-			return planUnknown{n.missing}
+			return planUnknown{reason: n.missing}
 		}
-		if len(child.resources) == 0 {
+		if !child.walked {
 			// Output evaluation can precede the main walk (e.g. one module uses another's output).
 			n.resolver.walk(child, n.missing, 1)
 		}
-		outputs, _ := child.template["outputs"].(map[string]any)
-		result := map[string]any{}
-		for key, output := range outputs {
-			result[key] = child.value(output)
-		}
-		properties := map[string]any{"outputs": result}
+		properties := map[string]any{"outputs": n.resolver.outputs(child)}
 		if full {
 			return map[string]any{"properties": properties}
 		}
@@ -402,16 +414,19 @@ func (n *planResource) reference(full bool) any {
 	}
 	id, missing := n.id()
 	if missing != "" {
-		return planUnknown{missing}
+		return planUnknown{
+			reason:   missing,
+			bindings: planBindings(n.env.value(n.raw["name"]), n.env.value(n.raw["scope"])),
+		}
 	}
-	properties := planUnknown{"runtime resource properties are not local template values"}
+	properties := planUnknown{reason: "runtime resource properties are not local template values"}
 	if !full {
 		return properties
 	}
 	return map[string]any{
 		"id":         id,
 		"properties": properties,
-		"location":   planUnknown{"runtime resource location is not a local template value"},
+		"location":   planUnknown{reason: "runtime resource location is not a local template value"},
 	}
 }
 
@@ -519,6 +534,149 @@ func (r *templatePlanResolver) recordOwningSubscription(kind, subscription strin
 	}
 }
 
+func (r *templatePlanResolver) outputs(env *planEnvironment) map[string]any {
+	if env.outputs != nil {
+		return env.outputs
+	}
+	beforeSkipped := r.skippedCount
+	definitions, _ := env.template["outputs"].(map[string]any)
+	result := make(map[string]any, len(definitions))
+	for _, key := range slices.Sorted(maps.Keys(definitions)) {
+		name, missing := planString(env.value(key))
+		if missing != "" {
+			name = key
+		}
+		output, ok := definitions[key].(map[string]any)
+		if !ok {
+			result[name] = env.value(definitions[key])
+			continue
+		}
+		if condition, present := output["condition"]; present {
+			condVal := env.value(condition)
+			active, condMissing := planBool(condVal)
+			if condMissing == "" && !active {
+				continue
+			}
+			if condMissing != "" {
+				mask := planBindings(condVal) | env.scanBindings(func() any { return env.value(output) })
+				result[name] = planUnknown{
+					reason:   "output condition cannot be resolved: " + condMissing,
+					bindings: mask,
+				}
+				continue
+			}
+		}
+		result[name] = env.value(output)
+	}
+	if r.skippedCount == beforeSkipped {
+		env.outputs = result
+	}
+	return result
+}
+
+func valueMeetsMinLength(value any, minLen int) bool {
+	switch typed := value.(type) {
+	case string:
+		return utf8.RuneCountInString(typed) >= minLen
+	case []any:
+		return len(typed) >= minLen
+	default:
+		return false
+	}
+}
+
+func (e *planEnvironment) requiredChildParameterBindings() planBindingMask {
+	var mask planBindingMask
+	definitions, _ := e.template["parameters"].(map[string]any)
+	for _, name := range slices.Sorted(maps.Keys(definitions)) {
+		definition, ok := definitions[name].(map[string]any)
+		if !ok {
+			continue
+		}
+		if minLen, ok := definition["minLength"].(float64); ok && minLen >= 1 {
+			value := e.parameter(name)
+			if valueMeetsMinLength(value, int(minLen)) {
+				continue
+			}
+			mask |= planBindings(value)
+		}
+	}
+	return mask
+}
+
+func templateRequiresParameter(env *planEnvironment, name string) bool {
+	definitions, _ := env.template["parameters"].(map[string]any)
+	for declared, raw := range definitions {
+		if strings.EqualFold(declared, name) {
+			definition, ok := raw.(map[string]any)
+			if !ok {
+				return false
+			}
+			defaultVal, hasDefault := definition["defaultValue"]
+			if !hasDefault {
+				return true
+			}
+			if minLen, ok := definition["minLength"].(float64); ok && minLen >= 1 {
+				var resolved any
+				env.scanBindings(func() any {
+					resolved = env.value(defaultVal)
+					return nil
+				})
+				switch typed := resolved.(type) {
+				case string:
+					return utf8.RuneCountInString(typed) < int(minLen)
+				case []any:
+					return len(typed) < int(minLen)
+				}
+			}
+			return false
+		}
+	}
+	return false
+}
+
+func (r *templatePlanResolver) consumedBindings() planBindingMask {
+	r.skipFunctions = true
+	defer func() { r.skipFunctions = false }()
+	var mask planBindingMask
+	for _, node := range r.nodes {
+		if node.inactive {
+			continue
+		}
+		if strings.EqualFold(node.kind, "Microsoft.Resources/deployments") {
+			var child *planEnvironment
+			if node.child != nil && node.child.walked {
+				child = node.child
+			}
+			for _, key := range slices.Sorted(maps.Keys(node.raw)) {
+				if strings.EqualFold(key, "properties") {
+					continue
+				}
+				mask |= planBindings(node.env.value(node.raw[key]))
+			}
+			if properties, ok := node.raw["properties"].(map[string]any); ok {
+				for _, key := range slices.Sorted(maps.Keys(properties)) {
+					if strings.EqualFold(key, "template") ||
+						child != nil && strings.EqualFold(key, "parameters") {
+						continue
+					}
+					mask |= planBindings(node.env.value(properties[key]))
+				}
+			}
+			if child != nil {
+				mask |= child.requiredChildParameterBindings()
+				mask |= planBindings(r.outputs(child))
+			}
+			continue
+		}
+		mask |= planBindings(node.env.value(node.raw))
+	}
+	if r.root != nil {
+		mask |= planBindings(r.outputs(r.root))
+	}
+	return mask
+}
+
 func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	ctx context.Context, source *templateSource, evidence *onboarding.AuthorizationEvidence,
 ) (onboarding.Plan, error) {
@@ -545,11 +703,18 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 					return literal
 				}
 			}
-			return planUnknown{"parameter " + key + " requires a runtime parameter reference"}
+			return planUnknown{reason: "parameter " + key + " requires a runtime parameter reference"}
+		}
+	}
+	automaticBindings := automaticBYOBindings(source)
+	for name, binding := range automaticBindings {
+		parameters[strings.ToLower(name)] = func() any {
+			return binding
 		}
 	}
 	scope := resolver.scope(p.subID, "")
 	env := resolver.environment(source.armTemplate, parameters, scope, "compiled template", p.deploymentName())
+	resolver.root = env
 	resolver.walk(env, "", 0)
 	plan := onboarding.Plan{SubscriptionID: p.subID}
 	resolver.owningSubscriptions[strings.ToLower(p.subID)] = true
@@ -572,6 +737,32 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 			"Foundry account"))
 	}
 	resolver.bindNetwork(&plan)
+	principalBindings := []struct {
+		binding  string
+		mask     planBindingMask
+		resource *onboarding.Resource
+	}{
+		{"hostingPrincipalId", planBindingHostingPrincipal, &plan.Hosting},
+		{"workloadPrincipalId", planBindingWorkloadPrincipal, &plan.Workload},
+	}
+	needsScan := false
+	for _, item := range principalBindings {
+		if _, automatic := automaticBindings[item.binding]; automatic {
+			if item.resource.Supplied || templateRequiresParameter(env, item.binding) {
+				item.resource.PrincipalRequired = true
+			} else {
+				needsScan = true
+			}
+		}
+	}
+	if needsScan {
+		consumed := resolver.consumedBindings()
+		for _, item := range principalBindings {
+			if _, automatic := automaticBindings[item.binding]; automatic && !item.resource.PrincipalRequired {
+				item.resource.PrincipalRequired = consumed&item.mask != 0
+			}
+		}
+	}
 	plan.OwningSubscriptions = append(plan.OwningSubscriptions, slices.Sorted(maps.Keys(resolver.owningSubscriptions))...)
 	return plan, resolver.err
 }

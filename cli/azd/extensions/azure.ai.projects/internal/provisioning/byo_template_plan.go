@@ -48,6 +48,7 @@ type planResource struct {
 	path      string
 	kind      string
 	inactive  bool
+	existing  bool
 	missing   string
 	child     *planEnvironment
 	childRead bool
@@ -189,7 +190,8 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 	for _, entry := range entries {
 		count := 1
 		copyMissing := ""
-		if copy, ok := entry.raw["copy"].(map[string]any); ok {
+		copy, hasCopy := entry.raw["copy"].(map[string]any)
+		if hasCopy {
 			value := env.value(copy["count"])
 			number, ok := value.(float64)
 			if !ok || number < 0 || number > 128 || number != float64(int(number)) {
@@ -205,6 +207,9 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 			}
 			local := *env
 			local.copyIndex = index
+			if copyMissing != "" {
+				local.copyIndex = -1
+			}
 			local.variables, local.active = map[string]any{}, map[string]bool{}
 			path := env.path + "/" + entry.symbol
 			if count > 1 {
@@ -226,20 +231,27 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 				}
 			}
 			if existing, _ := entry.raw["existing"].(bool); existing {
-				resource.inactive = true
+				resource.existing = true
 			}
-			if !resource.inactive && typeMissing != "" {
+			if !resource.inactive && !resource.existing && typeMissing != "" {
 				r.unresolved = append(r.unresolved, path+": resource type: "+typeMissing)
 			}
-			if !resource.inactive && copyMissing != "" &&
-				(typeMissing != "" ||
-					strings.EqualFold(resource.kind, "Microsoft.CognitiveServices/accounts") ||
-					strings.EqualFold(resource.kind, "Microsoft.Resources/deployments")) {
+			if !resource.inactive && typeMissing != "" {
+				r.unresolvedAccounts = append(r.unresolvedAccounts, path+": resource type: "+typeMissing)
+			} else if !resource.inactive && copyMissing != "" &&
+				(strings.EqualFold(resource.kind, "Microsoft.CognitiveServices/accounts") ||
+					(!resource.existing && strings.EqualFold(resource.kind, "Microsoft.Resources/deployments") &&
+						moduleMayContainAccount(entry.raw, 0))) {
 				r.unresolvedAccounts = append(r.unresolvedAccounts, path+": "+copyMissing)
 			}
-			env.resources[entry.symbol] = resource
+			if hasCopy && copyMissing == "" {
+				env.resources[fmt.Sprintf("%s[%d]", entry.symbol, index)] = resource
+			} else {
+				env.resources[entry.symbol] = resource
+			}
 			r.nodes = append(r.nodes, resource)
-			if !resource.inactive && strings.EqualFold(resource.kind, "Microsoft.Resources/deployments") {
+			if !resource.inactive && !resource.existing &&
+				strings.EqualFold(resource.kind, "Microsoft.Resources/deployments") {
 				modules = append(modules, resource)
 			}
 		}
@@ -252,6 +264,63 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 	}
 }
 
+func moduleMayContainAccount(raw map[string]any, depth int) bool {
+	if depth > 32 {
+		return true
+	}
+	properties, ok := raw["properties"].(map[string]any)
+	if !ok {
+		return true
+	}
+	template, ok := properties["template"].(map[string]any)
+	if !ok {
+		return true
+	}
+	return resourcesMayContainAccount(template["resources"], depth)
+}
+
+func resourcesMayContainAccount(raw any, depth int) bool {
+	if raw == nil {
+		return false
+	}
+	if depth > 32 {
+		return true
+	}
+	checkEntry := func(item any) bool {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			return true
+		}
+		if cond, isBool := entry["condition"].(bool); isBool && !cond {
+			return false
+		}
+		kind, ok := entry["type"].(string)
+		if !ok || (strings.HasPrefix(kind, "[") && !strings.HasPrefix(kind, "[[")) {
+			return true
+		}
+		if strings.EqualFold(kind, "Microsoft.CognitiveServices/accounts") {
+			return true
+		}
+		if strings.EqualFold(kind, "Microsoft.Resources/deployments") && moduleMayContainAccount(entry, depth+1) {
+			return true
+		}
+		return resourcesMayContainAccount(entry["resources"], depth+1)
+	}
+	switch resources := raw.(type) {
+	case map[string]any:
+		for _, item := range resources {
+			if checkEntry(item) {
+				return true
+			}
+		}
+		return false
+	case []any:
+		return slices.ContainsFunc(resources, checkEntry)
+	default:
+		return true
+	}
+}
+
 func (n *planResource) module() *planEnvironment {
 	if n.childRead {
 		return n.child
@@ -260,6 +329,7 @@ func (n *planResource) module() *planEnvironment {
 	properties, ok := n.raw["properties"].(map[string]any)
 	if !ok {
 		n.missing = "deployment module properties are not an inline object"
+		n.resolver.unresolved = append(n.resolver.unresolved, n.path+": "+n.missing)
 		return nil
 	}
 	template, ok := properties["template"].(map[string]any)
@@ -308,7 +378,7 @@ func (n *planResource) module() *planEnvironment {
 		scope = n.resolver.scope(scope.subscriptionID, scope.group)
 		if scope.location == "" && !scope.groupExists && scope.groupARMID != "" {
 			for _, resource := range n.env.resources {
-				if resource.inactive || resource.missing != "" ||
+				if resource.inactive || resource.existing || resource.missing != "" ||
 					!strings.EqualFold(resource.kind, "Microsoft.Resources/resourceGroups") {
 					continue
 				}
@@ -384,6 +454,12 @@ func (n *planResource) id() (string, string) {
 }
 
 func (n *planResource) reference(full bool) any {
+	if n.inactive {
+		return planUnknown{"referenced resource/module at " + n.path + " is inactive"}
+	}
+	if n.missing != "" {
+		return planUnknown{n.missing}
+	}
 	if n.resolver.references[n] {
 		return planUnknown{"cyclic local resource/module reference at " + n.path}
 	}
@@ -406,7 +482,7 @@ func (n *planResource) reference(full bool) any {
 				if condition, hasCond := planObjectField(definition, "condition"); hasCond {
 					active, missing := planBool(child.value(condition))
 					if missing != "" {
-						result[key] = planUnknown{"output " + key + " condition: " + missing}
+						result[key] = planUnknownPresence{"output " + key + " condition: " + missing}
 						continue
 					}
 					if !active {
@@ -491,7 +567,7 @@ func (r *templatePlanResolver) resource(value any, kind, origin string) onboardi
 	}
 	uncertain := strings.Join(r.unresolved, "; ")
 	for _, node := range r.nodes {
-		if node.inactive || !strings.EqualFold(node.kind, kind) {
+		if node.inactive || node.existing || !strings.EqualFold(node.kind, kind) {
 			continue
 		}
 		if _, override := node.raw["scope"]; !override {

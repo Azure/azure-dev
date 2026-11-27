@@ -24,6 +24,8 @@ import (
 // Runtime reference properties and unsupported ARM constructs remain explicit unknown values.
 type planUnknown struct{ reason string }
 
+type planUnknownPresence struct{ reason string }
+
 type planPartialID struct {
 	kind, scope, missing string
 	components           []any
@@ -178,10 +180,19 @@ func planField(value any, key string) any {
 	if !ok {
 		return planUnknown{"expected an object when selecting " + key}
 	}
-	for name, field := range object {
+	found := false
+	var matched any
+	for _, name := range slices.Sorted(maps.Keys(object)) {
 		if strings.EqualFold(name, key) {
-			return field
+			if unknown, ok := object[name].(planUnknownPresence); ok {
+				return planUnknown(unknown)
+			}
+			matched = object[name]
+			found = true
 		}
+	}
+	if found {
+		return matched
 	}
 	return planUnknown{"object has no " + key + " property"}
 }
@@ -353,12 +364,22 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 				if missing != "" {
 					return planUnknown{missing}
 				}
-				value = nil
-				for name, item := range current {
+				found := false
+				var matched any
+				for _, name := range slices.Sorted(maps.Keys(current)) {
 					if strings.EqualFold(name, key) {
-						value = item
-						break
+						if unknown, ok := current[name].(planUnknownPresence); ok {
+							matched = planUnknown(unknown)
+							found = true
+							break
+						}
+						matched = current[name]
+						found = true
 					}
+				}
+				value = nil
+				if found {
+					value = matched
 				}
 			case []any:
 				index, ok := selector.(float64)
@@ -430,6 +451,9 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 		if unknown, ok := arg.(planUnknown); ok {
 			return unknown
 		}
+		if unknown, ok := arg.(planUnknownPresence); ok {
+			return planUnknown(unknown)
+		}
 		if partial, ok := arg.(planPartialID); ok {
 			return planUnknown{partial.missing}
 		}
@@ -459,6 +483,9 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 		case "deployment":
 			return map[string]any{"name": e.deployment}
 		case "copyindex":
+			if e.copyIndex < 0 {
+				return planUnknown{"resource copy index cannot be resolved when copy count is unknown"}
+			}
 			return float64(e.copyIndex)
 		}
 	}
@@ -487,6 +514,23 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 			case []any:
 				length = len(value)
 			case map[string]any:
+				var presenceUnknown string
+				unconditional := 0
+				for _, key := range slices.Sorted(maps.Keys(value)) {
+					if unknown, ok := value[key].(planUnknownPresence); ok {
+						if presenceUnknown == "" {
+							presenceUnknown = unknown.reason
+						}
+					} else {
+						unconditional++
+					}
+				}
+				if presenceUnknown != "" {
+					if name == "empty" && unconditional > 0 {
+						return false
+					}
+					return planUnknown{presenceUnknown}
+				}
 				length = len(value)
 			case nil:
 				if name == "empty" {
@@ -532,7 +576,28 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 					if !ok {
 						return planUnknown{"shallowMerge input is not a resolved object"}
 					}
-					maps.Copy(result, object)
+					for _, key := range slices.Sorted(maps.Keys(object)) {
+						entry := object[key]
+						existingKey := key
+						existed := false
+						for candidate := range result {
+							if strings.EqualFold(candidate, key) {
+								existingKey = candidate
+								existed = true
+								break
+							}
+						}
+						if unknown, isPresence := entry.(planUnknownPresence); isPresence && existed {
+							if _, prevUnknown := result[existingKey].(planUnknownPresence); !prevUnknown {
+								result[existingKey] = planUnknown(unknown)
+								continue
+							}
+						}
+						if existed && existingKey != key {
+							delete(result, existingKey)
+						}
+						result[key] = entry
+					}
 				}
 				return result
 			}

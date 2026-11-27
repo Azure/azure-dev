@@ -203,11 +203,49 @@ func setMissingBYOResources(plan *onboarding.Plan, scopePath, reason string) {
 func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEnvironment) {
 	outputName, outputUnresolved := resolveAccountNameOutput(root)
 	var allAccounts []accountCandidate
+	var existingNodes []*planResource
 	for _, node := range r.nodes {
 		if node.inactive || !strings.EqualFold(node.kind, "Microsoft.CognitiveServices/accounts") {
 			continue
 		}
+		if node.existing {
+			existingNodes = append(existingNodes, node)
+			continue
+		}
 		allAccounts = append(allAccounts, accountCandidate{node: node})
+	}
+	if len(existingNodes) > 0 {
+		seenExistingIDs := map[string]bool{}
+		isDeployedID := func(targetID, targetScope string) bool {
+			for i := range allAccounts {
+				deployed := allAccounts[i].node
+				if deployed.existing || deployed.missing != "" {
+					continue
+				}
+				if scope, why := deployed.resourceScope(); why == "" && !strings.EqualFold(scope, targetScope) {
+					continue
+				}
+				if id, missing := deployed.id(); missing == "" && strings.EqualFold(id, targetID) {
+					return true
+				}
+			}
+			return false
+		}
+		for _, node := range existingNodes {
+			if id, missing := node.id(); missing == "" && id != "" {
+				scope, _ := node.resourceScope()
+				key := strings.ToLower(id)
+				if isDeployedID(id, scope) || (node.missing == "" && seenExistingIDs[key]) {
+					continue
+				}
+				if node.missing == "" {
+					seenExistingIDs[key] = true
+				}
+			}
+			allAccounts = append(allAccounts, accountCandidate{
+				node: node, hostingEvaluated: true, nonHosting: true,
+			})
+		}
 	}
 
 	incompleteAccounts := append(slices.Clone(r.unresolved), r.unresolvedAccounts...)
@@ -278,11 +316,19 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 				hostingAccounts = append(hostingAccounts, candidate)
 			}
 		}
-		if len(hostingAccounts) == 1 && len(incompleteAccounts) == 0 {
+		if len(hostingAccounts) == 1 && len(incompleteAccounts) == 0 &&
+			(outputUnresolved == "" || len(allAccounts) == 1) {
 			selectedAccount = hostingAccounts[0]
 		} else {
 			appendReason(outputUnresolved)
-			for _, candidate := range hostingAccounts {
+			candidatesToReport := hostingAccounts
+			if outputUnresolved != "" && len(allAccounts) > 1 {
+				candidatesToReport = make([]*accountCandidate, len(allAccounts))
+				for i := range allAccounts {
+					candidatesToReport[i] = &allAccounts[i]
+				}
+			}
+			for _, candidate := range candidatesToReport {
 				collectCandidateReasons(candidate)
 			}
 			appendReason(incompleteAccounts...)
@@ -401,7 +447,7 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 
 func (r *templatePlanResolver) bindNetwork(plan *onboarding.Plan) {
 	node := r.account
-	if node == nil || node.inactive {
+	if node == nil || node.inactive || node.existing {
 		return
 	}
 	properties := node.env.value(node.raw["properties"])

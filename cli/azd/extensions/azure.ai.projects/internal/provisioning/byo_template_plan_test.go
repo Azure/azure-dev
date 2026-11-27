@@ -134,17 +134,72 @@ func TestBYOPlanAccountSelectionAndHostingResolution(t *testing.T) {
 					},
 				},
 				"inactive": map[string]any{
-					"condition": false, "type": "Microsoft.CognitiveServices/accounts", "name": "inactive-b",
+					"condition": false,
+					"copy":      map[string]any{"name": "inactive", "count": "[parameters('runtimeCount')]"},
+					"type":      "Microsoft.CognitiveServices/accounts", "name": "inactive-b",
 					"properties": "[uniqueString('unused-inactive')]",
 				},
 			}, map[string]any{
 				"UNUSED": map[string]any{"type": "string", "value": "[uniqueString('unused-child')]"},
 			})},
 			outputs: map[string]any{
-				"AZURE_AI_ACCOUNT_NAME": map[string]any{"type": "string", "value": "[parameters('dynamicAccount')]"},
+				"AZURE_AI_ACCOUNT_NAME": map[string]any{"type": "string", "value": ""},
 				"UNUSED_ROOT":           map[string]any{"type": "string", "value": "[uniqueString('unused-root')]"},
 			},
 			wantSub: "sub-a", wantClusterID: clusterA, wantSubnetID: subnetA, wantProven: true,
+		},
+		{
+			name: "genuinely single BYO account with deduplicated existing ref and account-free module loop",
+			resources: map[string]any{
+				"modA": mod("mod-a", "sub-a", "rg-a", map[string]any{
+					"accountA": map[string]any{
+						"type": "Microsoft.CognitiveServices/accounts", "name": "account-a",
+						"properties": map[string]any{
+							"agentHostingConfigurations": []any{cfgA},
+							"networkInjections":          subnet(subnetA),
+						},
+					},
+					"existingSame": map[string]any{
+						"existing": true, "type": "Microsoft.CognitiveServices/accounts", "name": "account-a",
+					},
+				}, nil),
+				"diagLoop": map[string]any{
+					"copy": map[string]any{"name": "diagLoop", "count": "[parameters('runtimeDiag')]"},
+					"type": "Microsoft.Resources/deployments", "name": "diag-deploy",
+					"properties": map[string]any{
+						"expressionEvaluationOptions": map[string]any{"scope": "inner"},
+						"template": map[string]any{
+							"languageVersion": "2.0",
+							"resources": map[string]any{"grant": map[string]any{
+								"type": "Microsoft.Authorization/roleAssignments", "name": "ra-1",
+							}},
+						},
+					},
+				},
+			},
+			outputs: map[string]any{
+				"AZURE_AI_ACCOUNT_NAME": map[string]any{"type": "string", "value": "[parameters('dynamicAccount')]"},
+			},
+			wantSub: "sub-a", wantClusterID: clusterA, wantSubnetID: subnetA, wantSingle: true, wantProven: true,
+		},
+		{
+			name: "unresolved output with BYO and known non-BYO account preserves selector uncertainty",
+			resources: map[string]any{"modA": mod("mod-a", "sub-a", "rg-a", map[string]any{
+				"accountA": map[string]any{
+					"type": "Microsoft.CognitiveServices/accounts", "name": "account-a",
+					"properties": map[string]any{"agentHostingConfigurations": []any{cfgA}},
+				},
+				"accountB": map[string]any{
+					"type": "Microsoft.CognitiveServices/accounts", "name": "account-b",
+					"properties": map[string]any{"allowProjectManagement": true},
+				},
+			}, nil)},
+			outputs: map[string]any{
+				"AZURE_AI_ACCOUNT_NAME": map[string]any{"type": "string", "value": "[parameters('dynamicAccount')]"},
+			},
+			wantSub:            "sub-a",
+			wantClusterMissing: "dynamicAccount",
+			wantSubnetMissing:  "dynamicAccount",
 		},
 		{
 			name: "output selects unresolved account B without evaluating bystander A properties",
@@ -326,19 +381,23 @@ func TestBYOPlanAccountSelectionAndHostingResolution(t *testing.T) {
 			wantSubnetMissing:  "dyn",
 		},
 		{
-			name: "unresolved deployment copy count prevents single-account fallback while model copy does not",
+			name: "filtered copy loop above limit or unknown count prevents single-account fallback",
 			resources: map[string]any{
 				"modA": mod("mod-a", "sub-a", "rg-a", map[string]any{"accountA": map[string]any{
 					"type": "Microsoft.CognitiveServices/accounts", "name": "account-a",
 					"properties": map[string]any{"agentHostingConfigurations": []any{cfgA}},
 				}}, nil),
 				"modLoop": map[string]any{
-					"copy": map[string]any{"name": "modLoop", "count": "[parameters('runtimeCount')]"},
-					"type": "Microsoft.Resources/deployments", "name": "loop-deploy",
+					"condition": "[equals(copyIndex(), 1)]",
+					"copy":      map[string]any{"name": "modLoop", "count": 200.0},
+					"type":      "Microsoft.Resources/deployments", "name": "loop-deploy",
 					"properties": map[string]any{
 						"expressionEvaluationOptions": map[string]any{"scope": "inner"},
 						"template": map[string]any{
-							"languageVersion": "2.0", "resources": map[string]any{},
+							"languageVersion": "2.0",
+							"resources": map[string]any{"loopAccount": map[string]any{
+								"type": "Microsoft.CognitiveServices/accounts", "name": "account-loop",
+							}},
 						},
 					},
 				},
@@ -399,6 +458,80 @@ func TestBYOPlanAccountSelectionAndHostingResolution(t *testing.T) {
 				"value": "[coalesce(tryGet(reference('modA').outputs, 'AZURE_AI_ACCOUNT_NAME', 'value'), 'account-b')]",
 			}},
 			wantSub: "sub-a", wantClusterMissing: "unknownCond", wantSubnetMissing: "unknownCond",
+		},
+		{
+			name: "unresolved conditional child output preserves uncertainty in empty(outputs) selector",
+			resources: map[string]any{
+				"modA": mod("mod-a", "sub-a", "rg-a", map[string]any{"accountA": map[string]any{
+					"type": "Microsoft.CognitiveServices/accounts", "name": "account-a",
+					"properties": map[string]any{"agentHostingConfigurations": []any{cfgA}},
+				}}, map[string]any{
+					"CONDITIONAL_ACCOUNT": map[string]any{
+						"condition": "[parameters('unknownCond')]", "type": "string", "value": "account-a",
+					},
+				}),
+				"modB": mod("mod-b", "sub-b", "rg-b", map[string]any{"accountB": map[string]any{
+					"type": "Microsoft.CognitiveServices/accounts", "name": "account-b",
+					"properties": map[string]any{"agentHostingConfigurations": []any{cfgB}},
+				}}, nil),
+			},
+			outputs: map[string]any{"AZURE_AI_ACCOUNT_NAME": map[string]any{
+				"type":  "string",
+				"value": "[if(empty(tryGet(reference('modA'), 'outputs')), 'account-b', 'account-a')]",
+			}},
+			wantSub: "sub-a", wantClusterMissing: "unknownCond", wantSubnetMissing: "unknownCond",
+		},
+		{
+			name: "unconditional sibling output and shallowMerge collision prove presence across multiple accounts",
+			resources: map[string]any{
+				"modA": mod("mod-a", "sub-a", "rg-a", map[string]any{"accountA": map[string]any{
+					"type": "Microsoft.CognitiveServices/accounts", "name": "account-a",
+					"properties": map[string]any{"agentHostingConfigurations": []any{cfgA}},
+				}}, map[string]any{
+					"MAYBE": map[string]any{
+						"condition": "[parameters('unknownCond')]", "type": "string", "value": "x",
+					},
+				}),
+				"modB": mod("mod-b", "sub-b", "rg-b", map[string]any{"accountB": map[string]any{
+					"type": "Microsoft.CognitiveServices/accounts", "name": "account-b",
+					"properties": map[string]any{"agentHostingConfigurations": []any{cfgB}},
+				}}, nil),
+			},
+			outputs: map[string]any{"AZURE_AI_ACCOUNT_NAME": map[string]any{
+				"type": "string",
+				"value": "[if(and(not(empty(shallowMerge(createArray(createObject('maybe', 'v'), " +
+					"tryGet(reference('modA'), 'outputs'))))), equals(length(shallowMerge(createArray(" +
+					"createObject('maybe', 'v'), tryGet(reference('modA'), 'outputs')))), 1)), " +
+					"'account-b', 'account-a')]",
+			}},
+			wantSub: "sub-b", wantClusterID: clusterB, wantProven: true,
+		},
+		{
+			name: "direct reference to inactive module does not walk or select inactive account",
+			resources: map[string]any{
+				"modOff": func() map[string]any {
+					m := mod("mod-off", "sub-a", "rg-a", map[string]any{"accountA": map[string]any{
+						"type": "Microsoft.CognitiveServices/accounts", "name": "account-a",
+						"properties": map[string]any{"agentHostingConfigurations": []any{cfgA}},
+					}}, map[string]any{"NAME": map[string]any{"type": "string", "value": "account-a"}})
+					m["condition"] = false
+					return m
+				}(),
+				"modB": mod("mod-b", "sub-b", "rg-b", map[string]any{
+					"accountB": map[string]any{
+						"type": "Microsoft.CognitiveServices/accounts", "name": "account-b",
+						"properties": map[string]any{"agentHostingConfigurations": []any{cfgB}},
+					},
+					"plainC": map[string]any{
+						"type": "Microsoft.CognitiveServices/accounts", "name": "account-c",
+						"properties": map[string]any{"allowProjectManagement": true},
+					},
+				}, nil),
+			},
+			outputs: map[string]any{"AZURE_AI_ACCOUNT_NAME": map[string]any{
+				"type": "string", "value": "[reference('modOff').outputs.NAME.value]",
+			}},
+			wantSub: "sub-a", wantClusterMissing: "is inactive", wantSubnetMissing: "is inactive",
 		},
 		{
 			name: "selected account with known ManagedCluster and unresolved sibling entry keeps account network",

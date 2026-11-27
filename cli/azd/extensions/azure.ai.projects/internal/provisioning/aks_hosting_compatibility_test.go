@@ -422,19 +422,25 @@ func TestBYOPreflightSelectedAccountUnresolvedHosting(t *testing.T) {
 	for _, preview := range []bool{false, true} {
 		t.Run(fmt.Sprintf("blocksRequiredBindingsBeforeWrites/preview=%t", preview), func(t *testing.T) {
 			for _, tc := range []struct {
-				name, wantErr string
-				mask          int
-				params        map[string]any
+				name, wantErr, selected string
+				bProperties             map[string]any
+				bExisting               bool
+				mask                    int
+				params                  map[string]any
 			}{
 				{
-					name: "acrAutoKubelet", mask: 7, wantErr: "kubelet principal object ID from preflight",
+					name: "acrAutoKubelet", mask: 7, selected: "account-b",
+					bProperties: map[string]any{"agentHostingConfigurations": unresolvedConfig},
+					wantErr:     "kubelet principal object ID from preflight",
 					params: map[string]any{
 						"includeAcr":     map[string]any{"value": true},
 						"monitoringMode": map[string]any{"value": "none"},
 					},
 				},
 				{
-					name: "acrExplicitKubelet", mask: 7, wantErr: "kubelet principal object ID from preflight",
+					name: "acrExplicitKubelet", mask: 7, selected: "account-b",
+					bProperties: map[string]any{"agentHostingConfigurations": unresolvedConfig},
+					wantErr:     "kubelet principal object ID from preflight",
 					params: map[string]any{
 						"includeAcr":      map[string]any{"value": true},
 						"kubeletObjectId": map[string]any{"value": kubeletB},
@@ -442,8 +448,30 @@ func TestBYOPreflightSelectedAccountUnresolvedHosting(t *testing.T) {
 					},
 				},
 				{
-					name: "suppliedIdentityBinding", mask: 2,
-					wantErr: "hostingManagementIdentityResourceId deployment binding requires matching resource ID",
+					name: "unresolvedSelectorWithNonBYOBystander", mask: 7,
+					selected: "[reference(resourceId('Microsoft.Resources/deployments', 'selector'), " +
+						"'2025-04-01').outputs.accountName.value]",
+					bProperties: map[string]any{"allowProjectManagement": true},
+					wantErr:     "kubelet principal object ID from preflight",
+					params: map[string]any{
+						"includeAcr":     map[string]any{"value": true},
+						"monitoringMode": map[string]any{"value": "none"},
+					},
+				},
+				{
+					name: "unresolvedSelectorWithDistinctExistingAccount", mask: 7, bExisting: true,
+					selected: "[reference(resourceId('Microsoft.Resources/deployments', 'selector'), " +
+						"'2025-04-01').outputs.accountName.value]",
+					wantErr: "kubelet principal object ID from preflight",
+					params: map[string]any{
+						"includeAcr":     map[string]any{"value": true},
+						"monitoringMode": map[string]any{"value": "none"},
+					},
+				},
+				{
+					name: "suppliedIdentityBinding", mask: 2, selected: "account-b",
+					bProperties: map[string]any{"agentHostingConfigurations": unresolvedConfig},
+					wantErr:     "hostingManagementIdentityResourceId deployment binding requires matching resource ID",
 					params: map[string]any{
 						"agentHosting": map[string]any{"value": map[string]any{
 							"enabled": true, "clusterResourceId": offlineClusterID,
@@ -453,7 +481,8 @@ func TestBYOPreflightSelectedAccountUnresolvedHosting(t *testing.T) {
 					},
 				},
 				{
-					name: "unprovenFederationRoleBinding", mask: 0,
+					name: "unprovenFederationRoleBinding", mask: 0, selected: "account-b",
+					bProperties: map[string]any{"agentHostingConfigurations": unresolvedConfig},
 					wantErr: "federatedIdentityRoleDefinitionId deployment binding " +
 						"requires a resolved workload identity scope",
 					params: map[string]any{
@@ -466,8 +495,14 @@ func TestBYOPreflightSelectedAccountUnresolvedHosting(t *testing.T) {
 					p, fake, _ := suppliedProvider(t, tc.mask)
 					env := &resolveEnvStubEnvServer{envName: "test"}
 					p.azdClient = newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
-					template := multiAccountBYOTemplate(
-						map[string]any{"agentHostingConfigurations": unresolvedConfig}, nil, "account-b")
+					var extra map[string]any
+					if tc.bExisting {
+						extra = map[string]any{"accountB": map[string]any{
+							"existing": true, "type": "Microsoft.CognitiveServices/accounts",
+							"apiVersion": "2025-04-01-preview", "name": "account-b",
+						}}
+					}
+					template := multiAccountBYOTemplate(tc.bProperties, extra, tc.selected)
 					params := maps.Clone(tc.params)
 					original := maps.Clone(params)
 					p.armTemplate = template

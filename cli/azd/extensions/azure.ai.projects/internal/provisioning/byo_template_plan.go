@@ -265,18 +265,12 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 }
 
 func moduleMayContainAccount(raw map[string]any, depth int) bool {
-	if depth > 32 {
+	props, ok := raw["properties"].(map[string]any)
+	if !ok || depth > 32 {
 		return true
 	}
-	properties, ok := raw["properties"].(map[string]any)
-	if !ok {
-		return true
-	}
-	template, ok := properties["template"].(map[string]any)
-	if !ok {
-		return true
-	}
-	return resourcesMayContainAccount(template["resources"], depth)
+	tmpl, ok := props["template"].(map[string]any)
+	return !ok || resourcesMayContainAccount(tmpl["resources"], depth)
 }
 
 func resourcesMayContainAccount(raw any, depth int) bool {
@@ -286,7 +280,16 @@ func resourcesMayContainAccount(raw any, depth int) bool {
 	if depth > 32 {
 		return true
 	}
-	checkEntry := func(item any) bool {
+	var items []any
+	switch resources := raw.(type) {
+	case map[string]any:
+		items = slices.Collect(maps.Values(resources))
+	case []any:
+		items = resources
+	default:
+		return true
+	}
+	return slices.ContainsFunc(items, func(item any) bool {
 		entry, ok := item.(map[string]any)
 		if !ok {
 			return true
@@ -298,27 +301,10 @@ func resourcesMayContainAccount(raw any, depth int) bool {
 		if !ok || (strings.HasPrefix(kind, "[") && !strings.HasPrefix(kind, "[[")) {
 			return true
 		}
-		if strings.EqualFold(kind, "Microsoft.CognitiveServices/accounts") {
-			return true
-		}
-		if strings.EqualFold(kind, "Microsoft.Resources/deployments") && moduleMayContainAccount(entry, depth+1) {
-			return true
-		}
-		return resourcesMayContainAccount(entry["resources"], depth+1)
-	}
-	switch resources := raw.(type) {
-	case map[string]any:
-		for _, item := range resources {
-			if checkEntry(item) {
-				return true
-			}
-		}
-		return false
-	case []any:
-		return slices.ContainsFunc(resources, checkEntry)
-	default:
-		return true
-	}
+		return strings.EqualFold(kind, "Microsoft.CognitiveServices/accounts") ||
+			(strings.EqualFold(kind, "Microsoft.Resources/deployments") && moduleMayContainAccount(entry, depth+1)) ||
+			resourcesMayContainAccount(entry["resources"], depth+1)
+	})
 }
 
 func (n *planResource) module() *planEnvironment {
@@ -402,22 +388,51 @@ func (n *planResource) module() *planEnvironment {
 }
 
 func (n *planResource) resourceScope() (string, string) {
-	if n.env.scope.missing != "" {
-		return "", n.env.scope.missing
+	sub, subMissing := n.env.scope.subscriptionID, n.env.scope.missing
+	rawRG, hasRG := planObjectField(n.raw, "resourceGroup")
+	if rawSub, hasSub := planObjectField(n.raw, "subscriptionId"); hasSub {
+		var why string
+		if sub, why = planString(n.env.value(rawSub)); why != "" {
+			return "", "resource subscription: " + why
+		}
+		if hasRG || strings.EqualFold(n.kind, "Microsoft.Resources/resourceGroups") {
+			subMissing = ""
+		}
+	}
+	if subMissing != "" {
+		return "", subMissing
+	}
+	if sub == "" || strings.ContainsAny(sub, "/\\?#%@:\x00 \t\r\n") {
+		return "", "resource subscription scope is not resolved"
 	}
 	if strings.EqualFold(n.kind, "Microsoft.Resources/resourceGroups") {
-		return n.env.scope.subscriptionARMID, ""
+		return "/subscriptions/" + sub, ""
 	}
-	scope := n.env.scope.groupARMID
-	if raw, present := n.raw["scope"]; present {
+	group := n.env.scope.group
+	if hasRG {
+		var why string
+		if group, why = planString(n.env.value(rawRG)); why != "" {
+			return "", "resource group: " + why
+		}
+	}
+	scope := ""
+	if group != "" {
+		if strings.ContainsAny(group, "/\\?#%@:\x00 \t\r\n") {
+			return "", "resource group scope is not resolved"
+		}
+		scope = "/subscriptions/" + sub + "/resourceGroups/" + group
+	}
+	if raw, present := planObjectField(n.raw, "scope"); present {
 		value, why := planString(n.env.value(raw))
 		if why != "" {
 			return "", "resource scope: " + why
 		}
 		if strings.HasPrefix(value, "/") {
 			scope = value
-		} else {
+		} else if scope != "" {
 			scope += "/providers/" + value
+		} else {
+			return "", "resource type or deployment resource-group scope is not resolved"
 		}
 	}
 	if scope == "" {
@@ -570,7 +585,10 @@ func (r *templatePlanResolver) resource(value any, kind, origin string) onboardi
 		if node.inactive || node.existing || !strings.EqualFold(node.kind, kind) {
 			continue
 		}
-		if _, override := node.raw["scope"]; !override {
+		_, hasScope := planObjectField(node.raw, "scope")
+		_, hasSub := planObjectField(node.raw, "subscriptionId")
+		_, hasRG := planObjectField(node.raw, "resourceGroup")
+		if !hasScope && !hasSub && !hasRG {
 			if node.env.scope.subscriptionID != "" &&
 				!strings.EqualFold(node.env.scope.subscriptionID, parsed.SubscriptionID) {
 				continue

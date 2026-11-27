@@ -45,6 +45,17 @@ func (c *accountCandidate) evaluateName() {
 	c.nameEvaluated = true
 }
 
+func (c *accountCandidate) addUnresolved(reason string) {
+	c.configs = append(c.configs, hostingConfigCandidate{unresolved: reason})
+}
+
+func planUnknownReason(value any, prefix, fallback string) string {
+	if unknown, ok := value.(planUnknown); ok {
+		return prefix + unknown.reason
+	}
+	return prefix + fallback
+}
+
 func (c *accountCandidate) evaluateHosting() {
 	if c.hostingEvaluated {
 		return
@@ -56,17 +67,10 @@ func (c *accountCandidate) evaluateHosting() {
 		c.nonHosting = true
 		return
 	}
-	if unknown, ok := properties.(planUnknown); ok {
-		c.configs = append(c.configs, hostingConfigCandidate{
-			unresolved: node.path + ": " + unknown.reason,
-		})
-		return
-	}
 	object, ok := properties.(map[string]any)
 	if !ok {
-		c.configs = append(c.configs, hostingConfigCandidate{
-			unresolved: node.path + ": account properties are not a locally resolved object",
-		})
+		c.addUnresolved(planUnknownReason(properties, node.path+": ",
+			"account properties are not a locally resolved object"))
 		return
 	}
 	configs, hasConfigs := planObjectField(object, "agentHostingConfigurations")
@@ -74,32 +78,17 @@ func (c *accountCandidate) evaluateHosting() {
 		c.nonHosting = true
 		return
 	}
-	if unknown, ok := configs.(planUnknown); ok {
-		c.configs = append(c.configs, hostingConfigCandidate{
-			unresolved: node.path + "/properties.agentHostingConfigurations: " + unknown.reason,
-		})
-		return
-	}
 	values, ok := configs.([]any)
 	if !ok {
-		c.configs = append(c.configs, hostingConfigCandidate{
-			unresolved: node.path + "/properties.agentHostingConfigurations: value is not a locally resolved array",
-		})
+		c.addUnresolved(planUnknownReason(configs, node.path+"/properties.agentHostingConfigurations: ",
+			"value is not a locally resolved array"))
 		return
 	}
 	for i, item := range values {
-		itemOrigin := fmt.Sprintf("%s/properties.agentHostingConfigurations[%d]", node.path, i)
-		if unknown, ok := item.(planUnknown); ok {
-			c.configs = append(c.configs, hostingConfigCandidate{
-				unresolved: itemOrigin + ": " + unknown.reason,
-			})
-			continue
-		}
+		itemOrigin := fmt.Sprintf("%s/properties.agentHostingConfigurations[%d]: ", node.path, i)
 		configMap, ok := item.(map[string]any)
 		if !ok {
-			c.configs = append(c.configs, hostingConfigCandidate{
-				unresolved: itemOrigin + ": configuration entry is not a locally resolved object",
-			})
+			c.addUnresolved(planUnknownReason(item, itemOrigin, "configuration entry is not a locally resolved object"))
 			continue
 		}
 		clusterField, hasCluster := planObjectField(configMap, "clusterResourceId")
@@ -109,11 +98,10 @@ func (c *accountCandidate) evaluateHosting() {
 		}
 		typeField, hasType := planObjectField(configMap, "hostingType")
 		hostingType, typeMissing := "", "object has no hostingType property"
-		typeUnknown := !hasType
+		_, isUnknown := typeField.(planUnknown)
+		_, isPartial := typeField.(planPartialID)
+		typeUnknown := !hasType || isUnknown || isPartial
 		if hasType {
-			_, isUnknown := typeField.(planUnknown)
-			_, isPartial := typeField.(planPartialID)
-			typeUnknown = isUnknown || isPartial
 			hostingType, typeMissing = planString(typeField)
 		}
 		if idMissing == "" && id != "" {
@@ -125,20 +113,13 @@ func (c *accountCandidate) evaluateHosting() {
 			c.configs = append(c.configs, hostingConfigCandidate{config: configMap})
 			continue
 		}
-		if strings.EqualFold(hostingType, "ManagedCluster") {
+		switch {
+		case strings.EqualFold(hostingType, "ManagedCluster"):
 			c.configs = append(c.configs, hostingConfigCandidate{config: configMap})
-			continue
-		}
-		if idMissing != "" {
-			c.configs = append(c.configs, hostingConfigCandidate{
-				unresolved: itemOrigin + ": " + idMissing,
-			})
-			continue
-		}
-		if typeUnknown && hasType {
-			c.configs = append(c.configs, hostingConfigCandidate{
-				unresolved: itemOrigin + ": " + typeMissing,
-			})
+		case idMissing != "":
+			c.addUnresolved(itemOrigin + idMissing)
+		case typeUnknown && hasType:
+			c.addUnresolved(itemOrigin + typeMissing)
 		}
 	}
 	if len(c.configs) == 0 && len(c.invalidTypeErrors) == 0 {
@@ -155,6 +136,7 @@ func resolveAccountNameOutput(root *planEnvironment) (string, string) {
 	if !found || raw == nil {
 		return "", ""
 	}
+	valExpr := raw
 	if definition, ok := raw.(map[string]any); ok {
 		if condition, hasCond := planObjectField(definition, "condition"); hasCond {
 			active, missing := planBool(root.value(condition))
@@ -165,28 +147,23 @@ func resolveAccountNameOutput(root *planEnvironment) (string, string) {
 				return "", ""
 			}
 		}
-		rawValue, hasValue := planObjectField(definition, "value")
-		if !hasValue {
+		var hasValue bool
+		if valExpr, hasValue = planObjectField(definition, "value"); !hasValue {
 			return "", "AZURE_AI_ACCOUNT_NAME: output has no local value"
 		}
-		value := root.value(rawValue)
-		if value == nil {
-			return "", ""
-		}
-		name, missing := planString(value)
-		if missing != "" {
-			return "", "AZURE_AI_ACCOUNT_NAME: " + missing
-		}
-		return name, ""
 	}
-	name, missing := planString(root.value(raw))
+	value := root.value(valExpr)
+	if value == nil {
+		return "", ""
+	}
+	name, missing := planString(value)
 	if missing != "" {
 		return "", "AZURE_AI_ACCOUNT_NAME: " + missing
 	}
 	return name, ""
 }
 
-func setMissingBYOResources(plan *onboarding.Plan, scopePath, reason string) {
+func setMissingBYOPlan(plan *onboarding.Plan, scopePath, reason string, includeSubnet bool) {
 	for _, entry := range []struct {
 		kind string
 		out  *onboarding.Resource
@@ -197,6 +174,11 @@ func setMissingBYOResources(plan *onboarding.Plan, scopePath, reason string) {
 		{"Microsoft.ManagedIdentity/userAssignedIdentities (workload)", &plan.Workload},
 	} {
 		*entry.out = onboarding.Resource{Origin: entry.kind + " at " + scopePath, Missing: reason}
+	}
+	if includeSubnet {
+		plan.AgentSubnet = onboarding.Resource{
+			Origin: "Microsoft.Network/virtualNetworks/subnets at " + scopePath, Missing: reason,
+		}
 	}
 }
 
@@ -216,26 +198,21 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 	}
 	if len(existingNodes) > 0 {
 		seenExistingIDs := map[string]bool{}
-		isDeployedID := func(targetID, targetScope string) bool {
-			for i := range allAccounts {
-				deployed := allAccounts[i].node
-				if deployed.existing || deployed.missing != "" {
-					continue
-				}
-				if scope, why := deployed.resourceScope(); why == "" && !strings.EqualFold(scope, targetScope) {
-					continue
-				}
-				if id, missing := deployed.id(); missing == "" && strings.EqualFold(id, targetID) {
-					return true
-				}
-			}
-			return false
-		}
 		for _, node := range existingNodes {
 			if id, missing := node.id(); missing == "" && id != "" {
 				scope, _ := node.resourceScope()
 				key := strings.ToLower(id)
-				if isDeployedID(id, scope) || (node.missing == "" && seenExistingIDs[key]) {
+				deployedMatch := slices.ContainsFunc(allAccounts, func(c accountCandidate) bool {
+					if c.node.existing || c.node.missing != "" {
+						return false
+					}
+					if dScope, why := c.node.resourceScope(); why == "" && !strings.EqualFold(dScope, scope) {
+						return false
+					}
+					dID, dMissing := c.node.id()
+					return dMissing == "" && strings.EqualFold(dID, id)
+				})
+				if deployedMatch || (node.missing == "" && seenExistingIDs[key]) {
 					continue
 				}
 				if node.missing == "" {
@@ -258,31 +235,30 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 			}
 		}
 	}
-	collectCandidateReasons := func(candidate *accountCandidate) {
-		candidate.evaluateName()
-		candidate.evaluateHosting()
-		if candidate.nameMissing != "" {
-			appendReason(candidate.node.path + ": account name: " + candidate.nameMissing)
-		}
-		if candidate.node.missing != "" {
-			appendReason(candidate.node.path + ": " + candidate.node.missing)
-		}
-		for _, cfg := range candidate.configs {
-			appendReason(cfg.unresolved)
+	collectReasons := func(candidates ...*accountCandidate) {
+		for _, candidate := range candidates {
+			candidate.evaluateName()
+			candidate.evaluateHosting()
+			if candidate.nameMissing != "" {
+				appendReason(candidate.node.path + ": account name: " + candidate.nameMissing)
+			}
+			if candidate.node.missing != "" {
+				appendReason(candidate.node.path + ": " + candidate.node.missing)
+			}
+			for _, cfg := range candidate.configs {
+				appendReason(cfg.unresolved)
+			}
 		}
 	}
 
 	if outputName != "" {
-		var exactMatches []*accountCandidate
-		var unknownName []*accountCandidate
+		var exactMatches, unknownName []*accountCandidate
 		for i := range allAccounts {
 			candidate := &allAccounts[i]
 			candidate.evaluateName()
 			if candidate.nameMissing != "" {
 				unknownName = append(unknownName, candidate)
-				continue
-			}
-			if strings.EqualFold(candidate.name, outputName) {
+			} else if strings.EqualFold(candidate.name, outputName) {
 				exactMatches = append(exactMatches, candidate)
 			}
 		}
@@ -292,28 +268,20 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 			selectedAccount = exactMatches[0]
 		case len(exactMatches) == 0:
 			appendReason(fmt.Sprintf("AZURE_AI_ACCOUNT_NAME %q did not match a local Foundry account", outputName))
-			for _, candidate := range unknownName {
-				collectCandidateReasons(candidate)
-			}
+			collectReasons(unknownName...)
 			appendReason(incompleteAccounts...)
 		default:
 			appendReason(fmt.Sprintf(
 				"AZURE_AI_ACCOUNT_NAME %q matched multiple or ambiguous Foundry account candidates", outputName))
-			for _, candidate := range exactMatches {
-				collectCandidateReasons(candidate)
-			}
-			for _, candidate := range unknownName {
-				collectCandidateReasons(candidate)
-			}
+			collectReasons(exactMatches...)
+			collectReasons(unknownName...)
 			appendReason(incompleteAccounts...)
 		}
 	} else {
 		var hostingAccounts []*accountCandidate
 		for i := range allAccounts {
-			candidate := &allAccounts[i]
-			candidate.evaluateHosting()
-			if !candidate.nonHosting {
-				hostingAccounts = append(hostingAccounts, candidate)
+			if allAccounts[i].evaluateHosting(); !allAccounts[i].nonHosting {
+				hostingAccounts = append(hostingAccounts, &allAccounts[i])
 			}
 		}
 		if len(hostingAccounts) == 1 && len(incompleteAccounts) == 0 &&
@@ -321,15 +289,12 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 			selectedAccount = hostingAccounts[0]
 		} else {
 			appendReason(outputUnresolved)
-			candidatesToReport := hostingAccounts
 			if outputUnresolved != "" && len(allAccounts) > 1 {
-				candidatesToReport = make([]*accountCandidate, len(allAccounts))
 				for i := range allAccounts {
-					candidatesToReport[i] = &allAccounts[i]
+					collectReasons(&allAccounts[i])
 				}
-			}
-			for _, candidate := range candidatesToReport {
-				collectCandidateReasons(candidate)
+			} else {
+				collectReasons(hostingAccounts...)
 			}
 			appendReason(incompleteAccounts...)
 		}
@@ -340,10 +305,7 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 		if len(reasons) > 0 {
 			reason += ": " + strings.Join(reasons, "; ")
 		}
-		setMissingBYOResources(plan, root.path, reason)
-		plan.AgentSubnet = onboarding.Resource{
-			Origin: "Microsoft.Network/virtualNetworks/subnets at " + root.path, Missing: reason,
-		}
+		setMissingBYOPlan(plan, root.path, reason, true)
 		return
 	}
 
@@ -356,40 +318,29 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 		if selectedAccount.node.missing != "" {
 			reason += "; Foundry account selection: " + selectedAccount.node.missing
 		}
-		setMissingBYOResources(plan, selectedAccount.node.path, reason)
-		plan.AgentSubnet = onboarding.Resource{
-			Origin: "Microsoft.Network/virtualNetworks/subnets at " + selectedAccount.node.path, Missing: reason,
-		}
+		setMissingBYOPlan(plan, selectedAccount.node.path, reason, true)
 		return
 	}
-	if selectedAccount.node.missing != "" {
-		var cfgReasons []string
-		for _, cfg := range selectedAccount.configs {
-			if cfg.unresolved != "" && !slices.Contains(cfgReasons, cfg.unresolved) {
-				cfgReasons = append(cfgReasons, cfg.unresolved)
-			}
+
+	var cfgReasons []string
+	for _, cfg := range selectedAccount.configs {
+		if cfg.unresolved != "" && !slices.Contains(cfgReasons, cfg.unresolved) {
+			cfgReasons = append(cfgReasons, cfg.unresolved)
 		}
+	}
+	if selectedAccount.node.missing != "" {
 		reason := "no unique local Foundry account/agentHostingConfigurations association at " +
 			selectedAccount.node.path
 		if len(cfgReasons) > 0 {
 			reason += ": " + strings.Join(cfgReasons, "; ")
 		}
 		reason += "; Foundry account selection: " + selectedAccount.node.missing
-		setMissingBYOResources(plan, selectedAccount.node.path, reason)
-		plan.AgentSubnet = onboarding.Resource{
-			Origin: "Microsoft.Network/virtualNetworks/subnets at " + selectedAccount.node.path, Missing: reason,
-		}
+		setMissingBYOPlan(plan, selectedAccount.node.path, reason, true)
 		return
 	}
 
 	r.account = selectedAccount.node
 	if len(selectedAccount.configs) != 1 || selectedAccount.configs[0].unresolved != "" {
-		var cfgReasons []string
-		for _, cfg := range selectedAccount.configs {
-			if cfg.unresolved != "" && !slices.Contains(cfgReasons, cfg.unresolved) {
-				cfgReasons = append(cfgReasons, cfg.unresolved)
-			}
-		}
 		reason := "no unique local Foundry account/agentHostingConfigurations association"
 		if len(selectedAccount.configs) == 1 && len(cfgReasons) == 1 {
 			reason += ": " + cfgReasons[0]
@@ -398,7 +349,7 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 		} else {
 			reason += " at " + selectedAccount.node.path
 		}
-		setMissingBYOResources(plan, selectedAccount.node.path, reason)
+		setMissingBYOPlan(plan, selectedAccount.node.path, reason, false)
 		return
 	}
 
@@ -429,18 +380,13 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 		if len(allAccounts) == 1 {
 			r.singleAccountHosting = true
 		} else if plan.Workload.ID == "" && plan.Workload.Parent == "" {
-			singleHosting := true
-			for i := range allAccounts {
-				if &allAccounts[i] == selectedAccount {
-					continue
+			r.singleAccountHosting = !slices.ContainsFunc(allAccounts, func(c accountCandidate) bool {
+				if c.node == selectedAccount.node {
+					return false
 				}
-				allAccounts[i].evaluateHosting()
-				if !allAccounts[i].nonHosting {
-					singleHosting = false
-					break
-				}
-			}
-			r.singleAccountHosting = singleHosting
+				c.evaluateHosting()
+				return !c.nonHosting
+			})
 		}
 	}
 }

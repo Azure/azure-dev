@@ -172,6 +172,20 @@ type planEnvironment struct {
 	walked     bool
 }
 
+func lookupPlanObject(object map[string]any, key string) (any, bool) {
+	var matched any
+	found := false
+	for _, name := range slices.Sorted(maps.Keys(object)) {
+		if strings.EqualFold(name, key) {
+			if unknown, ok := object[name].(planUnknownPresence); ok {
+				return planUnknown(unknown), true
+			}
+			matched, found = object[name], true
+		}
+	}
+	return matched, found
+}
+
 func planField(value any, key string) any {
 	if unknown, ok := value.(planUnknown); ok {
 		return unknown
@@ -180,18 +194,7 @@ func planField(value any, key string) any {
 	if !ok {
 		return planUnknown{"expected an object when selecting " + key}
 	}
-	found := false
-	var matched any
-	for _, name := range slices.Sorted(maps.Keys(object)) {
-		if strings.EqualFold(name, key) {
-			if unknown, ok := object[name].(planUnknownPresence); ok {
-				return planUnknown(unknown)
-			}
-			matched = object[name]
-			found = true
-		}
-	}
-	if found {
+	if matched, found := lookupPlanObject(object, key); found {
 		return matched
 	}
 	return planUnknown{"object has no " + key + " property"}
@@ -364,23 +367,7 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 				if missing != "" {
 					return planUnknown{missing}
 				}
-				found := false
-				var matched any
-				for _, name := range slices.Sorted(maps.Keys(current)) {
-					if strings.EqualFold(name, key) {
-						if unknown, ok := current[name].(planUnknownPresence); ok {
-							matched = planUnknown(unknown)
-							found = true
-							break
-						}
-						matched = current[name]
-						found = true
-					}
-				}
-				value = nil
-				if found {
-					value = matched
-				}
+				value, _ = lookupPlanObject(current, key)
 			case []any:
 				index, ok := selector.(float64)
 				if !ok || index != math.Trunc(index) {

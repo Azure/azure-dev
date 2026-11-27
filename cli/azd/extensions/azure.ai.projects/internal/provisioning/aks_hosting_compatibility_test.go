@@ -410,7 +410,7 @@ func TestBYOCustomTemplateWithoutAgentHosting(t *testing.T) {
 	customClusterID := offlineClusterID + "-custom"
 	for _, preview := range []bool{false, true} {
 		for _, scenario := range []string{
-			"renamed parameter", "property loop", "union properties", "union preflight failure",
+			"renamed parameter", "property loop", "resource loop", "union properties", "union preflight failure",
 			"disabled agentHosting parameter", "preflight failure",
 		} {
 			t.Run(fmt.Sprintf("preview=%t/%s", preview, scenario), func(t *testing.T) {
@@ -425,10 +425,17 @@ func TestBYOCustomTemplateWithoutAgentHosting(t *testing.T) {
 							"[format('{0}-{1}', parameters('aksClusterId'), copyIndex('agentHostingConfigurations'))]",
 						)["agentHostingConfigurations"].([]any)[0],
 					}}}
+				} else if scenario == "resource loop" {
+					props = customBYOProperties("[createArray('unused', parameters('aksClusterId'))[copyIndex('accounts')]]")
 				} else if strings.HasPrefix(scenario, "union ") {
 					props = "[union(variables('baseProps'), variables('aksProps'))]"
 				}
 				p, fake, source := customTemplateWithoutAgentHosting(t, 7, props)
+				if scenario == "resource loop" {
+					acc := p.armTemplate["resources"].(map[string]any)["customAccount"].(map[string]any)
+					acc["copy"] = map[string]any{"name": "accounts", "count": 2.0}
+					acc["condition"] = "[equals(copyIndex('accounts'), 1)]"
+				}
 				p.armTemplate["variables"] = map[string]any{
 					"baseProps": map[string]any{"allowProjectManagement": true},
 					"aksProps":  customBYOProperties("[parameters('aksClusterId')]"),
@@ -512,26 +519,38 @@ func TestBYOCustomTemplateGateAndNonAKSIsolation(t *testing.T) {
 	assert.Nil(t, p.credential)
 	assert.Empty(t, fake.requests)
 
-	// Existing-project fallback BYO rejects acrMode create/reuse-connect while allowing none/already-connected.
-	for _, tc := range []struct {
-		mode   string
-		reject bool
-	}{
-		{"create", true},
-		{"reuse-connect", true},
-		{"none", false},
-		{"already-connected", false},
-	} {
-		p, _, source = customTemplateWithoutAgentHosting(t, 7, customBYOProperties(offlineClusterID))
-		p.brownfieldEndpoint = offlineProjectEndpoint
-		source.parameters["acrMode"] = map[string]any{"value": tc.mode}
-		source.parameters["includeAcr"] = map[string]any{"value": true}
-		source.parameters["existingAcrResourceId"] = map[string]any{"value": registryID}
-		_, err = p.prepareBYOLocal(source)
-		if tc.reject {
-			require.ErrorContains(t, err, "acrMode create or reuse-connect")
-		} else {
-			require.NoError(t, err)
+	// Existing-project fallback BYO rejects acrMode create/reuse-connect (parameter or ejected output)
+	// while allowing none/already-connected and preserving root parameter precedence.
+	for _, ejectedOutput := range []bool{false, true} {
+		for _, tc := range []struct {
+			mode   string
+			reject bool
+		}{
+			{"create", true},
+			{"reuse-connect", true},
+			{"none", false},
+			{"already-connected", false},
+		} {
+			p, _, source = customTemplateWithoutAgentHosting(t, 7, customBYOProperties(offlineClusterID))
+			p.brownfieldEndpoint = offlineProjectEndpoint
+			if ejectedOutput {
+				p.armTemplate["outputs"] = map[string]any{
+					"AZD_FOUNDRY_ACR_MODE": map[string]any{"type": "string", "value": tc.mode},
+				}
+			} else {
+				source.parameters["acrMode"] = map[string]any{"value": tc.mode}
+				p.armTemplate["outputs"] = map[string]any{
+					"AZD_FOUNDRY_ACR_MODE": map[string]any{"type": "string", "value": "create"},
+				}
+			}
+			source.parameters["includeAcr"] = map[string]any{"value": true}
+			source.parameters["existingAcrResourceId"] = map[string]any{"value": registryID}
+			_, err = p.prepareBYOLocal(source)
+			if tc.reject {
+				require.ErrorContains(t, err, "acrMode create or reuse-connect")
+			} else {
+				require.NoError(t, err)
+			}
 		}
 	}
 
@@ -684,25 +703,41 @@ func TestBYOCustomTemplateGateAndNonAKSIsolation(t *testing.T) {
 		})
 	}
 
-	// All conditional BYO candidates excluded online skip cluster preflight and fallback ACR rejection.
-	p, fake, source = customTemplateWithoutAgentHosting(t, 7, nil)
-	source.parameters["includeAcr"] = map[string]any{"value": true}
-	p.armTemplate["resources"] = map[string]any{"scoped": map[string]any{
-		"type": "Microsoft.Resources/deployments", "name": "scoped", "resourceGroup": "target-rg",
-		"properties": map[string]any{
-			"expressionEvaluationOptions": map[string]any{"scope": "inner"},
-			"template": map[string]any{"resources": map[string]any{"eastOnly": map[string]any{
-				"type": "Microsoft.CognitiveServices/accounts", "name": "east-cog",
-				"condition":  "[equals(resourceGroup().location, 'eastus')]",
-				"properties": customBYOProperties(offlineClusterID),
-			}}},
-		},
-	}}
-	t.Setenv(synthesis.BYOAKSEnvVar, "true")
-	_, err = p.Preview(t.Context(), func(string) {})
-	require.NoError(t, err)
-	assert.NotContains(t, fake.requests, "GET "+offlineClusterID)
-	assert.Equal(t, 1, fake.base.previews)
+	// All conditional BYO candidates excluded online skip cluster preflight and fallback ACR rejection,
+	// even when an unrelated linked deployment leaves resolver.unresolved non-empty.
+	for _, preview := range []bool{false, true} {
+		p, fake, source = customTemplateWithoutAgentHosting(t, 7, nil)
+		source.parameters["includeAcr"] = map[string]any{"value": false}
+		p.armTemplate["resources"] = map[string]any{
+			"linked": map[string]any{
+				"type": "Microsoft.Resources/deployments", "name": "linked",
+				"properties": map[string]any{"templateLink": map[string]any{"uri": "https://example.com/linked.json"}},
+			},
+			"scoped": map[string]any{
+				"type": "Microsoft.Resources/deployments", "name": "scoped", "resourceGroup": "target-rg",
+				"properties": map[string]any{
+					"expressionEvaluationOptions": map[string]any{"scope": "inner"},
+					"template": map[string]any{"resources": map[string]any{"eastOnly": map[string]any{
+						"type": "Microsoft.CognitiveServices/accounts", "name": "east-cog",
+						"condition":  "[equals(resourceGroup().location, 'eastus')]",
+						"properties": customBYOProperties(offlineClusterID),
+					}}},
+				},
+			},
+		}
+		t.Setenv(synthesis.BYOAKSEnvVar, "true")
+		if preview {
+			source.parameters["includeAcr"] = map[string]any{"value": true}
+			_, err = p.Preview(t.Context(), func(string) {})
+			require.NoError(t, err)
+			assert.Equal(t, 1, fake.base.previews)
+		} else {
+			_, err = p.Deploy(t.Context(), func(string) {})
+			require.NoError(t, err)
+			assert.Equal(t, 1, fake.base.writes)
+		}
+		assert.NotContains(t, fake.requests, "GET "+offlineClusterID)
+	}
 
 	// Resource-group scope read failure must still block when candidateCount drops to zero online.
 	p, fake, _ = customTemplateWithoutAgentHosting(t, 7, nil)

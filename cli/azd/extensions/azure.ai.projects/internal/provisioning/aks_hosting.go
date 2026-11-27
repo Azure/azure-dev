@@ -51,9 +51,26 @@ type byoLocalPreparation struct {
 	explicitKubeletID     string
 }
 
+func existingProjectTemplateACRMode(source *templateSource) string {
+	if raw := parameterValue(source, "acrMode"); raw != nil || templateDeclaresParameter(source, "acrMode") {
+		mode, _ := raw.(string)
+		return mode
+	}
+	outputs, _ := source.armTemplate["outputs"].(map[string]any)
+	for key, entry := range outputs {
+		if strings.EqualFold(key, "AZD_FOUNDRY_ACR_MODE") {
+			output, _ := entry.(map[string]any)
+			if mode, ok := output["value"].(string); ok && !strings.HasPrefix(strings.TrimSpace(mode), "[") {
+				return mode
+			}
+		}
+	}
+	return ""
+}
+
 func (p *FoundryProvisioningProvider) rejectFallbackBYORegistry(source *templateSource) error {
 	if p != nil && p.brownfieldEndpoint != "" {
-		mode, _ := parameterValue(source, "acrMode").(string)
+		mode := existingProjectTemplateACRMode(source)
 		if !strings.EqualFold(mode, "create") && !strings.EqualFold(mode, "reuse-connect") {
 			return nil
 		}

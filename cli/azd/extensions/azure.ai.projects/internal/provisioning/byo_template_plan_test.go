@@ -93,4 +93,12 @@ func TestBYOPlanCopyLoops(t *testing.T) {
 	assert.IsType(t, planUnknown{}, env.value("[union(createArray('a'), createArray('b'))]"))
 	assert.Equal(t, "{1}-0", env.value("[format('{0}-{1}', '{1}', 0)]"))
 	assert.IsType(t, planUnknown{}, env.value("[format('{0}', 1.5)]"))
+
+	loopResolver := &templatePlanResolver{}
+	loopEnv := loopResolver.environment(map[string]any{"resources": map[string]any{"acc": map[string]any{
+		"type": "Microsoft.CognitiveServices/accounts", "name": "cog",
+		"copy": map[string]any{"name": "accounts", "count": "[length(parameters('runtimeClusters'))]"},
+	}}}, nil, planScope{}, "root", "test")
+	loopResolver.walk(loopEnv, "", 0)
+	assert.IsType(t, planUnknown{}, loopEnv.resources["acc"].env.value("[copyIndex('accounts')]"))
 }

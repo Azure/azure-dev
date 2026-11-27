@@ -204,13 +204,16 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 	for _, entry := range entries {
 		count := 1
 		copyMissing := ""
+		copyName := ""
 		if copy, ok := entry.raw["copy"].(map[string]any); ok {
+			name, _ := copy["name"].(string)
 			value := env.value(copy["count"])
 			number, ok := value.(float64)
 			if !ok || number < 0 || number > 128 || number != float64(int(number)) {
 				copyMissing = "resource copy count cannot be resolved within the local plan limit (128)"
 			} else {
 				count = int(number)
+				copyName = name
 			}
 		}
 		for index := range count {
@@ -221,6 +224,12 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 			local := *env
 			local.copyIndex = index
 			local.namedCopy = maps.Clone(env.namedCopy)
+			if copyName != "" {
+				if local.namedCopy == nil {
+					local.namedCopy = map[string]int{}
+				}
+				local.namedCopy[strings.ToLower(copyName)] = index
+			}
 			local.variables, local.active = map[string]any{}, map[string]bool{}
 			path := env.path + "/" + entry.symbol
 			if count > 1 {
@@ -620,7 +629,7 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlanWithMode(
 	plan := onboarding.Plan{SubscriptionID: p.subID}
 	resolver.owningSubscriptions[strings.ToLower(p.subID)] = true
 	resolver.bindResources(&plan, env)
-	if fallbackHosting && resolver.candidateCount == 0 && len(resolver.unresolved) == 0 {
+	if fallbackHosting && resolver.candidateCount == 0 {
 		return plan, false, resolver.err
 	}
 	_, missing := planString(env.parameter("resourceGroupName"))

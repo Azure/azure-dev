@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -59,8 +60,23 @@ func Test_ProjectService_NoProject(t *testing.T) {
 	// Create the service with ImportManager.
 	importManager := project.NewImportManager(&project.DotNetImporter{})
 	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, ghCli)
-	_, err := service.Get(*mockContext.Context, &azdext.EmptyRequest{})
-	require.Error(t, err)
+	stream := &projectSaveTransport{}
+	ctx := grpc.NewContextWithServerTransportStream(*mockContext.Context, stream)
+	_, err := service.Get(ctx, &azdext.EmptyRequest{})
+	require.ErrorIs(t, err, azdcontext.ErrNoProject)
+	require.Equal(t, []string{"not_found"}, stream.trailers.Get("azd-project-get-error"))
+}
+
+func TestProjectGetReadFailureDoesNotReportMissingProject(t *testing.T) {
+	readErr := errors.New("invalid project configuration")
+	service := &projectService{
+		lazyProjectConfig: lazy.NewLazy(func() (*project.ProjectConfig, error) { return nil, readErr }),
+	}
+	stream := &projectSaveTransport{}
+	ctx := grpc.NewContextWithServerTransportStream(t.Context(), stream)
+	_, err := service.Get(ctx, &azdext.EmptyRequest{})
+	require.ErrorIs(t, err, readErr)
+	require.Equal(t, []string{"read_failed"}, stream.trailers.Get("azd-project-get-error"))
 }
 
 // Test_ProjectService_Flow validates the complete project service flow:

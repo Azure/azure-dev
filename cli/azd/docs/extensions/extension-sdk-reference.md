@@ -738,6 +738,11 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 
 Always call `defer client.Close()` after creation.
 
+`Project().Get()` and `ProjectBeta().Get()` can return the `azd-project-get-error`
+gRPC trailer on failure: `not_found` means there is no project, and `read_failed`
+means the host could not read or convert the project configuration. The RPC
+status and message are unchanged. Older hosts may omit the trailer.
+
 #### Service configuration persistence
 
 Use existing `Project().AddService` to add or replace one complete service.

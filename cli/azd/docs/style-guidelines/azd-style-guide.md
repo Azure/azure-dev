@@ -286,7 +286,7 @@ Hint: This is a help message
 - The capitalized letter reflects the default value: `[Y/n]` when the default is yes, `[y/N]` when it is no, and `[y/n]` when no default is set.
 
 ```
-? Do you want to initialize a new Git repository in this directory? [Y/n] Yes
+? Initialize a new Git repository in this directory? [Y/n] Yes
 ```
 
 > Colors: `?` → `WithHighLightFormat` + `WithBold`.

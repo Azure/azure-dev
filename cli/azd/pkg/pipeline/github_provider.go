@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"maps"
 	"path/filepath"
 	"regexp"
@@ -88,7 +89,7 @@ func (p *GitHubScmProvider) configureGitRemote(
 
 	// There are a few ways to configure the remote so offer a choice to the user.
 	idx, err := p.console.Select(ctx, input.ConsoleOptions{
-		Message: "How would you like to configure your git remote to GitHub?",
+		Message: "Select how to configure the GitHub remote:",
 		Options: []string{
 			"Select an existing GitHub project",
 			"Create a new private GitHub repository",
@@ -279,7 +280,7 @@ func (p *GitHubScmProvider) notifyWhenGitHubActionsAreDisabled(
 		p.console.Message(ctx, message)
 
 		rawSelection, err := p.console.Select(ctx, input.ConsoleOptions{
-			Message: "What would you like to do now?",
+			Message: "How do you want to proceed?",
 			Options: []string{
 				manualChoice.String(),
 				cancelChoice.String(),
@@ -611,8 +612,8 @@ func (p *GitHubCiProvider) promptForSubjects(
 
 	options := []string{oidcOptionUseDetected, oidcOptionCustom}
 	selection, err := p.console.Select(ctx, input.ConsoleOptions{
-		Message: "How would you like to configure federated" +
-			" identity credential subjects?",
+		Message: "Select how to configure federated" +
+			" identity credential subjects:",
 		Options: options,
 	})
 	if err != nil {
@@ -867,12 +868,12 @@ func (p *GitHubCiProvider) configurePipeline(
 			p.console.StopSpinner(ctx, msg, input.GetStepResultFormat(procErr))
 		}
 		if procErr == nil {
+			hasSecrets := options.clientCredentials || len(options.secrets) > 0
 			p.console.MessageUxItem(ctx, &ux.MultilineMessage{
 				Lines: []string{
 					"",
-					"GitHub Action secrets are now configured. You can view GitHub action secrets that were " +
-						"created at this link:",
-					output.WithLinkFormat("https://github.com/%s/settings/secrets/actions", repoSlug),
+					"GitHub Actions secrets and variables are now configured. You can view them at this link:",
+					output.WithLinkFormat("%s", actionsSettingsUrl(repoSlug, hasSecrets)),
 					""},
 			})
 		}
@@ -1253,19 +1254,45 @@ func (p *GitHubCiProvider) configurePipeline(
 
 	return &workflow{
 		repoDetails: repoDetails,
+		file:        options.pipelineFile,
+		ghCli:       p.ghCli,
 	}, nil
+}
+
+// actionsSettingsUrl returns the GitHub Actions settings page for the repository. Secrets are only created for
+// client credentials auth or project secrets, so the variables page is the better landing page when there are none.
+func actionsSettingsUrl(repoSlug string, hasSecrets bool) string {
+	page := "variables"
+	if hasSecrets {
+		page = "secrets"
+	}
+	return fmt.Sprintf("https://github.com/%s/settings/%s/actions", repoSlug, page)
 }
 
 // workflow is the implementation for a CiPipeline for GitHub
 type workflow struct {
 	repoDetails *gitRepositoryDetails
+	ghCli       *github.Cli
+	// file is the name of the default workflow file (azure-dev.yml or azure-dev.yaml) in the repository, if any.
+	file string
 }
 
 func (w *workflow) name() string {
 	return "actions"
 }
-func (w *workflow) url() string {
-	return w.repoDetails.url + "/actions"
+
+func (w *workflow) url(ctx context.Context) string {
+	overview := w.repoDetails.url + "/actions"
+	if w.file == "" || !w.repoDetails.pushStatus {
+		return overview
+	}
+	// Pushing a nested project may leave the root workflow untracked.
+	path := fmt.Sprintf("/repos/%s/%s/actions/workflows/%s", w.repoDetails.owner, w.repoDetails.repoName, w.file)
+	if _, err := w.ghCli.ApiCall(ctx, github.GitHubHostName, path, github.ApiCallOptions{}); err != nil {
+		log.Printf("Could not confirm GitHub workflow %s; using the Actions overview: %v", w.file, err)
+		return overview
+	}
+	return overview + "/workflows/" + w.file
 }
 
 // ensureGitHubLogin ensures the user is logged into the GitHub CLI. If not, it prompt the user
@@ -1381,7 +1408,7 @@ func getRemoteUrlFromNewRepository(
 
 	for {
 		name, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message:      "Enter the name for your new repository OR Hit enter to use this name:",
+			Message:      "Enter a new GitHub repository name:",
 			DefaultValue: currentDirectoryName,
 		})
 		if err != nil {

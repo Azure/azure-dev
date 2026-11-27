@@ -933,7 +933,7 @@ func Test_PipelineManager_checkAndPromptForProviderFiles(t *testing.T) {
 		console := mockinput.NewMockConsole()
 		// Confirm creation
 		console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Would you like to add it now")
+			return strings.Contains(options.Message, "Add the default azure-dev.yml file")
 		}).Respond(true)
 
 		pm := &PipelineManager{
@@ -1381,7 +1381,7 @@ func Test_GitHubScmProvider_configureGitRemote(t *testing.T) {
 
 		console := mockinput.NewMockConsole()
 		console.WhenSelect(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "configure your git remote")
+			return strings.Contains(options.Message, "Select how to configure the GitHub remote")
 		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 			return 0, errors.New("user cancelled")
 		})
@@ -2124,7 +2124,7 @@ func Test_azdoPipeline_url_construction(t *testing.T) {
 	}
 
 	assert.Equal(t, "build-pipeline", p.name())
-	assert.Equal(t, "https://dev.azure.com/myorg/myproject/_build?definitionId=99", p.url())
+	assert.Equal(t, "https://dev.azure.com/myorg/myproject/_build?definitionId=99", p.url(t.Context()))
 }
 
 // =====================================================================
@@ -4027,7 +4027,7 @@ func Test_GitHubScmProvider_configureGitRemote_selectExisting_cov3(t *testing.T)
 
 	// User selects "Select an existing GitHub project" (index 0)
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "How would you like to configure")
+		return strings.Contains(options.Message, "Select how to configure the GitHub remote")
 	}).Respond(0)
 
 	// Mock ListRepositories
@@ -4071,7 +4071,7 @@ func Test_GitHubScmProvider_configureGitRemote_createNew_cov3(t *testing.T) {
 
 	// User selects "Create a new private GitHub repository" (index 1)
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "How would you like to configure")
+		return strings.Contains(options.Message, "Select how to configure the GitHub remote")
 	}).Respond(1)
 
 	// Prompt for repo name
@@ -4120,7 +4120,7 @@ func Test_GitHubScmProvider_configureGitRemote_enterUrl_cov3(t *testing.T) {
 
 	// User selects "Enter a remote URL directly" (index 2)
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "How would you like to configure")
+		return strings.Contains(options.Message, "Select how to configure the GitHub remote")
 	}).Respond(2)
 
 	// Prompt for URL
@@ -4745,7 +4745,7 @@ func Test_pipeline_nameAndUrl_cov3(t *testing.T) {
 	*p.repoDetails.buildDefinition.Name = "my-pipeline"
 
 	assert.Equal(t, "my-pipeline", p.name())
-	assert.Contains(t, p.url(), "_build?definitionId=42")
+	assert.Contains(t, p.url(t.Context()), "_build?definitionId=42")
 }
 
 // =====================================================================
@@ -4784,6 +4784,75 @@ func Test_GitHubCiProvider_configurePipeline_noVarsNoSecrets_cov3(t *testing.T) 
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, "actions", result.name())
+}
+
+func Test_GitHubCiProvider_configurePipeline_settingsLink(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		options *configurePipelineOptions
+		want    string
+		notWant string
+	}{
+		{
+			name: "variables only",
+			options: &configurePipelineOptions{
+				variables: map[string]string{"VAR1": "var-value"},
+			},
+			want:    "settings/variables/actions",
+			notWant: "settings/secrets/actions",
+		},
+		{
+			name: "project secrets",
+			options: &configurePipelineOptions{
+				secrets:   map[string]string{"SEC1": "secret-value"},
+				variables: map[string]string{"VAR1": "var-value"},
+			},
+			want:    "settings/secrets/actions",
+			notWant: "settings/variables/actions",
+		},
+		{
+			name: "client credentials",
+			options: &configurePipelineOptions{
+				clientCredentials: true,
+				variables:         map[string]string{"VAR1": "var-value"},
+			},
+			want:    "settings/secrets/actions",
+			notWant: "settings/variables/actions",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			mockContext := mocks.NewMockContext(t.Context())
+			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "secret") || strings.Contains(command, "variable")
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				return exec.NewRunResult(0, "", ""), nil
+			})
+
+			provider := &GitHubCiProvider{
+				env:     environment.NewWithValues("test-env", map[string]string{}),
+				ghCli:   github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner),
+				gitCli:  git.NewCli(mockContext.CommandRunner),
+				console: mockContext.Console,
+			}
+
+			_, err := provider.configurePipeline(
+				*mockContext.Context,
+				&gitRepositoryDetails{owner: "test-owner", repoName: "test-repo"},
+				tt.options,
+			)
+			require.NoError(t, err)
+
+			output := strings.Join(mockContext.Console.Output(), "\n")
+			assert.Contains(t, output, "GitHub Actions secrets and variables are now configured")
+			assert.Contains(t, output, "github.com/test-owner/test-repo/"+tt.want)
+			assert.NotContains(t, output, tt.notWant)
+		})
+	}
 }
 
 func Test_GitHubCiProvider_configurePipeline_withSecretsAndVars_cov3(t *testing.T) {
@@ -4847,7 +4916,7 @@ func Test_GitHubCiProvider_configurePipeline_withSecretsAndVars_cov3(t *testing.
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, "actions", result.name())
-	assert.Contains(t, result.url(), "test-owner/test-repo")
+	assert.Contains(t, result.url(t.Context()), "test-owner/test-repo")
 }
 
 func Test_GitHubCiProvider_configurePipeline_listSecretsError_cov3(t *testing.T) {
@@ -5197,7 +5266,7 @@ func Test_workflow_nameAndUrl_cov3(t *testing.T) {
 	}
 
 	assert.Equal(t, "actions", w.name())
-	assert.Contains(t, w.url(), "test-owner/test-repo")
+	assert.Contains(t, w.url(t.Context()), "test-owner/test-repo")
 }
 
 // =====================================================================

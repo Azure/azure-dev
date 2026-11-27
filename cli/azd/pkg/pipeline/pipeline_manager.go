@@ -429,7 +429,7 @@ func (pm *PipelineManager) Configure(
 				optionUseExisting,
 			}
 			selectedOption, err := pm.console.Select(ctx, input.ConsoleOptions{
-				Message:      "Do you want to create a new User Managed Identity (MSI) or use an existing one?",
+				Message:      "Create a new User Managed Identity (MSI) or use an existing one?",
 				Options:      options,
 				DefaultValue: optionCreate,
 			})
@@ -553,6 +553,7 @@ func (pm *PipelineManager) Configure(
 		if err != nil {
 			return result, fmt.Errorf("failed to get credential options: %w", err)
 		}
+		pm.configOptions.clientCredentials = credentialOptions.EnableClientCredentials
 
 		// Enable client credentials if requested
 		if credentialOptions.EnableClientCredentials {
@@ -746,7 +747,7 @@ func (pm *PipelineManager) Configure(
 	// The CI pipeline should be set-up and ready at this point.
 	// azd offers to push changes to the scm to start a new pipeline run
 	doPush, err := pm.console.Confirm(ctx, input.ConsoleOptions{
-		Message:      "Would you like to commit and push your local changes to start the configured CI pipeline?",
+		Message:      "Commit and push your local changes to start the pipeline?",
 		DefaultValue: true,
 	})
 	if err != nil {
@@ -796,7 +797,7 @@ func (pm *PipelineManager) Configure(
 
 	return &PipelineConfigResult{
 		RepositoryLink: gitRepoInfo.url,
-		PipelineLink:   ciPipeline.url(),
+		PipelineLink:   ciPipeline.url(ctx),
 	}, nil
 }
 
@@ -905,14 +906,14 @@ func (pm *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepositor
 			// remove spinner and display warning
 			pm.console.StopSpinner(ctx, checkGitMessage, input.StepWarning)
 			pm.console.MessageUxItem(ctx, &ux.WarningMessage{
-				Description: "No GitHub repository detected.\n",
+				Description: "No Git repository detected.\n",
 				HidePrefix:  true,
 			})
 			warningCount++
 
 			// Offer the user a chance to init a new repository if one does not exist.
 			initRepo, err := pm.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "Do you want to initialize a new Git repository in this directory?",
+				Message:      "Initialize a new Git repository in this directory?",
 				DefaultValue: true,
 			})
 			if err != nil {
@@ -1199,7 +1200,7 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 
 	// Prompt the user for confirmation
 	confirm, err := pm.console.Confirm(ctx, input.ConsoleOptions{
-		Message:      "Would you like to add it now?",
+		Message:      "Add the default azure-dev.yml file?",
 		DefaultValue: true,
 	})
 	if err != nil {
@@ -1323,15 +1324,20 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 	return nil
 }
 
-// hasPipelineFile checks if any pipeline files exist for the given provider in the specified repository root.
-func hasPipelineFile(provider ciProviderType, repoRoot string) bool {
+// defaultPipelineFile returns the name of the default pipeline file that exists for the given provider in the specified
+// repository root, or an empty string when there is none.
+func defaultPipelineFile(provider ciProviderType, repoRoot string) string {
 	for _, path := range pipelineProviderFiles[provider].Files {
-		fullPath := filepath.Join(repoRoot, path)
-		if osutil.FileExists(fullPath) {
-			return true
+		if osutil.FileExists(filepath.Join(repoRoot, path)) {
+			return filepath.Base(path)
 		}
 	}
-	return false
+	return ""
+}
+
+// hasPipelineFile checks if any pipeline files exist for the given provider in the specified repository root.
+func hasPipelineFile(provider ciProviderType, repoRoot string) bool {
+	return defaultPipelineFile(provider, repoRoot) != ""
 }
 
 func (pm *PipelineManager) determineProvider(ctx context.Context, repoRoot string) (ciProviderType, error) {
@@ -1490,6 +1496,7 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context, authTyp
 	pm.configOptions.projectSecrets = slices.Clone(pm.prjConfig.Pipeline.Secrets)
 	pm.configOptions.projectVariables = slices.Clone(pm.prjConfig.Pipeline.Variables)
 	pm.configOptions.provisioningProvider = &pm.infra.Options
+	pm.configOptions.pipelineFile = defaultPipelineFile(pm.ciProviderType, repoRoot)
 	return nil
 }
 

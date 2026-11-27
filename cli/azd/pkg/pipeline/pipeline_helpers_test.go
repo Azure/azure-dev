@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -290,16 +291,77 @@ func Test_gitHubActionsEnablingChoice_String_panic(t *testing.T) {
 // ------------------------------------------------------------------
 
 func Test_workflow_CiPipeline(t *testing.T) {
-	w := &workflow{
-		repoDetails: &gitRepositoryDetails{
-			url: "https://github.com/Azure/azure-dev",
-		},
+	const repoUrl = "https://github.com/Azure/azure-dev"
+
+	tests := []struct {
+		name       string
+		file       string
+		pushStatus bool
+		lookupErr  error
+		want       string
+	}{
+		{"no default workflow file", "", true, nil, repoUrl + "/actions"},
+		{"workflow file not pushed", "azure-dev.yml", false, nil, repoUrl + "/actions"},
+		{"yml workflow available", "azure-dev.yml", true, nil, repoUrl + "/actions/workflows/azure-dev.yml"},
+		{"yaml workflow available", "azure-dev.yaml", true, nil, repoUrl + "/actions/workflows/azure-dev.yaml"},
+		{"workflow lookup failed", "azure-dev.yml", true, fmt.Errorf("HTTP 503"), repoUrl + "/actions"},
 	}
 
-	assert.Equal(t, "actions", w.name())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := mocks.NewMockContext(t.Context())
+			if tt.file != "" && tt.pushStatus {
+				mc.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+					return slices.Equal(args.Args, []string{
+						"api", "https://api.github.com/repos/Azure/azure-dev/actions/workflows/" + tt.file,
+					})
+				}).SetError(tt.lookupErr)
+			}
+			w := &workflow{
+				repoDetails: &gitRepositoryDetails{
+					owner: "Azure", repoName: "azure-dev", url: repoUrl, pushStatus: tt.pushStatus,
+				},
+				file:  tt.file,
+				ghCli: github.NewGitHubCli(mc.Console, mc.CommandRunner),
+			}
+
+			assert.Equal(t, "actions", w.name())
+			assert.Equal(t, tt.want, w.url(t.Context()))
+		})
+	}
+}
+
+func Test_actionsSettingsUrl(t *testing.T) {
 	assert.Equal(t,
-		"https://github.com/Azure/azure-dev/actions",
-		w.url())
+		"https://github.com/Azure/azure-dev/settings/secrets/actions",
+		actionsSettingsUrl("Azure/azure-dev", true))
+	assert.Equal(t,
+		"https://github.com/Azure/azure-dev/settings/variables/actions",
+		actionsSettingsUrl("Azure/azure-dev", false))
+}
+
+func Test_defaultPipelineFile(t *testing.T) {
+	writeWorkflow := func(t *testing.T, root string, name string) {
+		dir := filepath.Join(root, ".github", "workflows")
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("name: test"), 0o600))
+	}
+
+	t.Run("none", func(t *testing.T) {
+		assert.Empty(t, defaultPipelineFile(ciProviderGitHubActions, t.TempDir()))
+	})
+	t.Run("custom file only", func(t *testing.T) {
+		root := t.TempDir()
+		writeWorkflow(t, root, "custom.yml")
+		assert.Empty(t, defaultPipelineFile(ciProviderGitHubActions, root))
+	})
+	for _, name := range []string{"azure-dev.yml", "azure-dev.yaml"} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			writeWorkflow(t, root, name)
+			assert.Equal(t, name, defaultPipelineFile(ciProviderGitHubActions, root))
+		})
+	}
 }
 
 // ------------------------------------------------------------------
@@ -323,7 +385,7 @@ func Test_azdoPipeline_CiPipeline(t *testing.T) {
 	assert.Equal(t, "my-pipeline", p.name())
 	assert.Equal(t,
 		"https://dev.azure.com/org/project/_build?definitionId=42",
-		p.url())
+		p.url(t.Context()))
 }
 
 // ------------------------------------------------------------------

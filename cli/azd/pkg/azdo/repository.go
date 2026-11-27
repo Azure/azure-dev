@@ -111,7 +111,7 @@ func GetGitRepositoriesInProject(
 	}
 
 	repoIdx, err := console.Select(ctx, input.ConsoleOptions{
-		Message: "Choose an existing Azure DevOps Repository",
+		Message: "Select an existing Azure DevOps repository:",
 		Options: options,
 	})
 

@@ -150,7 +150,7 @@ func TestEnsureOrgNameExists(t *testing.T) {
 		env := environment.NewWithValues("test", map[string]string{})
 		mockConsole := mockinput.NewMockConsole()
 		mockConsole.WhenPrompt(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Azure DevOps Organization")
+			return strings.Contains(options.Message, "Azure DevOps organization")
 		}).Respond("new-org")
 
 		mgr := &mockenv.MockEnvManager{}
@@ -182,7 +182,7 @@ func TestEnsureOrgNameExists(t *testing.T) {
 		env := environment.NewWithValues("test", map[string]string{})
 		mockConsole := mockinput.NewMockConsole()
 		mockConsole.WhenPrompt(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Azure DevOps Organization")
+			return strings.Contains(options.Message, "Azure DevOps organization")
 		}).RespondFn(func(_ input.ConsoleOptions) (any, error) {
 			return "", fmt.Errorf("user aborted")
 		})
@@ -211,7 +211,7 @@ func TestEnsureOrgNameExists(t *testing.T) {
 		env := environment.NewWithValues("test", map[string]string{})
 		mockConsole := mockinput.NewMockConsole()
 		mockConsole.WhenPrompt(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Azure DevOps Organization")
+			return strings.Contains(options.Message, "Azure DevOps organization")
 		}).Respond("new-org")
 
 		mgr := &mockenv.MockEnvManager{}

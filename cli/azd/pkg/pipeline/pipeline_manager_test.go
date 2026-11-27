@@ -87,6 +87,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		// Check if the azure-dev.yml file was created in the expected path
 		gitHubYmlPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
 		assert.FileExists(t, gitHubYmlPath)
+		assert.Equal(t, filepath.Base(gitHubYmlPath), manager.configOptions.pipelineFile)
 
 		deleteYamlFiles(t, tempDir)
 	})
@@ -1243,7 +1244,7 @@ func simulateUserInteraction(mockContext *mocks.MockContext, providerLabel ciPro
 
 	// Simulate the user responding to the creation confirmation
 	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "Would you like")
+		return strings.Contains(options.Message, "Add the default azure-dev.yml file")
 	}).Respond(createConfirmation)
 }
 
@@ -1328,10 +1329,10 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 				})
 			}
 			mc.Console.WhenConfirm(func(o input.ConsoleOptions) bool {
-				return o.Message == "Would you like to add it now?"
+				return o.Message == "Add the default azure-dev.yml file?"
 			}).Respond(true)
 			mc.Console.WhenConfirm(func(o input.ConsoleOptions) bool {
-				return strings.Contains(o.Message, "commit and push")
+				return strings.Contains(o.Message, "Commit and push")
 			}).Respond(false)
 			env := environment.NewWithValues("test", map[string]string{
 				AzurePipelineClientIdEnvVarName: "",
@@ -1352,6 +1353,8 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.ElementsMatch(t, []string{"AZURE_CREDENTIALS", "ARM_CLIENT_SECRET"}, secrets)
+			assert.Contains(t, strings.Join(mc.Console.Output(), "\n"),
+				"https://github.com/test-owner/test-repo/settings/secrets/actions")
 			yaml, err := os.ReadFile(filepath.Join(dir, ".github", "workflows", "azure-dev.yml"))
 			require.NoError(t, err)
 			assert.Contains(t, string(yaml), "AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}")
@@ -1359,6 +1362,61 @@ func TestPipelineConfig_GitHubClientCredentialsWorkflow(t *testing.T) {
 			assert.NotContains(t, string(yaml), "--federated-credential-provider")
 		})
 	}
+}
+
+func TestPipelineConfig_NestedProjectWithUnpublishedWorkflow(t *testing.T) {
+	t.Setenv("AZD_GH_TOOL_PATH", "gh")
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "app")
+	require.NoError(t, os.Mkdir(projectDir, osutil.PermissionDirectory))
+	resetAzureYaml(t, filepath.Join(projectDir, "azure.yaml"))
+
+	const repoURL = "https://github.com/test-owner/test-repo"
+	mc := resetContext(root, t.Context())
+	mc.CommandRunner.When(func(_ exec.RunArgs, cmd string) bool {
+		return strings.Contains(cmd, "remote get-url origin")
+	}).Respond(exec.NewRunResult(0, repoURL+".git", ""))
+	mc.CommandRunner.When(func(_ exec.RunArgs, cmd string) bool {
+		return strings.HasSuffix(cmd, "/repos/test-owner/test-repo/actions/workflows")
+	}).Respond(exec.NewRunResult(0, `{"total_count":1,"workflows":[{"path":".github/workflows/other.yml"}]}`, ""))
+	mc.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Equal(args.Args, []string{"-C", projectDir, "add", "."}) || slices.Contains(args.Args, "commit")
+	}).Respond(exec.NewRunResult(0, "", ""))
+	var pushed, checkedWorkflow bool
+	mc.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "push")
+	}).RespondFn(func(exec.RunArgs) (exec.RunResult, error) {
+		pushed = true
+		return exec.NewRunResult(0, "", ""), nil
+	})
+	mc.CommandRunner.When(func(_ exec.RunArgs, cmd string) bool {
+		return strings.HasSuffix(cmd, "/repos/test-owner/test-repo/actions/workflows/azure-dev.yml")
+	}).RespondFn(func(exec.RunArgs) (exec.RunResult, error) {
+		require.True(t, pushed, "the lookup must follow the push")
+		checkedWorkflow = true
+		return exec.NewRunResult(1, "", "gh: Not Found (HTTP 404)"), fmt.Errorf("exit status 1")
+	})
+	mc.Console.WhenSelect(func(o input.ConsoleOptions) bool {
+		return slices.Contains(o.Options, "Skip authentication setup")
+	}).RespondFn(func(o input.ConsoleOptions) (any, error) {
+		return slices.Index(o.Options, "Skip authentication setup"), nil
+	})
+	mc.Console.WhenConfirm(func(o input.ConsoleOptions) bool {
+		return o.Message == "Add the default azure-dev.yml file?" || strings.Contains(o.Message, "Commit and push")
+	}).Respond(true)
+	env := environment.NewWithValues("test", map[string]string{
+		AzurePipelineClientIdEnvVarName: "",
+		AzurePipelineMsiResourceId:      "",
+	})
+	pm, err := createPipelineManager(mc, azdcontext.NewAzdContextWithDirectory(projectDir), env, &PipelineManagerArgs{
+		PipelineProvider: gitHubCode, PipelineRemoteName: "origin",
+	})
+	require.NoError(t, err)
+	result, err := pm.Configure(t.Context(), "test", &project.Infra{})
+	require.NoError(t, err)
+	require.FileExists(t, filepath.Join(root, ".github", "workflows", "azure-dev.yml"))
+	assert.True(t, checkedWorkflow)
+	assert.Equal(t, repoURL+"/actions", result.PipelineLink)
 }
 
 func Test_PipelineManager_resolvePipelineAuth(t *testing.T) {

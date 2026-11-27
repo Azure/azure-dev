@@ -12,11 +12,17 @@ import (
 	"strconv"
 	"time"
 
+	"azureaiagent/internal/exterrors"
 	azcorelog "github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
 	"github.com/spf13/pflag"
 )
 
 var connectionStringJSONRegex = regexp.MustCompile(`("[\w]*(?:CONNECTION_STRING|ConnectionString)":\s*)"[^"]*"`)
+
+func sanitizeDebugLogMessage(msg string) string {
+	msg = connectionStringJSONRegex.ReplaceAllString(msg, `${1}"REDACTED"`)
+	return exterrors.RedactText(msg)
+}
 
 // setupDebugLogging configures debug logging for the extension.
 // By default Go's standard log package writes to stderr, which causes internal
@@ -49,7 +55,7 @@ func setupDebugLogging(flags *pflag.FlagSet) func() {
 
 	log.SetOutput(w)
 	azcorelog.SetListener(func(event azcorelog.Event, msg string) {
-		msg = connectionStringJSONRegex.ReplaceAllString(msg, `${1}"REDACTED"`)
+		msg = sanitizeDebugLogMessage(msg)
 		fmt.Fprintf(w, "[%s] %s: %s\n", time.Now().Format(time.RFC3339), event, msg)
 	})
 

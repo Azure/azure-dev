@@ -159,7 +159,7 @@ func TestPromptCreateOrUpdatePromptAgent(t *testing.T) {
 			getTransportErr: &nonRetriableTransportError{msg: "dial tcp: connection refused"},
 			wantCalls:       []string{"GET /api/projects/proj/agents/my-prompt-agent"},
 			wantGetLocalErr: true,
-			wantErrorCode:   exterrors.OpGetAgent,
+			wantErrorCode:   exterrors.OpGetAgent + exterrors.SuffixTransport,
 		},
 		{
 			name:       "create non-409 error returns error without update",
@@ -283,7 +283,8 @@ func TestPromptCreateOrUpdatePromptAgent(t *testing.T) {
 				localErr, ok := errors.AsType[*azdext.LocalError](err)
 				require.True(t, ok, "expected *azdext.LocalError, got %T: %v", err, err)
 				require.Equal(t, tt.wantErrorCode, localErr.Code)
-				require.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
+				require.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
+				require.NotEmpty(t, localErr.Suggestion)
 
 				deployErr := promptCreateError(err, &managedWithPolicy, "my-prompt-svc")
 				deployLocalErr, ok := errors.AsType[*azdext.LocalError](deployErr)

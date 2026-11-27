@@ -18,6 +18,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
+
+	"azureaiagent/internal/exterrors"
 )
 
 const stateStoresPreviewFeature = "StateStores=V1Preview"
@@ -221,7 +223,7 @@ func (c *AgentClient) stateStoreRequest(
 	}
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		err = fmt.Errorf("sending state store request: %w", err)
+		err = exterrors.WrapPipelineError(resp, err, "sending state store request")
 		if method != http.MethodGet {
 			return &StateStoreWriteOutcomeUnknownError{Err: err}
 		}
@@ -247,7 +249,7 @@ func (c *AgentClient) stateStoreRequest(
 			return ctx.Err()
 		}
 		// A JSON decoding error can include customer-authored property names.
-		err = fmt.Errorf("invalid state store response JSON")
+		err = &exterrors.ResponseParseError{Context: "invalid state store response JSON"}
 		if method != http.MethodGet {
 			return &StateStoreWriteOutcomeUnknownError{Err: err}
 		}

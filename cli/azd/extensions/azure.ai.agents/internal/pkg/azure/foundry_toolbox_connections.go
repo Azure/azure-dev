@@ -17,6 +17,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
+
+	"azureaiagent/internal/exterrors"
 )
 
 const toolboxConnectionsAPIVersion = "2025-04-01-preview"
@@ -51,8 +53,11 @@ func NewFoundryToolboxConnectionsClient(
 	if err != nil || !strings.EqualFold(id.ResourceType.String(), "Microsoft.CognitiveServices/accounts/projects") {
 		return nil, fmt.Errorf("a Foundry project ARM resource ID is required for toolbox connections")
 	}
+	var perRetry []policy.Policy
 	if options == nil {
 		options = &NewArmClientOptions().ClientOptions
+	} else {
+		perRetry = []policy.Policy{exterrors.NewResponseReadClassificationPolicy()}
 	}
 	return &FoundryToolboxConnectionsClient{
 		projectURL: "https://management.azure.com" + id.String(),
@@ -60,6 +65,7 @@ func NewFoundryToolboxConnectionsClient(
 			PerCall: []policy.Policy{runtime.NewBearerTokenPolicy(
 				credential, []string{"https://management.azure.com/.default"}, nil,
 			)},
+			PerRetry: perRetry,
 		}, options),
 	}, nil
 }
@@ -72,7 +78,7 @@ func (c *FoundryToolboxConnectionsClient) ProjectEndpoint(ctx context.Context) (
 	}
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return "", err
+		return "", exterrors.WrapPipelineError(resp, err, "")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -84,7 +90,7 @@ func (c *FoundryToolboxConnectionsClient) ProjectEndpoint(ctx context.Context) (
 		} `json:"properties"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&project); err != nil {
-		return "", fmt.Errorf("decoding Foundry project endpoint: %w", err)
+		return "", exterrors.WrapResponseParse(err, "decoding Foundry project endpoint")
 	}
 	return project.Properties.Endpoints["AI Foundry API"], nil
 }
@@ -103,7 +109,7 @@ func (c *FoundryToolboxConnectionsClient) GetConnection(
 	}
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, exterrors.WrapPipelineError(resp, err, "")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
@@ -114,7 +120,7 @@ func (c *FoundryToolboxConnectionsClient) GetConnection(
 	}
 	var body toolboxConnectionBody
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, fmt.Errorf("decoding toolbox connection: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "decoding toolbox connection")
 	}
 	return &body.Properties, nil
 }
@@ -137,7 +143,7 @@ func (c *FoundryToolboxConnectionsClient) PutConnection(
 	}
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return err
+		return exterrors.WrapPipelineError(resp, err, "")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

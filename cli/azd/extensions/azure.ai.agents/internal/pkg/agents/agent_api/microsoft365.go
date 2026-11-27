@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+
+	"azureaiagent/internal/exterrors"
 )
 
 // Microsoft365APIVersion is the API version for the Microsoft 365 packaging
@@ -101,7 +103,7 @@ func (c *AgentClient) DownloadTeamsAppPackage(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -111,7 +113,7 @@ func (c *AgentClient) DownloadTeamsAppPackage(
 
 	zipBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read Teams app package response: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read Teams app package response")
 	}
 	if len(zipBytes) == 0 {
 		return nil, fmt.Errorf("Teams app package response was empty")
@@ -164,7 +166,7 @@ func (c *AgentClient) PublishTeamsApp(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, exterrors.WrapPipelineError(resp, err, "HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -174,7 +176,7 @@ func (c *AgentClient) PublishTeamsApp(
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read Teams app publish response: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read Teams app publish response")
 	}
 	if len(body) == 0 {
 		return nil, fmt.Errorf("Teams app publish response was empty")
@@ -182,7 +184,7 @@ func (c *AgentClient) PublishTeamsApp(
 
 	var result TeamsAppPublishResult
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse Teams app publish response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse Teams app publish response")
 	}
 	if result.TitleID == "" {
 		return nil, fmt.Errorf("Teams app publish response was missing titleId")

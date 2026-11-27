@@ -74,10 +74,10 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 				}
 				if entry, isMap := config.(map[string]any); isMap {
 					if configIndicatesBYOHosting(entry) {
-						r.hasHosting = true
+						r.hostingCount++
 					}
 				} else if unknown, isUnknown := config.(planUnknown); isUnknown {
-					r.hasHosting = true
+					r.hostingCount++
 					unresolved = node.path + ": " + unknown.reason
 					continue
 				}
@@ -97,9 +97,12 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 				}
 			}
 		} else if unknown, ok := configs.(planUnknown); ok {
-			r.hasHosting = true
+			r.hostingCount++
 			unresolved = node.path + ": " + unknown.reason
 		}
+	}
+	if r.offline && r.hostingCount > 1 {
+		return
 	}
 	if len(accounts) > 1 {
 		outputs := root.value(root.template["outputs"])

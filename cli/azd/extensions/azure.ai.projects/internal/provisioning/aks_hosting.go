@@ -77,14 +77,16 @@ func (p *FoundryProvisioningProvider) prepareBYOLocal(
 	if err != nil {
 		return nil, err
 	}
+	multipleHosting := false
 	if !hosting.Enabled {
-		templateEnabled, planErr := p.localBYOPlan(source)
-		if !templateEnabled {
+		hostingCount, planErr := p.localBYOPlan(source)
+		if hostingCount == 0 {
 			return nil, nil
 		}
 		if planErr != nil {
 			return nil, planErr
 		}
+		multipleHosting = hostingCount > 1
 	}
 	if hosting.Enabled {
 		if include, _ := parameterValue(source, "includeAcr").(bool); include &&
@@ -164,6 +166,13 @@ func (p *FoundryProvisioningProvider) prepareBYOLocal(
 		)
 	}
 	if !hosting.Enabled {
+		if multipleHosting {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"multiple active agentHostingConfigurations in a custom template require single-account hosting",
+				"retain a single active AKS hosting configuration or declare and enable agentHosting for the target Foundry account",
+			)
+		}
 		if err := p.rejectFallbackBYORegistry(source); err != nil {
 			return nil, err
 		}

@@ -510,6 +510,31 @@ func TestBYOCustomTemplateGateAndNonAKSIsolation(t *testing.T) {
 		"expected a complete Microsoft.ContainerService/managedClusters resource ID")
 	assert.Empty(t, fake.requests)
 
+	// Reject multiple active BYO configurations before output-based selection or cluster skipping.
+	p, fake, _ = customTemplateWithoutAgentHosting(t, 7, nil)
+	p.armTemplate["outputs"] = map[string]any{
+		"AZURE_AI_ACCOUNT_NAME": map[string]any{"type": "string", "value": "primary"},
+	}
+	p.armTemplate["resources"] = map[string]any{
+		"primary": map[string]any{
+			"type": "Microsoft.CognitiveServices/accounts", "name": "primary",
+			"properties": customBYOProperties(offlineClusterID),
+		},
+		"secondary": map[string]any{
+			"type": "Microsoft.CognitiveServices/accounts", "name": "secondary",
+			"properties": customBYOProperties(offlineClusterID + "-2"),
+		},
+	}
+	t.Setenv(synthesis.BYOAKSEnvVar, "false")
+	p.credential = nil
+	_, err = p.Deploy(t.Context(), func(string) {})
+	requireBYOFeatureNotEnabled(t, err)
+	t.Setenv(synthesis.BYOAKSEnvVar, "true")
+	_, err = p.Deploy(t.Context(), func(string) {})
+	require.ErrorContains(t, err, "multiple active agentHostingConfigurations")
+	assert.Empty(t, fake.requests)
+	assert.Zero(t, fake.base.writes)
+
 	p, fake, source = customTemplateWithoutAgentHosting(t, 0, nil)
 	t.Setenv(synthesis.BYOAKSEnvVar, "false")
 	p.credential = nil

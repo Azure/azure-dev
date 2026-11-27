@@ -29,7 +29,7 @@ type templatePlanResolver struct {
 	provider            *FoundryProvisioningProvider
 	evidence            *onboarding.AuthorizationEvidence
 	offline             bool
-	hasHosting          bool
+	hostingCount        int
 	scopes              map[string]planScope
 	functions           map[string]any
 	references          map[*planResource]bool
@@ -562,13 +562,13 @@ func byoPlanParameters(source *templateSource) (map[string]func() any, error) {
 	return parameters, nil
 }
 
-func (p *FoundryProvisioningProvider) localBYOPlan(source *templateSource) (bool, error) {
+func (p *FoundryProvisioningProvider) localBYOPlan(source *templateSource) (int, error) {
 	if source == nil || source.armTemplate == nil {
-		return false, nil
+		return 0, nil
 	}
 	parameters, err := byoPlanParameters(source)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	subID, deploymentName := "", ""
 	if p != nil {
@@ -584,10 +584,10 @@ func (p *FoundryProvisioningProvider) localBYOPlan(source *templateSource) (bool
 	resolver.walk(env, "", 0)
 	var plan onboarding.Plan
 	resolver.bindResources(&plan, env)
-	if !resolver.hasHosting {
-		return false, nil
+	if resolver.hostingCount == 0 {
+		return 0, nil
 	}
-	return true, resolver.err
+	return resolver.hostingCount, resolver.err
 }
 
 func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(

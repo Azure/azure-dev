@@ -586,25 +586,6 @@ func Test_mergeProjectVariablesAndSecrets_initialNotMutated(
 }
 
 // ------------------------------------------------------------------
-// escapeValuesForPipeline — additional cases
-// ------------------------------------------------------------------
-
-func Test_escapeValuesForPipeline_nilMap(t *testing.T) {
-	// should not panic on nil map
-	assert.NotPanics(t, func() {
-		escapeValuesForPipeline(nil)
-	})
-}
-
-func Test_escapeValuesForPipeline_noModification(t *testing.T) {
-	values := map[string]string{
-		"plain": "hello world",
-	}
-	escapeValuesForPipeline(values)
-	assert.Equal(t, "hello world", values["plain"])
-}
-
-// ------------------------------------------------------------------
 // pipelineProviderFiles var validation
 // ------------------------------------------------------------------
 

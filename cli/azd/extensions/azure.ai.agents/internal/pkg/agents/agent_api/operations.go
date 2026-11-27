@@ -33,6 +33,7 @@ type AgentClient struct {
 	endpoint          string
 	pipeline          runtime.Pipeline
 	telephonyPipeline runtime.Pipeline
+	tasksPipeline     runtime.Pipeline
 	credential        azcore.TokenCredential
 }
 
@@ -115,6 +116,7 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 		endpoint:          endpoint,
 		pipeline:          pipeline,
 		telephonyPipeline: telephonyPipeline,
+		tasksPipeline:     newTaskPipeline(clientOptions, transport),
 		credential:        cred,
 	}
 }

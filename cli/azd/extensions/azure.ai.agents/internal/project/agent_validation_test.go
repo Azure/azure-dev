@@ -6,6 +6,7 @@ package project
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -570,4 +571,64 @@ func validationTestService(
 		RelativePath:         "src/agent",
 		AdditionalProperties: props,
 	}
+}
+
+func TestValidateAgentServiceDefinitionPromptMaxOutputTokensRange(t *testing.T) {
+	base := map[string]any{
+		"kind": "prompt", "name": "prompt-agent", "model": "gpt-4.1-mini", "instructions": "Help.",
+	}
+	for _, tc := range []struct {
+		name    string
+		value   any
+		wantErr bool
+	}{
+		{name: "zero", value: 0, wantErr: true},
+		{name: "negative", value: -1, wantErr: true},
+		{name: "above int32", value: 2147483648, wantErr: true},
+		{name: "fraction", value: 1.5, wantErr: true},
+		{name: "inf is voice only", value: "inf", wantErr: true},
+		{name: "valid", value: 4000},
+		{name: "max", value: 2147483647},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			values := maps.Clone(base)
+			values["maxOutputTokens"] = tc.value
+
+			t.Run("inline", func(t *testing.T) {
+				props, err := structpb.NewStruct(values)
+				require.NoError(t, err)
+				svc := &azdext.ServiceConfig{
+					Name: "agent-service", Host: "azure.ai.agent", AdditionalProperties: props,
+				}
+				_, err = ValidateAgentServiceDefinition(svc, t.TempDir())
+				checkPromptMaxOutputTokensErr(t, err, tc.wantErr)
+			})
+
+			t.Run("root ref", func(t *testing.T) {
+				root := t.TempDir()
+				data, err := yaml.Marshal(values)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"), data, 0o600))
+				props, err := structpb.NewStruct(map[string]any{"$ref": "./agent.yaml"})
+				require.NoError(t, err)
+				svc := &azdext.ServiceConfig{
+					Name: "agent-service", Host: "azure.ai.agent", AdditionalProperties: props,
+				}
+				_, err = ValidateAgentServiceDefinition(svc, root)
+				checkPromptMaxOutputTokensErr(t, err, tc.wantErr)
+			})
+		})
+	}
+}
+
+func checkPromptMaxOutputTokensErr(t *testing.T, err error, wantErr bool) {
+	t.Helper()
+	if !wantErr {
+		require.NoError(t, err)
+		return
+	}
+	require.ErrorContains(t, err, "maxOutputTokens must be an integer from 1 to 2147483647 for prompt agents")
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected LocalError, got %T: %v", err, err)
+	require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
 }

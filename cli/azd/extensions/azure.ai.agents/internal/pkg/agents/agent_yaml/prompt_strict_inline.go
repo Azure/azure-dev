@@ -67,10 +67,31 @@ func ValidateInlinePromptAgent(props map[string]any) error {
 			return err
 		}
 	}
+	for _, key := range []string{"maxOutputTokens", "max_output_tokens"} {
+		if err := validatePromptMaxOutputTokens(props[key]); err != nil {
+			return err
+		}
+	}
 	if raw, ok := props["memory"]; ok {
 		if err := validateInlineMemory(raw); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// promptMaxOutputTokensError matches the schema's 1..2147483647 range for prompt agents.
+const promptMaxOutputTokensError = "maxOutputTokens must be an integer from 1 to 2147483647 for prompt agents"
+
+// validatePromptMaxOutputTokens checks maxOutputTokens from the azure.yaml
+// property map, where numbers arrive as float64. Unlike voice agents, prompt
+// agents do not accept the string inf.
+func validatePromptMaxOutputTokens(value any) error {
+	if value == nil {
+		return nil
+	}
+	if _, isString := value.(string); isString || validateVoiceMaxOutputTokens(value) != nil {
+		return fmt.Errorf(promptMaxOutputTokensError)
 	}
 	return nil
 }

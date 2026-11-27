@@ -690,6 +690,7 @@ func CreatePromptAgentAPIRequest(
 	// into "unset" and silently picking up the service default.
 	promptDef.Temperature = promptAgent.Temperature
 	promptDef.TopP = promptAgent.TopP
+	promptDef.MaxOutputTokens = promptAgent.MaxOutputTokens
 	promptDef.Text = promptAgent.Text
 	promptDef.Reasoning = promptAgent.Reasoning
 

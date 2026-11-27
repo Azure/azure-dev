@@ -8,6 +8,11 @@ azd environment. Use --agent-name to select a specific agent when the project
 has multiple azure.ai.agent services. The session ID is automatically resolved
 from the last invoke session, or can be overridden with --session-id.
 
+The list and download commands can also read from a deployed hosted agent
+without an azd project: supply --agent-endpoint, or --project-endpoint with
+the deployed agent name in --agent-name, together with --session-id. Commands
+that change session files require an azd project.
+
 For agents configured with header-based isolation, pass --user-identity
 on each file operation.
 
@@ -33,5 +38,9 @@ Global Flags
 Examples
   List files in the current hosted agent session
     azd ai agent files list
+
+  List files of a deployed agent without an azd project
+    azd ai agent files list /data --agent-name support --session-id <session-id> \
+      --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>
 
 Use azd ai agent files [command] --help to view examples and more information about a specific command.

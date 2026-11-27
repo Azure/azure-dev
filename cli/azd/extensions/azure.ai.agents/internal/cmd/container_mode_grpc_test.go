@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -82,4 +83,42 @@ func TestAgentContainerModeRequestOverGRPC(t *testing.T) {
 		"agent.kind": "hosted", "agent.harness": "none",
 		"agent.operation": "invoke", "agent.container.mode": "passthrough_auth",
 	}, requests[0].GetAttributes())
+
+	for _, tt := range []struct {
+		args      []string
+		operation string
+	}{
+		{args: []string{"optimize", "apply", "--candidate", "test-candidate", "-p", testProjectEndpoint},
+			operation: "optimize.apply"},
+		{args: []string{"show", "--project-endpoint", testProjectEndpoint}},
+		{args: []string{"monitor", "--agent-endpoint", "test-agent-endpoint"}},
+		{args: []string{"sessions", "list", "--project-endpoint", testProjectEndpoint}},
+		{args: []string{"sessions", "show", "--agent-endpoint", "test-agent-endpoint"}},
+		{args: []string{"files", "ls", "--project-endpoint", testProjectEndpoint}},
+		{args: []string{"files", "download", "/data", "--agent-endpoint", "test-agent-endpoint"}},
+		{args: []string{"show"}, operation: "show"},
+	} {
+		t.Run(tt.args[0], func(t *testing.T) {
+			root := NewRootCommand()
+			cmd, _, err := root.Find(tt.args)
+			require.NoError(t, err)
+			// Exercise the real parsing and pre-run hook without performing any command action.
+			cmd.Args = nil
+			cmd.RunE = func(*cobra.Command, []string) error { return nil }
+			root.SetArgs(tt.args)
+			root.SetOut(io.Discard)
+			root.SetErr(io.Discard)
+			before := len(recorder.snapshot())
+
+			require.NoError(t, root.ExecuteContext(t.Context()))
+			reported := recorder.snapshot()[before:]
+			if tt.operation == "" {
+				require.Empty(t, reported)
+				return
+			}
+			require.Len(t, reported, 1)
+			require.Equal(t, "agent.context.resolved", reported[0].GetEventName())
+			require.Equal(t, tt.operation, reported[0].GetAttributes()["agent.operation"])
+		})
+	}
 }

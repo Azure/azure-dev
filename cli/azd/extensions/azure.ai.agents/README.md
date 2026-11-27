@@ -746,6 +746,290 @@ Missing, unknown, or malformed kinds return a structured validation error rather
 than falling back to hosted-agent behavior. Hosted Activity and session
 capabilities do not change the agent kind and follow the hosted behavior above.
 
+### Inspecting a deployed agent without an azd project
+
+`azd ai agent show`, `azd ai agent sessions list`, `azd ai agent sessions show`,
+`azd ai agent files list`, and `azd ai agent files download` accept an explicit
+cloud target, so you can inspect an agent from any directory, including agents
+that azd did not deploy. Supply either a full agent protocol endpoint URL with
+`--agent-endpoint`, or a Foundry project endpoint with `--project-endpoint` plus
+the deployed agent name:
+
+```bash
+azd ai agent show support \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+
+azd ai agent sessions list --agent-name support \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+
+azd ai agent files list /data --agent-name support --session-id "<session-id>" \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>" --no-prompt
+
+azd ai agent files download /data/report.csv --session-id "<session-id>" \
+  --agent-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>/agents/support/endpoint/protocols/invocations"
+```
+
+Direct target resolution does not use `azure.yaml`, `AGENT_<SERVICE>_*` outputs,
+or azd environment values, and it does not store the session ID. Inside an azd
+project, the azd host may still load the selected environment and resolve its
+Key Vault references before the extension starts. The two flags cannot be
+combined with each other, with `--environment`, or (for `--agent-endpoint`) with a
+separate agent name. File commands require `--session-id`. Direct session and
+file commands read the agent first and reject prompt and workflow agents before
+calling the sessions API, because those kinds have no sessions or session files;
+the service checks agents with other or undeclared kinds. A missing agent or
+session, or denied access, returns a structured error. File list and download
+check agent compatibility even when `--session-id` is omitted, so prompt and
+workflow agents do not receive a suggestion to list sessions that cannot exist.
+Pass `--user-identity` when the session belongs to a specific
+user. The other file commands (`upload`, `delete`, `mkdir`, `stat`) and session
+commands (`create`, `stop`, `delete`) still require an azd project.
+
+`sessions list` defaults to JSON. An empty result also prints `No sessions found.`
+to stderr, leaving stdout as machine-readable JSON. With `--output table`, the
+message replaces the empty table. An empty page with a continuation token instead
+says `No sessions found on this page.` and retains the pagination information.
+
+### Listing deployed agents and versions
+
+`azd ai agent show` without an agent name lists every agent deployed in a Foundry
+project, including agents that azd did not deploy. Add `--versions` with an agent
+name to list that agent's version history instead of its latest version:
+
+```bash
+azd ai agent show \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+
+azd ai agent show support --versions \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+```
+
+`--project-endpoint` always selects the project, regardless of the current
+directory. Without the flag, a nameless `show` outside an azd project lists the
+project from the active azd environment's `FOUNDRY_PROJECT_ENDPOINT`, then
+`azd ai project set`, then the `FOUNDRY_PROJECT_ENDPOINT` environment variable.
+Inside an azd project, a nameless `show` keeps showing the agent service from
+`azure.yaml`. Outside a project, `show <name> --versions` uses the same shared
+project context. Inside a project, `show [service] --versions` lists the deployed
+agent's versions.
+
+Listing follows every page of results and fails rather than printing a partial
+list when the service returns no usable continuation cursor. Table output shows
+the project and where it came from, then `NAME`, `KIND`, `LATEST VERSION`,
+`STATUS`, and `CREATED` (or `VERSION`, `STATUS`, `CREATED`, and `DESCRIPTION`
+for versions). JSON output has a stable shape:
+`{"project_endpoint", "endpoint_source", "data": [{"name", "id", "kind",
+"latest_version", "status", "created_at"}]}` for agents and
+`{"project_endpoint", "agent_name", "data": [{"version", "id", "status",
+"created_at", "description"}]}` for versions. An empty project prints
+`No agents found.`; with `--output json`, stdout keeps `"data": []` and the
+message goes to stderr. A missing project or agent returns a not-found error,
+and denied access returns a service error with a role suggestion, so neither is
+reported as an empty list.
+
+### Listing and exporting agent traces
+
+`azd ai agent monitor --type traces` reads the OpenTelemetry traces that a deployed
+agent recorded in the Application Insights resource connected to its Foundry
+project. It accepts the same direct targets as `show`, so it works from any
+directory and for agents that azd did not deploy:
+
+```bash
+# List the newest traces from the last 24 hours that contain a failed span
+azd ai agent monitor support --type traces --since 24h --status failed \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+
+# Export the attributed spans of one trace
+azd ai agent monitor support --type traces --trace-id "<trace-id>" --out-file ./trace.json \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+```
+
+Inside an azd project, `azd ai agent monitor [service] --type traces` uses the
+deployed agent name from the azd environment, which can differ from the service
+name. Outside a project without endpoint flags, the positional value is the
+deployed agent name and the project comes from `azd ai project set` or
+`FOUNDRY_PROJECT_ENDPOINT`. Direct targets also work for console and system
+logs (`--type console|system`), which then require `--session-id`.
+
+The command reads the agent, then the project's Application Insights connection.
+It uses only the connection's resource ID, never its credentials, and queries
+that resource through the Azure Monitor Log Analytics query API with your
+signed-in identity. A trace is attributed to the agent when one of its request
+or dependency spans has a non-empty `gen_ai.operation.name` (for example,
+`invoke_agent`, `chat`, or `execute_tool`) and, on that same span,
+`gen_ai.agent.name` equal to the agent name, or `gen_ai.agent.id` equal to the
+name or `<name>:<version>`. Agent identity alone does not qualify: infrastructure
+requests such as token refresh and telemetry configuration can inherit these
+attributes without being GenAI operations. Both trace and log queries require
+each returned record to identify the selected project through
+`microsoft.foundry.project.id` or `gen_ai.azure_ai_project.id` and the selected
+agent through `gen_ai.agent.name` or `gen_ai.agent.id`. If both project IDs
+are present, both must match. When an agent name is present, it must match even
+if the agent ID also names the selected agent. Records with missing or conflicting attribution
+are excluded, including infrastructure spans and exceptions, to avoid mixing
+data from projects that share an Application Insights resource. This follows the
+[GenAI operation span conventions used by Foundry](https://learn.microsoft.com/azure/foundry/how-to/develop/langchain-traces#understand-trace-structure).
+
+The list's `ROOT SPAN` column shows a recorded root span's name. If the root is
+missing or unnamed, it shows the earliest matching GenAI span's name (falling
+back to its operation name if unnamed). This display fallback does not imply
+that the trace is complete; export still reports missing roots and parents.
+
+- `--since` accepts durations such as `30m`, `6h`, or `7d` (up to `730d`). It
+  defaults to `1h` for listing and `30d` for export.
+- `--tail` (default 50, at most 300) limits how many traces are listed, newest
+  first. When more traces match, JSON output sets `"truncated": true` and stderr
+  prints a warning.
+- `--status` filters listed traces by whether any span failed: `all` (default),
+  `failed`, or `succeeded`.
+- `--trace-id` exports attributed spans and exceptions for one trace (operation
+  ID). It cannot be combined with `--status` or `--tail`.
+- `--out-file` atomically replaces the destination with a new JSON file and
+  prints a confirmation to stderr. On Unix the new file has permissions `0600`;
+  on Windows access follows the directory's inherited ACL.
+- `--follow`, `--raw`, `--session-id`, and `--user-identity` apply only to logs.
+
+List JSON output is `{"project_endpoint", "agent_name", "telemetry":
+{"connection_name", "resource_id", "project_id"}, "window": {"start", "end"}, "status_filter",
+"truncated", "partial_error", "coverage_notes", "data": [{"trace_id", "start_time", "end_time",
+"duration_ms", "span_count", "failed_span_count", "status", "sampled",
+"root_span_name", "agent_version", "conversation_id"}]}`. Export JSON (schema
+version `1`) is:
+
+```json
+{
+  "schema_version": "1",
+  "trace_id": "<operation ID>",
+  "project_endpoint": "...",
+  "agent_name": "support",
+  "telemetry": { "connection_name": "...", "resource_id": "...", "project_id": "..." },
+  "window": { "start": "...", "end": "..." },
+  "completeness": {
+    "complete": false,
+    "root_span_found": true,
+    "missing_parent_span_ids": [],
+    "truncated": false,
+    "sampled": false,
+    "partial_error": "",
+    "notes": ["only records explicitly attributed to both the selected project and agent are returned; unattributed or conflicting records are excluded, so results may not include all telemetry"]
+  },
+  "spans": [
+    {
+      "span_id": "...", "parent_span_id": "...", "name": "...",
+      "kind": "request|dependency", "type": "...", "target": "...", "role": "...",
+      "start_time": "...", "end_time": "...", "duration_ms": 12.5,
+      "status": "ok|error|unset", "result_code": "...", "item_count": 1,
+      "attributes": {}
+    }
+  ],
+  "exceptions": [
+    { "timestamp": "...", "parent_span_id": "...", "type": "...", "message": "...",
+      "problem_id": "...", "attributes": {} }
+  ]
+}
+```
+
+Timestamps are RFC 3339 UTC. A root span's `parent_span_id` is empty or equals
+the trace ID. `completeness` describes only what the queried Application
+Insights telemetry contains, not whether the traced operation succeeded.
+`root_span_found` is `false` when no recorded span is a root, and
+`missing_parent_span_ids` lists parent span IDs that recorded spans or exceptions reference
+but that are not in the queried telemetry. The telemetry does not show why a
+span is absent: possible causes include a service that sends no telemetry to
+this Application Insights resource, sampling, the `--since` window, retention,
+and ingestion delay. When no recorded root exists and multiple spans have
+absent parents, the Foundry portal can generate a synthetic root with a random
+span ID and assign those spans to the synthetic root for display. This export
+contains only recorded spans and preserves their original parent IDs; it does
+not add portal display wrappers. `completeness.complete` is always `false`
+because unattributed records are excluded and cannot be proven absent.
+The notes also report absent roots or parents, truncation after 5,000 records,
+and partial query errors. `sampled` is
+`true` when a span stands for several sampled operations (`item_count > 1`);
+sampling is recorded separately. Missing-root, missing-parent,
+and sampling details appear only in the JSON `completeness` fields and notes.
+Only truncation and partial query results produce warnings on stderr; missing
+spans or sampling alone do not produce an incomplete-export warning. Query and
+service failures remain errors. Attributes whose names identify
+credentials (such as
+`authorization`, `cookie`, `api_key`, `password`, `secret`, or `token`) and values
+that start with `Bearer ` are replaced with `[REDACTED]`. Token usage counters
+are kept. HTTP URL values have user information, query strings, and fragments
+removed. Prompt and response
+content that the agent recorded in span attributes is kept, so handle exported
+traces as sensitive data.
+
+Errors are distinct from empty results:
+
+| Condition | Result |
+|---|---|
+| No Application Insights connection in the project | `tracing_not_configured` |
+| Several connections to different resources and no default | `ambiguous_tracing_connection` |
+| The connected resource no longer exists | `telemetry_resource_not_found` |
+| Denied access to connections or logs | Service error with a role suggestion (for example, Log Analytics Reader) |
+| `--trace-id` matches no spans in the window | `trace_not_found` |
+| `--trace-id` has no GenAI operation spans attributed to the agent | `trace_agent_mismatch`; nothing is exported |
+| No traces match the list filters | `No traces found ...` (stderr with `--output json`, which keeps `"data": []`) |
+
+JSON stays on stdout, and progress messages go to stderr.
+
+### Searching retained agent logs
+
+`azd ai agent monitor --since <window>` (with the default `--type console`)
+searches the logs a deployed hosted agent retained in the Application Insights
+resource connected to its Foundry project, instead of reading a live session
+stream. It works outside an azd project with `--project-endpoint` and the
+deployed agent name, or `--agent-endpoint`, and does not need a session.
+
+```bash
+# Warnings and errors from the last 24 hours, newest 50 records
+azd ai agent monitor support --since 24h --level warning \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+
+# Records mentioning "timeout" in one session over the last 7 days, as JSON
+azd ai agent monitor support --since 7d --search timeout --session-id "<session-id>" --output json \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+```
+
+- `--level` sets a minimum severity: `verbose`, `information`, `warning`,
+  `error`, or `critical` (aliases `debug`, `info`, `warn`). Exceptions without a
+  severity count as `error`.
+- `--search` matches message text, and exception type, case-insensitively.
+- `--session-id` narrows the results to records that carry that session ID.
+- `--tail` (default 50, up to 300) caps the result at the newest matching
+  records, printed oldest first. When more records match, `truncated` is `true`
+  and a warning is written to stderr.
+- `--follow`, `--raw`, and `--user-identity` apply only to the live stream and
+  are rejected with `--since`. `--level` and `--search` require `--since`.
+- `--type system --since` fails with `unsupported_log_source`: hosted-agent
+  system events are not retained in Application Insights.
+
+Coverage: the search reads the `traces` and `exceptions` tables and returns only
+records attributed to the selected project and agent, as described above.
+These are the application log records and exceptions that the agent exported
+through OpenTelemetry. Lines written directly to stdout or stderr appear only if
+the agent exported them as log records, so this is not a full copy of the live
+console stream. Each record carries `agent_version`, and `session_id` and
+`trace_id` when recorded; the command has no version filter. Records from the
+Azure Monitor exporter itself (for example, export retries) are included only
+when they carry the required project and agent identity.
+
+`--output json` returns `project_endpoint`, `agent_name`, `telemetry`,
+`window`, `filters`, `coverage` (source, tables, `sampled`, and notes),
+`truncated`, `partial_error`, and `data`. Each record has `timestamp` (RFC 3339
+UTC), `record_type` (`log` or `exception`), `severity`, `severity_level`,
+`message`, `exception_type`, `agent_version`, `session_id`, `trace_id`,
+`span_id`, `logger`, `role_instance`, `item_count`, and `attributes` (with the
+same credential redaction as trace exports). Sampling is reported only in
+`coverage`; truncation and partial query results also produce stderr warnings.
+Retention and ingestion delay limit what the window can return.
+
+No matches print `No log records found ...` (stderr with `--output json`, which
+keeps `"data": []`). Missing or ambiguous Application Insights connections,
+missing resources, and denied access fail with the same errors as trace
+queries, and agents of kind `prompt` or `workflow` fail with
+`unsupported_agent_kind`.
+
 ## Initializing an A2A hosted agent
 
 Enable `AZD_ALPHA_ENABLE_AGENTS_A2A=true` in your shell or CI before initializing

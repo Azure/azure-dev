@@ -87,7 +87,7 @@ func TestValidateMonitorFlags_InvalidType(t *testing.T) {
 	}
 	err := validateMonitorFlags(flags)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "--type must be 'console' or 'system'")
+	assert.Contains(t, err.Error(), "--type must be 'console', 'system', or 'traces'")
 }
 
 func TestMonitorCommand_DefaultValues(t *testing.T) {
@@ -149,6 +149,29 @@ func TestResolveMonitorAgentInfo_PrefersProjectService(t *testing.T) {
 	assert.Equal(t, "deployed-agent", info.AgentName)
 	assert.Equal(t, "7", info.Version)
 	assert.Contains(t, info.AgentEndpoint, "/agents/deployed-agent/versions/7")
+}
+
+func TestResolveServiceAgentContext_UsesDeployedProject(t *testing.T) {
+	stubHostedSources(t, azdHostedSources{
+		EnvValue: "https://other.services.ai.azure.com/api/projects/other",
+	})
+	info := &AgentServiceInfo{ProjectEndpoint: testProjectEndpoint, AgentName: "deployed-agent", Version: "7"}
+	target, err := resolveServiceAgentContext(t.Context(), info)
+	require.NoError(t, err)
+	assert.Equal(t, testProjectEndpoint, target.ProjectEndpoint)
+	assert.Equal(t, "deployed-agent", target.Name)
+	assert.Equal(t, "7", target.Version)
+}
+
+func TestResolveServiceAgentContext_FallsBackToSharedProject(t *testing.T) {
+	stubHostedSources(t, azdHostedSources{EnvValue: testProjectEndpoint})
+	target, err := resolveServiceAgentContext(t.Context(), &AgentServiceInfo{
+		ServiceName: "local-service", AgentName: "deployed-agent", Version: "7",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, testProjectEndpoint, target.ProjectEndpoint)
+	assert.Equal(t, "deployed-agent", target.Name)
+	assert.Equal(t, "7", target.Version)
 }
 
 func TestResolveMonitorAgentInfo_UsesDirectNameWithoutProject(t *testing.T) {
@@ -379,12 +402,12 @@ func TestValidateMonitorFlags_TableDriven(t *testing.T) {
 		{
 			name:    "invalid log type",
 			flags:   monitorFlags{tail: 50, logType: "debug"},
-			wantErr: "--type must be 'console' or 'system'",
+			wantErr: "--type must be 'console', 'system', or 'traces'",
 		},
 		{
 			name:    "empty log type",
 			flags:   monitorFlags{tail: 50, logType: ""},
-			wantErr: "--type must be 'console' or 'system'",
+			wantErr: "--type must be 'console', 'system', or 'traces'",
 		},
 	}
 

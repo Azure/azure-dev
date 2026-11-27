@@ -425,7 +425,7 @@ func TestBYOPreflightSelectedAccountUnresolvedHosting(t *testing.T) {
 		kubeletB         = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 		unresolvedConfig = "[reference(resourceId('Microsoft.CognitiveServices/accounts', 'runtime-source'), " +
 			"'2026-07-15-preview').agentHostingConfigurations]"
-		runtimeSelector = "[reference(resourceId('Microsoft.Resources/deployments', 'selector'), " +
+		runtimeSelector = "[reference(subscriptionResourceId('Microsoft.Resources/deployments', 'selector'), " +
 			"'2025-04-01').outputs.accountName.value]"
 		explicitRoleID = "/subscriptions/sub-b/providers/Microsoft.Authorization/roleDefinitions/" +
 			"7e559ce2-48d7-4b27-9128-fa1b247f1308"
@@ -456,20 +456,23 @@ func TestBYOPreflightSelectedAccountUnresolvedHosting(t *testing.T) {
 		t.Run(fmt.Sprintf("blocksRequiredBindingsBeforeWrites/preview=%t", preview), func(t *testing.T) {
 			acrParams := map[string]any{"includeAcr": val(true), "monitoringMode": val("none")}
 			for _, tc := range []struct {
-				name, wantErr, selected string
-				bProperties, params     map[string]any
-				bExisting               bool
-				mask                    int
+				name, wantErr, wantTarget, selected string
+				bProperties, params                 map[string]any
+				bExisting                           bool
+				mask                                int
 			}{
 				{
 					name: "acrAutoKubelet", mask: 7, selected: "account-b",
 					bProperties: map[string]any{"agentHostingConfigurations": unresolvedConfig},
-					wantErr:     "kubelet principal object ID from preflight", params: acrParams,
+					wantErr:     "kubelet principal object ID from preflight",
+					wantTarget:  "foundryResources/accountB/properties.agentHostingConfigurations",
+					params:      acrParams,
 				},
 				{
 					name: "acrExplicitKubelet", mask: 7, selected: "account-b",
 					bProperties: map[string]any{"agentHostingConfigurations": unresolvedConfig},
 					wantErr:     "kubelet principal object ID from preflight",
+					wantTarget:  "foundryResources/accountB/properties.agentHostingConfigurations",
 					params: map[string]any{
 						"includeAcr": val(true), "kubeletObjectId": val(kubeletB), "monitoringMode": val("none"),
 					},
@@ -477,16 +480,22 @@ func TestBYOPreflightSelectedAccountUnresolvedHosting(t *testing.T) {
 				{
 					name: "unresolvedSelectorWithNonBYOBystander", mask: 7, selected: runtimeSelector,
 					bProperties: map[string]any{"allowProjectManagement": true},
-					wantErr:     "kubelet principal object ID from preflight", params: acrParams,
+					wantErr:     "kubelet principal object ID from preflight",
+					wantTarget:  "AZURE_AI_ACCOUNT_NAME: runtime reference",
+					params:      acrParams,
 				},
 				{
 					name: "unresolvedSelectorWithDistinctExistingAccount", mask: 7, bExisting: true,
-					selected: runtimeSelector, wantErr: "kubelet principal object ID from preflight", params: acrParams,
+					selected:   runtimeSelector,
+					wantErr:    "kubelet principal object ID from preflight",
+					wantTarget: "AZURE_AI_ACCOUNT_NAME: runtime reference",
+					params:     acrParams,
 				},
 				{
 					name: "suppliedIdentityBinding", mask: 2, selected: "account-b",
 					bProperties: map[string]any{"agentHostingConfigurations": unresolvedConfig},
 					wantErr:     "hostingManagementIdentityResourceId deployment binding requires matching resource ID",
+					wantTarget:  "foundryResources/accountB/properties.agentHostingConfigurations",
 					params: map[string]any{
 						"agentHosting": val(map[string]any{
 							"enabled": true, "clusterResourceId": offlineClusterID,
@@ -500,7 +509,8 @@ func TestBYOPreflightSelectedAccountUnresolvedHosting(t *testing.T) {
 					bProperties: map[string]any{"agentHostingConfigurations": unresolvedConfig},
 					wantErr: "federatedIdentityRoleDefinitionId deployment binding " +
 						"requires a resolved workload identity scope",
-					params: map[string]any{"includeAcr": val(false), "monitoringMode": val("none")},
+					wantTarget: "foundryResources/accountB/properties.agentHostingConfigurations",
+					params:     map[string]any{"includeAcr": val(false), "monitoringMode": val("none")},
 				},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
@@ -527,6 +537,7 @@ func TestBYOPreflightSelectedAccountUnresolvedHosting(t *testing.T) {
 
 					err := runOp(t, p, preview)
 					require.ErrorContains(t, err, tc.wantErr)
+					require.ErrorContains(t, err, tc.wantTarget)
 					assert.NotContains(t, err.Error(), offlineKubeletObjectID)
 					for _, forbidden := range []string{
 						offlineClusterID, suppliedStorageID, suppliedHostingID, suppliedWorkloadID,

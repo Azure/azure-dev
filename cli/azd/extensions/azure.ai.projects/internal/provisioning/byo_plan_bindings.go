@@ -6,6 +6,7 @@ package provisioning
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -29,9 +30,9 @@ type accountCandidate struct {
 }
 
 func planObjectField(object map[string]any, key string) (any, bool) {
-	for name, field := range object {
+	for _, name := range slices.Sorted(maps.Keys(object)) {
 		if strings.EqualFold(name, key) {
-			return field, true
+			return object[name], true
 		}
 	}
 	return nil, false

@@ -67,7 +67,11 @@ func TestRecordedAnalysisCommands(t *testing.T) {
 						require.NoError(t, transport.complete())
 						assert.Equal(t, time.Duration(test.interactions-2)*time.Second, time.Since(start),
 							"virtual time preserves every polling interval, not shortened cassette playback")
-						assert.Empty(t, stderr.String())
+						if test.directory {
+							assert.Empty(t, stderr.String())
+						} else {
+							assert.Equal(t, savedResultNotice(input), stderr.String())
+						}
 						terminal := fixture.Interactions[len(fixture.Interactions)-1].Response.Body
 						wanted, err := recordedJSON(terminal)
 						require.NoError(t, err)
@@ -108,7 +112,7 @@ func TestRecordedAnalysisDefaultLLMInput(t *testing.T) {
 		root.SetErr(&stderr)
 		require.NoError(t, root.ExecuteContext(t.Context()))
 		require.NoError(t, transport.complete())
-		assert.Empty(t, stderr.String())
+		assert.Equal(t, savedResultNotice(input), stderr.String())
 		var envelope struct {
 			Result json.RawMessage `json:"result"`
 		}
@@ -236,7 +240,7 @@ func TestRecordedAnalysisDefaultPrettyInvoice(t *testing.T) {
 		root.SetErr(&stderr)
 		require.NoError(t, root.ExecuteContext(t.Context()))
 		require.NoError(t, transport.complete())
-		assert.Empty(t, stderr.String())
+		assert.Equal(t, savedResultNotice(input), stderr.String())
 		actual := stdout.String()
 		assert.NotContains(t, actual, "\x1b")
 		assert.NotContains(t, actual, "<table>")
@@ -264,7 +268,8 @@ func TestRecordedAnalysisDefaultPrettyInvoice(t *testing.T) {
 		}
 		entries, err := os.ReadDir(filepath.Dir(input))
 		require.NoError(t, err)
-		assert.Len(t, entries, 1, "streamed previews must not create result files")
+		require.Len(t, entries, 2, "terminal previews save only the complete JSON result")
+		assert.Equal(t, "invoice.pdf.result.json", entries[1].Name())
 	})
 }
 

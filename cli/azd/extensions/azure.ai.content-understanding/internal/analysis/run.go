@@ -41,13 +41,16 @@ type Record struct {
 type Execution struct {
 	Records []Record
 	Stream  any
+	// Response is the complete service response behind Stream, independent of the presentation format.
+	Response json.RawMessage
 }
 
 type outcome struct {
-	index   int
-	payload any
-	usage   json.RawMessage
-	err     error
+	index    int
+	payload  any
+	response json.RawMessage
+	usage    json.RawMessage
+	err      error
 }
 
 type reportRecord struct {
@@ -130,13 +133,8 @@ func Execute(ctx context.Context, client cuclient.Client, plan Plan, options Run
 				continue
 			}
 		} else {
-			result.Stream = item.payload
-			if options.Usage && !plan.LLMInput {
-				result.Stream = struct {
-					Result any             `json:"result"`
-					Usage  json.RawMessage `json:"usage"`
-				}{item.payload, item.usage}
-			}
+			result.Stream = streamPayload(item.payload, item.usage, plan.LLMInput, options.Usage)
+			result.Response = item.response
 		}
 		record.Status, record.Error, record.Analyzer = "succeeded", "", options.Analyzer
 		record.Usage = json.RawMessage("null")
@@ -215,9 +213,9 @@ func analyzeInputs(
 					return
 				}
 				index := jobs[position]
-				payload, usage, err := analyzeWithProgress(ctx, client, inputs[index], index, llm, options)
+				payload, response, usage, err := analyzeWithProgress(ctx, client, inputs[index], index, llm, options)
 				// Drain all started jobs before closing the service session, including on cancellation.
-				completed <- outcome{index: index, payload: payload, usage: usage, err: err}
+				completed <- outcome{index: index, payload: payload, response: response, usage: usage, err: err}
 			}
 		})
 	}
@@ -230,34 +228,34 @@ func analyzeInputs(
 
 func analyzeWithProgress(
 	ctx context.Context, client cuclient.Client, input Input, index int, llm bool, options RunOptions,
-) (any, json.RawMessage, error) {
+) (any, json.RawMessage, json.RawMessage, error) {
 	if options.Progress != nil {
 		if err := options.Progress(index, input, true); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
-	payload, usage, err := analyzeOne(ctx, client, input, llm, options)
+	payload, response, usage, err := analyzeOne(ctx, client, input, llm, options)
 	if options.Progress != nil {
 		err = errors.Join(err, options.Progress(index, input, false))
 	}
-	return payload, usage, err
+	return payload, response, usage, err
 }
 
 func analyzeOne(
 	ctx context.Context, client cuclient.Client, input Input, llm bool, options RunOptions,
-) (any, json.RawMessage, error) {
+) (any, json.RawMessage, json.RawMessage, error) {
 	request := cuclient.AnalyzeRequest{
 		AnalyzerID: options.Analyzer, Mode: options.Mode, Input: cuclient.Input{URL: input.URL},
 	}
 	var file *os.File
 	if err := ctx.Err(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if input.Path != "" {
 		var err error
 		file, err = input.Open()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		request.Input.Body, request.Input.ContentType = file, "application/octet-stream"
 	}
@@ -270,21 +268,21 @@ func analyzeOne(
 		err = errors.Join(err, file.Close())
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(response.JSON, &envelope); err != nil || envelope == nil {
-		return nil, nil, invalidAnalysisResponse()
+		return nil, nil, nil, invalidAnalysisResponse()
 	}
 	if nested := bytes.TrimSpace(envelope["result"]); len(nested) == 0 || nested[0] != '{' {
-		return nil, nil, invalidAnalysisResponse()
+		return nil, nil, nil, invalidAnalysisResponse()
 	}
 	usage := envelope["usage"]
 	if len(usage) == 0 {
 		var err error
 		usage, err = json.Marshal(response.Usage)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 	if llm {
@@ -293,9 +291,9 @@ func analyzeOne(
 			requestedUsage = usage
 		}
 		text, err := renderLLM(envelope["result"], requestedUsage)
-		return text, usage, err
+		return text, response.JSON, usage, err
 	}
-	return response.JSON, usage, nil
+	return response.JSON, response.JSON, usage, nil
 }
 
 func invalidAnalysisResponse() error {

@@ -70,7 +70,7 @@ func TestAnalysisProgressCompletesOnFailureAndCancellation(t *testing.T) {
 				}
 				return cuclient.AnalyzeResponse{}, want
 			}}
-			_, _, err := analyzeWithProgress(ctx, client, input, 0, false, options)
+			_, _, _, err := analyzeWithProgress(ctx, client, input, 0, false, options)
 			require.ErrorIs(t, err, want)
 			require.Equal(t, []bool{true, false}, events)
 		})
@@ -87,7 +87,7 @@ func TestAnalysisProgressFailurePreventsRequest(t *testing.T) {
 		t.Error("must not analyze after progress output fails")
 		return cuclient.AnalyzeResponse{}, nil
 	}}
-	_, _, err := analyzeWithProgress(t.Context(), client, Input{}, 0, false, options)
+	_, _, _, err := analyzeWithProgress(t.Context(), client, Input{}, 0, false, options)
 	require.ErrorIs(t, err, want)
 }
 

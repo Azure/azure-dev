@@ -32,6 +32,8 @@ type analyzeOptions struct {
 	dryRun      bool
 	yes         bool
 	pretty      bool
+	cache       bool
+	refresh     bool
 }
 
 func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *cobra.Command {
@@ -44,7 +46,11 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 			"Single-result terminal output is pretty by default, including when redirected.\n" +
 			"Use --pretty=false for original content. Do not specify --pretty when saving results.\n" +
 			"--llm-input is removed: use --output markdown or json. --output none is no longer supported.\n" +
-			"Use --output json for complete JSON, or --dry-run to inspect the plan without service calls.",
+			"Use --output json for complete JSON, or --dry-run to inspect the plan without service calls.\n\n" +
+			"For one local file shown in the terminal, the complete JSON response is saved beside the source as\n" +
+			"<file>.result.json. Later runs with the same analyzer reuse it without a service call, for any\n" +
+			"--output format, and print a notice to stderr. Use --refresh to reanalyze and replace it, or\n" +
+			"--cache=false to neither reuse nor save it. Saved results can contain sensitive document content.",
 		Example: `  azd ai cu analyze invoice.pdf
     Analyze one file using the configured analyzer, or prebuilt-layout if unset.
 
@@ -64,7 +70,13 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
     Save YAML front matter and Markdown for generative AI model input.
 
   azd ai cu analyze invoice.pdf --pretty
-    Pretty-print Markdown and tables in the terminal; wide tables use labeled cards.`,
+    Pretty-print Markdown and tables in the terminal; wide tables use labeled cards.
+
+  azd ai cu analyze invoice.pdf --output json
+    Show the saved invoice.pdf.result.json from an earlier run without reanalyzing.
+
+  azd ai cu analyze invoice.pdf --refresh
+    Reanalyze and replace invoice.pdf.result.json after the analysis succeeds.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return exterrors.FromError(runAnalyzeCommand(cmd, extCtx, open, options, args))
 		},
@@ -95,6 +107,10 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 	flags.BoolVarP(&options.yes, "yes", "y", false, "Confirm batches larger than 50 inputs without prompting")
 	flags.StringVar(&options.output.Report, "report-file", "", "Save a new cu-cli/analyze-report/v1 report; never overwrite")
 	flags.IntVarP(&options.concurrency, "concurrency", "j", 4, "Concurrent analyses (1-32)")
+	flags.BoolVar(&options.cache, "cache", true,
+		"Reuse and save <file>.result.json for one local file shown in the terminal; false disables both")
+	flags.BoolVar(&options.refresh, "refresh", false,
+		"Reanalyze one local file and replace its saved <file>.result.json after success")
 	return azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{"default", "markdown", "json"},
 		Usage: "Result format: default or markdown (YAML front matter and Markdown), json (complete response)",
@@ -131,6 +147,10 @@ func runAnalyzeCommand(
 		return commandError("dry_run_confirmation",
 			"--dry-run cannot be combined with --yes.", "Remove --yes when planning.")
 	}
+	if options.refresh && !options.cache {
+		return commandError("conflicting_analyze_options", "--refresh cannot be combined with --cache=false.",
+			"Remove --cache=false to replace the saved result, or remove --refresh to analyze without saving.")
+	}
 	if options.concurrency < 1 || options.concurrency > 32 {
 		return commandError("invalid_concurrency", "--concurrency must be between 1 and 32.", "Use -j 1 through -j 32.")
 	}
@@ -164,6 +184,13 @@ func runAnalyzeCommand(
 	if err != nil {
 		return err
 	}
+	savedResult := len(plan.Outputs) == 1 && plan.Outputs[0].Path == nil && plan.Outputs[0].Input.Path != ""
+	if options.refresh && !savedResult {
+		return commandError("refresh_not_applicable",
+			"--refresh applies only to one local file shown in the terminal.",
+			"Use --on-existing reanalyze to replace --output-file or --output-dir results.")
+	}
+	savedResult = savedResult && options.cache
 	if !options.dryRun && len(plan.Outputs) > 1 {
 		if cmd.Flags().Changed("pretty") {
 			return commandError("conflicting_analyze_options",
@@ -203,6 +230,31 @@ func runAnalyzeCommand(
 	if options.dryRun {
 		return writeAnalyzeJSON(cmd, plan.Preview(session.analyzer), options.pretty)
 	}
+	if savedResult && !options.refresh {
+		saved, found, err := analysis.LoadSavedResult(plan.Outputs[0].Input, session.analyzer)
+		if err != nil {
+			return err
+		}
+		if found && saved.Unmatched != "" {
+			// Keep a valid result for another analyzer or source version unless --refresh asks to replace it.
+			savedResult = false
+			if _, err := fmt.Fprintf(cmd.ErrOrStderr(),
+				"The saved result at %s %s; analyzing without replacing it. Pass --refresh to replace it.\n",
+				saved.Path, saved.Unmatched); err != nil {
+				return fmt.Errorf("write saved result notice: %w", err)
+			}
+		} else if found {
+			stream, err := analysis.PresentSavedResult(saved.Response, options.output.LLMInput, options.usage)
+			if err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintf(cmd.ErrOrStderr(),
+				"Using cached analysis result from %s; pass --refresh to reanalyze.\n", saved.Path); err != nil {
+				return fmt.Errorf("write cached result notice: %w", err)
+			}
+			return writeAnalyzeStream(cmd, options, stream)
+		}
+	}
 	if len(inputs) > 50 && !options.yes {
 		message := fmt.Sprintf("Analyze %d inputs with '%s'? This may incur cost.", len(inputs), session.analyzer)
 		confirmed, err := session.confirm(ctx, message)
@@ -226,31 +278,58 @@ func runAnalyzeCommand(
 		return err
 	}
 	if execution.Stream != nil {
-		if text, ok := execution.Stream.(string); ok && options.output.LLMInput {
-			if err := ctx.Err(); err != nil {
+		if savedResult && execution.Response != nil {
+			if err := saveAnalyzeResult(cmd, extCtx.OutputFormat, plan.Outputs[0].Input, execution.Response,
+				options.refresh); err != nil {
 				return err
 			}
-			if options.pretty {
-				width, useColor := 80, false
-				if file, ok := cmd.OutOrStdout().(*os.File); ok && azdext.IsInteractiveTerminal(file) {
-					var err error
-					width, _, err = term.GetSize(int(file.Fd())) //nolint:gosec // File descriptor fits in int.
-					if err != nil {
-						return fmt.Errorf("read preview terminal size: %w", err)
-					}
-					useColor = !color.NoColor
-				}
-				return preview.Render(ctx, cmd.OutOrStdout(), text, width, useColor)
-			}
-			if _, err := fmt.Fprintln(cmd.OutOrStdout(), text); err != nil {
-				return fmt.Errorf("write CU result: %w", err)
-			}
-			return nil
 		}
-		return writeAnalyzeJSON(cmd, execution.Stream, options.pretty)
+		return writeAnalyzeStream(cmd, options, execution.Stream)
 	}
 
 	return writeServiceResult(cmd, extCtx.OutputFormat, execution.Records)
+}
+
+// saveAnalyzeResult persists the complete response; a failed save is a warning because the billed result is shown.
+func saveAnalyzeResult(
+	cmd *cobra.Command, format string, input analysis.Input, response json.RawMessage, replace bool,
+) error {
+	path := analysis.SavedResultPath(input)
+	if err := analysis.SaveResult(path, response, replace); err != nil {
+		return writeWarning(cmd, format, "The complete analysis result could not be saved to "+path+
+			", so it cannot be reused. Check that the directory is writable, or pass --cache=false.")
+	}
+	if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Saved complete analysis result to %s.\n", path); err != nil {
+		return fmt.Errorf("write saved result notice: %w", err)
+	}
+	return nil
+}
+
+func writeAnalyzeStream(cmd *cobra.Command, options *analyzeOptions, stream any) error {
+	ctx := cmd.Context()
+	text, ok := stream.(string)
+	if !ok || !options.output.LLMInput {
+		return writeAnalyzeJSON(cmd, stream, options.pretty)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if options.pretty {
+		width, useColor := 80, false
+		if file, ok := cmd.OutOrStdout().(*os.File); ok && azdext.IsInteractiveTerminal(file) {
+			var err error
+			width, _, err = term.GetSize(int(file.Fd())) //nolint:gosec // File descriptor fits in int.
+			if err != nil {
+				return fmt.Errorf("read preview terminal size: %w", err)
+			}
+			useColor = !color.NoColor
+		}
+		return preview.Render(ctx, cmd.OutOrStdout(), text, width, useColor)
+	}
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), text); err != nil {
+		return fmt.Errorf("write CU result: %w", err)
+	}
+	return nil
 }
 
 func writeAnalyzeJSON(cmd *cobra.Command, result any, pretty bool) error {

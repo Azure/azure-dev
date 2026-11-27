@@ -82,7 +82,11 @@ func TestInlineAnalysisWithoutMIMETypeThroughCommand(t *testing.T) {
 				root.SetErr(&stderr)
 				require.NoError(t, root.ExecuteContext(t.Context()))
 				assert.Equal(t, 1, requests, "inline success must not poll or fall back to async")
-				assert.Empty(t, stderr.String())
+				if input == "file" {
+					assert.Equal(t, savedResultNotice(path), stderr.String())
+				} else {
+					assert.Empty(t, stderr.String())
+				}
 				switch view {
 				case "llm":
 					assert.Contains(t, stdout.String(), "mimeType: unknown\n")

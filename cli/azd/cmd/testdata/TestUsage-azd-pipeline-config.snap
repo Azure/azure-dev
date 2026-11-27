@@ -4,6 +4,7 @@ Configure your deployment pipeline to connect securely to Azure
   • Supports GitHub Actions and Azure Pipelines. To configure using a specific pipeline provider, provide a value for the '--provider' flag.
   • pipeline config creates or uses a service principal on the Azure subscription to create a secure connection between your deployment pipeline and Azure.
   • By default, pipeline config will set deployment pipeline variables and secrets using the current environment. To configure for a new or an existing environment, provide a value for the '-e' flag.
+  • pipeline config requires interactive input and cannot be run with --no-prompt, including when azd enables no-prompt mode automatically in CI/CD or AI-agent environments.
 
 Usage
   azd pipeline config [flags]

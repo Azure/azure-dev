@@ -1542,7 +1542,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err := p.recoverDeployedACRBinding(ctx); err != nil {
 		return nil, err
 	}
-	if byoLocal != nil && !byoLocal.standardHosting {
+	if p.byoHostingEnabled && !byoLocal.standardHosting {
 		if err := p.rejectFallbackBYORegistry(src); err != nil {
 			return nil, err
 		}
@@ -1929,7 +1929,7 @@ func (p *FoundryProvisioningProvider) Preview(
 		if err := p.recoverDeployedACRBinding(ctx); err != nil {
 			return nil, err
 		}
-		if byoLocal != nil && !byoLocal.standardHosting {
+		if p.byoHostingEnabled && !byoLocal.standardHosting {
 			if err := p.rejectFallbackBYORegistry(src); err != nil {
 				return nil, err
 			}
@@ -1937,7 +1937,7 @@ func (p *FoundryProvisioningProvider) Preview(
 		if err := p.validateACRTemplate(src); err != nil {
 			return nil, err
 		}
-	} else if byoLocal != nil && !byoLocal.standardHosting {
+	} else if p.byoHostingEnabled && !byoLocal.standardHosting {
 		if err := p.recoverDeployedACRBinding(ctx); err != nil {
 			return nil, err
 		}

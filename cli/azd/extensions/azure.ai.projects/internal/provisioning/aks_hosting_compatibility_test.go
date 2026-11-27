@@ -414,13 +414,15 @@ func TestBYOCustomTemplateWithoutAgentHosting(t *testing.T) {
 			"disabled agentHosting parameter", "preflight failure",
 		} {
 			t.Run(fmt.Sprintf("preview=%t/%s", preview, scenario), func(t *testing.T) {
+				targetClusterID := customClusterID
 				props := any(customBYOProperties("[parameters('aksClusterId')]"))
 				if scenario == "property loop" {
+					targetClusterID = customClusterID + "-0"
 					props = map[string]any{"copy": []any{map[string]any{
 						"name":  "agentHostingConfigurations",
 						"count": "[length(createArray(parameters('aksClusterId')))]",
 						"input": customBYOProperties(
-							"[createArray(parameters('aksClusterId'))[copyIndex('agentHostingConfigurations')]]",
+							"[format('{0}-{1}', parameters('aksClusterId'), copyIndex('agentHostingConfigurations'))]",
 						)["agentHostingConfigurations"].([]any)[0],
 					}}}
 				} else if strings.HasPrefix(scenario, "union ") {
@@ -431,7 +433,7 @@ func TestBYOCustomTemplateWithoutAgentHosting(t *testing.T) {
 					"baseProps": map[string]any{"allowProjectManagement": true},
 					"aksProps":  customBYOProperties("[parameters('aksClusterId')]"),
 				}
-				fake.base.clusterID = customClusterID
+				fake.base.clusterID = targetClusterID
 				source.parameters["aksClusterId"] = map[string]any{"value": customClusterID}
 				if strings.HasSuffix(scenario, "preflight failure") {
 					fake.base.clusterVersion = "1.30.0"
@@ -450,7 +452,7 @@ func TestBYOCustomTemplateWithoutAgentHosting(t *testing.T) {
 					_, err = p.Deploy(t.Context(), func(string) {})
 				}
 
-				assert.Contains(t, fake.requests, "GET "+customClusterID)
+				assert.Contains(t, fake.requests, "GET "+targetClusterID)
 				if strings.HasSuffix(scenario, "preflight failure") {
 					require.ErrorContains(t, err, "The running Kubernetes version is below the required minimum")
 					assert.Zero(t, fake.base.writes)
@@ -615,6 +617,119 @@ func TestBYOCustomTemplateGateAndNonAKSIsolation(t *testing.T) {
 	assert.Empty(t, fake.requests)
 	assert.Zero(t, fake.base.writes)
 	assert.Zero(t, fake.base.previews)
+
+	// Resolve existing-RG location conditions online before rejecting multiple candidates.
+	for _, tc := range []struct {
+		name, secondCond, wantErr string
+	}{
+		{name: "complementary location selects single active cluster",
+			secondCond: "[not(equals(resourceGroup().location, 'westus'))]"},
+		{name: "both conditions active online",
+			secondCond: "[equals(resourceGroup().location, 'westus')]",
+			wantErr:    "multiple active agentHostingConfigurations"},
+		{name: "unresolved runtime condition online",
+			secondCond: "[equals(reference('runtimeSource', '2023-05-01').tier, 'aks')]",
+			wantErr:    "cannot verify a unique active agentHostingConfigurations target"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, fake, _ = customTemplateWithoutAgentHosting(t, 7, nil)
+			p.armTemplate["outputs"] = map[string]any{
+				"AZURE_AI_ACCOUNT_NAME": map[string]any{"type": "string", "value": "west-cog"},
+			}
+			p.armTemplate["resources"] = map[string]any{"scoped": map[string]any{
+				"type": "Microsoft.Resources/deployments", "name": "scoped", "resourceGroup": "target-rg",
+				"properties": map[string]any{
+					"expressionEvaluationOptions": map[string]any{"scope": "inner"},
+					"template": map[string]any{"resources": map[string]any{
+						"west": map[string]any{
+							"type": "Microsoft.CognitiveServices/accounts", "name": "west-cog",
+							"condition":  "[equals(resourceGroup().location, 'westus')]",
+							"properties": customBYOProperties(offlineClusterID),
+						},
+						"other": map[string]any{
+							"type": "Microsoft.CognitiveServices/accounts", "name": "other-cog",
+							"condition":  tc.secondCond,
+							"properties": customBYOProperties(offlineClusterID + "-2"),
+						},
+					}},
+				},
+			}}
+			if tc.wantErr == "" {
+				t.Setenv(synthesis.BYOAKSEnvVar, "false")
+				savedCred := p.credential
+				p.credential = nil
+				_, err = p.Deploy(t.Context(), func(string) {})
+				requireBYOFeatureNotEnabled(t, err)
+				assert.Nil(t, p.credential)
+				assert.Empty(t, fake.requests)
+				p.credential = savedCred
+			}
+			t.Setenv(synthesis.BYOAKSEnvVar, "true")
+			for _, preview := range []bool{false, true} {
+				if preview {
+					_, err = p.Preview(t.Context(), func(string) {})
+				} else {
+					_, err = p.Deploy(t.Context(), func(string) {})
+				}
+				if tc.wantErr != "" {
+					require.ErrorContains(t, err, tc.wantErr)
+					assert.Zero(t, fake.base.writes)
+					assert.Zero(t, fake.base.previews)
+				} else {
+					require.NoError(t, err)
+					assert.Contains(t, fake.requests, "GET "+offlineClusterID)
+					assert.NotContains(t, fake.requests, "GET "+offlineClusterID+"-2")
+				}
+			}
+		})
+	}
+
+	// All conditional BYO candidates excluded online skip cluster preflight and fallback ACR rejection.
+	p, fake, source = customTemplateWithoutAgentHosting(t, 7, nil)
+	source.parameters["includeAcr"] = map[string]any{"value": true}
+	p.armTemplate["resources"] = map[string]any{"scoped": map[string]any{
+		"type": "Microsoft.Resources/deployments", "name": "scoped", "resourceGroup": "target-rg",
+		"properties": map[string]any{
+			"expressionEvaluationOptions": map[string]any{"scope": "inner"},
+			"template": map[string]any{"resources": map[string]any{"eastOnly": map[string]any{
+				"type": "Microsoft.CognitiveServices/accounts", "name": "east-cog",
+				"condition":  "[equals(resourceGroup().location, 'eastus')]",
+				"properties": customBYOProperties(offlineClusterID),
+			}}},
+		},
+	}}
+	t.Setenv(synthesis.BYOAKSEnvVar, "true")
+	_, err = p.Preview(t.Context(), func(string) {})
+	require.NoError(t, err)
+	assert.NotContains(t, fake.requests, "GET "+offlineClusterID)
+	assert.Equal(t, 1, fake.base.previews)
+
+	// Resource-group scope read failure must still block when candidateCount drops to zero online.
+	p, fake, _ = customTemplateWithoutAgentHosting(t, 7, nil)
+	fake.overrides["/subscriptions/target-sub/resourcegroups/target-rg"] = suppliedReply{
+		status: http.StatusForbidden,
+		body:   map[string]any{"error": map[string]any{"code": "AuthorizationFailed"}},
+	}
+	p.armTemplate["resources"] = map[string]any{
+		"rg": map[string]any{"type": "Microsoft.Resources/resourceGroups", "name": "target-rg", "location": "westus"},
+		"scoped": map[string]any{
+			"type": "Microsoft.Resources/deployments", "name": "scoped", "resourceGroup": "target-rg",
+			"properties": map[string]any{
+				"expressionEvaluationOptions": map[string]any{"scope": "inner"},
+				"template": map[string]any{
+					"variables": map[string]any{"aksProps": customBYOProperties(offlineClusterID)},
+					"resources": map[string]any{"acc": map[string]any{
+						"type": "Microsoft.CognitiveServices/accounts", "name": "west-cog",
+						"properties": "[if(equals(resourceGroup().location, 'westus'), " +
+							"variables('aksProps'), createObject('allowProjectManagement', true()))]",
+					}},
+				},
+			},
+		},
+	}
+	_, err = p.Deploy(t.Context(), func(string) {})
+	require.ErrorContains(t, err, "read actual template resource-group scope")
+	assert.Zero(t, fake.base.writes)
 
 	p, fake, source = customTemplateWithoutAgentHosting(t, 0, nil)
 	t.Setenv(synthesis.BYOAKSEnvVar, "false")

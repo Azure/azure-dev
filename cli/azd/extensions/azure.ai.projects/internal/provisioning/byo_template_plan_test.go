@@ -91,4 +91,6 @@ func TestBYOPlanCopyLoops(t *testing.T) {
 		"agentHostingConfigurations": []any{"aks"},
 	}, merged)
 	assert.IsType(t, planUnknown{}, env.value("[union(createArray('a'), createArray('b'))]"))
+	assert.Equal(t, "{1}-0", env.value("[format('{0}-{1}', '{1}', 0)]"))
+	assert.IsType(t, planUnknown{}, env.value("[format('{0}', 1.5)]"))
 }

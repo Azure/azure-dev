@@ -29,7 +29,9 @@ type templatePlanResolver struct {
 	provider            *FoundryProvisioningProvider
 	evidence            *onboarding.AuthorizationEvidence
 	offline             bool
-	hostingCount        int
+	fallbackHosting     bool
+	candidateCount      int
+	confirmedCount      int
 	scopes              map[string]planScope
 	functions           map[string]any
 	references          map[*planResource]bool
@@ -562,13 +564,13 @@ func byoPlanParameters(source *templateSource) (map[string]func() any, error) {
 	return parameters, nil
 }
 
-func (p *FoundryProvisioningProvider) localBYOPlan(source *templateSource) (int, error) {
+func (p *FoundryProvisioningProvider) localBYOPlan(source *templateSource) (candidateCount, confirmedCount int, err error) {
 	if source == nil || source.armTemplate == nil {
-		return 0, nil
+		return 0, 0, nil
 	}
 	parameters, err := byoPlanParameters(source)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	subID, deploymentName := "", ""
 	if p != nil {
@@ -584,25 +586,33 @@ func (p *FoundryProvisioningProvider) localBYOPlan(source *templateSource) (int,
 	resolver.walk(env, "", 0)
 	var plan onboarding.Plan
 	resolver.bindResources(&plan, env)
-	if resolver.hostingCount == 0 {
-		return 0, nil
+	if resolver.candidateCount == 0 {
+		return 0, 0, nil
 	}
-	return resolver.hostingCount, resolver.err
+	return resolver.candidateCount, resolver.confirmedCount, resolver.err
 }
 
 func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	ctx context.Context, source *templateSource, evidence *onboarding.AuthorizationEvidence,
 ) (onboarding.Plan, error) {
+	plan, _, err := p.identifyBYOTemplatePlanWithMode(ctx, source, evidence, false)
+	return plan, err
+}
+
+func (p *FoundryProvisioningProvider) identifyBYOTemplatePlanWithMode(
+	ctx context.Context, source *templateSource, evidence *onboarding.AuthorizationEvidence, fallbackHosting bool,
+) (onboarding.Plan, bool, error) {
 	if evidence == nil {
 		evidence = onboarding.NewAuthorizationEvidence(p.credential, p.armClientOptions)
 	}
 	resolver := &templatePlanResolver{
-		ctx: ctx, provider: p, evidence: evidence, scopes: map[string]planScope{}, functions: map[string]any{},
+		ctx: ctx, provider: p, evidence: evidence, fallbackHosting: fallbackHosting,
+		scopes: map[string]planScope{}, functions: map[string]any{},
 		references: map[*planResource]bool{}, owningSubscriptions: map[string]bool{},
 	}
 	parameters, err := byoPlanParameters(source)
 	if err != nil {
-		return onboarding.Plan{}, err
+		return onboarding.Plan{}, false, err
 	}
 	scope := resolver.scope(p.subID, "")
 	env := resolver.environment(source.armTemplate, parameters, scope, "compiled template", p.deploymentName())
@@ -610,6 +620,9 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	plan := onboarding.Plan{SubscriptionID: p.subID}
 	resolver.owningSubscriptions[strings.ToLower(p.subID)] = true
 	resolver.bindResources(&plan, env)
+	if fallbackHosting && resolver.candidateCount == 0 && len(resolver.unresolved) == 0 {
+		return plan, false, resolver.err
+	}
 	_, missing := planString(env.parameter("resourceGroupName"))
 	unresolvedScope := missing != ""
 	if resolver.account != nil {
@@ -629,5 +642,5 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 	}
 	resolver.bindNetwork(&plan)
 	plan.OwningSubscriptions = append(plan.OwningSubscriptions, slices.Sorted(maps.Keys(resolver.owningSubscriptions))...)
-	return plan, resolver.err
+	return plan, true, resolver.err
 }

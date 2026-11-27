@@ -42,6 +42,7 @@ type byoIdentityBinding struct {
 
 type byoLocalPreparation struct {
 	standardHosting       bool
+	confirmedHosting      bool
 	hostBindings          map[string]any
 	identities            [2]byoIdentityBinding
 	roleSubscription      string
@@ -87,16 +88,16 @@ func (p *FoundryProvisioningProvider) prepareBYOLocal(
 	if err != nil {
 		return nil, err
 	}
-	multipleHosting := false
+	confirmedCount := 0
 	if !hosting.Enabled {
-		hostingCount, planErr := p.localBYOPlan(source)
-		if hostingCount == 0 {
+		candidateCount, confirmed, planErr := p.localBYOPlan(source)
+		if candidateCount == 0 {
 			return nil, nil
 		}
 		if planErr != nil {
 			return nil, planErr
 		}
-		multipleHosting = hostingCount > 1
+		confirmedCount = confirmed
 	}
 	if hosting.Enabled {
 		if include, _ := parameterValue(source, "includeAcr").(bool); include &&
@@ -175,13 +176,10 @@ func (p *FoundryProvisioningProvider) prepareBYOLocal(
 			fmt.Sprintf("enable by setting %s=true in your shell or CI before running azd", synthesis.BYOAKSEnvVar),
 		)
 	}
-	if !hosting.Enabled {
-		if multipleHosting {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"multiple active agentHostingConfigurations in a custom template are not supported",
-				"retain a single active AKS hosting configuration in the Foundry deployment template",
-			)
+	confirmedHosting := hosting.Enabled || confirmedCount > 0
+	if !hosting.Enabled && confirmedHosting {
+		if confirmedCount > 1 {
+			return nil, multipleActiveBYOError()
 		}
 		if err := p.rejectFallbackBYORegistry(source); err != nil {
 			return nil, err
@@ -189,28 +187,16 @@ func (p *FoundryProvisioningProvider) prepareBYOLocal(
 	}
 	includeAcr, _ := byoParameterValue(source, "includeAcr").(bool)
 	explicitKubeletID := ""
-	if includeAcr {
-		for name, parameter := range source.parameters {
-			if !strings.EqualFold(name, "kubeletObjectId") {
-				continue
-			}
-			if explicitKubeletID != "" {
-				return nil, exterrors.Validation(exterrors.CodeConflictingArguments,
-					"multiple kubeletObjectId deployment parameters differ only by case",
-					"supply kubeletObjectId only once using the template's parameter name")
-			}
-			envelope, ok := parameter.(map[string]any)
-			principal, literal := envelope["value"].(string)
-			if !ok || len(envelope) != 1 || !literal || uuid.Validate(principal) != nil {
-				return nil, exterrors.Validation(exterrors.CodeInvalidParameter,
-					"kubeletObjectId must use a value envelope containing a literal principal object ID GUID",
-					"omit kubeletObjectId to use the selected AKS cluster's actual kubelet identity")
-			}
-			explicitKubeletID = principal
+	if confirmedHosting {
+		var kubeletErr error
+		explicitKubeletID, kubeletErr = validateBYOKubeletParameter(source, includeAcr)
+		if kubeletErr != nil {
+			return nil, kubeletErr
 		}
 	}
 	return &byoLocalPreparation{
 		standardHosting:       hosting.Enabled,
+		confirmedHosting:      confirmedHosting,
 		hostBindings:          hostBindings,
 		identities:            identities,
 		roleSubscription:      roleSubscription,
@@ -218,6 +204,32 @@ func (p *FoundryProvisioningProvider) prepareBYOLocal(
 		includeAcr:            includeAcr,
 		explicitKubeletID:     explicitKubeletID,
 	}, nil
+}
+
+func validateBYOKubeletParameter(source *templateSource, includeAcr bool) (string, error) {
+	if !includeAcr {
+		return "", nil
+	}
+	explicitKubeletID := ""
+	for name, parameter := range source.parameters {
+		if !strings.EqualFold(name, "kubeletObjectId") {
+			continue
+		}
+		if explicitKubeletID != "" {
+			return "", exterrors.Validation(exterrors.CodeConflictingArguments,
+				"multiple kubeletObjectId deployment parameters differ only by case",
+				"supply kubeletObjectId only once using the template's parameter name")
+		}
+		envelope, ok := parameter.(map[string]any)
+		principal, literal := envelope["value"].(string)
+		if !ok || len(envelope) != 1 || !literal || uuid.Validate(principal) != nil {
+			return "", exterrors.Validation(exterrors.CodeInvalidParameter,
+				"kubeletObjectId must use a value envelope containing a literal principal object ID GUID",
+				"omit kubeletObjectId to use the selected AKS cluster's actual kubelet identity")
+		}
+		explicitKubeletID = principal
+	}
+	return explicitKubeletID, nil
 }
 
 func (p *FoundryProvisioningProvider) prepareBYO(
@@ -247,9 +259,22 @@ func (p *FoundryProvisioningProvider) prepareBYOWithLocal(
 		return err
 	}
 	evidence := onboarding.NewAuthorizationEvidence(p.credential, p.armClientOptions)
-	plan, err := p.identifyBYOTemplatePlan(ctx, source, evidence)
+	plan, active, err := p.identifyBYOTemplatePlanWithMode(ctx, source, evidence, !local.standardHosting)
 	if err != nil {
 		return err
+	}
+	if !active {
+		return nil
+	}
+	if !local.confirmedHosting {
+		if err := p.rejectFallbackBYORegistry(source); err != nil {
+			return err
+		}
+		var kubeletErr error
+		explicitKubeletID, kubeletErr = validateBYOKubeletParameter(source, includeAcr)
+		if kubeletErr != nil {
+			return kubeletErr
+		}
 	}
 	// Explicit selectors still need bindings when their effective identities are also ARM deployment targets.
 	for i, resource := range []*onboarding.Resource{&plan.Hosting, &plan.Workload} {

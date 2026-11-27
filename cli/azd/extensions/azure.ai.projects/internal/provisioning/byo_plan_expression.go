@@ -720,6 +720,9 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 			}
 		}
 	}
+	if name == "format" && len(args) > 0 {
+		return planFormat(args)
+	}
 	stringsOnly := make([]string, len(args))
 	for i, arg := range args {
 		value, ok := arg.(string)
@@ -731,17 +734,6 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 	switch name {
 	case "concat":
 		return strings.Join(stringsOnly, "")
-	case "format":
-		if len(stringsOnly) > 0 {
-			result := stringsOnly[0]
-			for i, value := range stringsOnly[1:] {
-				result = strings.ReplaceAll(result, "{"+strconv.Itoa(i)+"}", value)
-			}
-			if strings.ContainsAny(result, "{}") {
-				return planUnknown{"format uses unsupported placeholders"}
-			}
-			return result
-		}
 	case "replace":
 		if len(stringsOnly) == 3 {
 			return strings.ReplaceAll(stringsOnly[0], stringsOnly[1], stringsOnly[2])
@@ -752,6 +744,57 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 		}
 	}
 	return planUnknown{"ARM function " + expression.name + " is not supported by the local plan adapter"}
+}
+
+func planFormat(args []any) any {
+	const maxExactFloatInt = 1<<53 - 1
+	pattern, ok := args[0].(string)
+	if !ok {
+		return planUnknown{"ARM function format requires a string format pattern"}
+	}
+	values := make([]string, len(args)-1)
+	for i, arg := range args[1:] {
+		switch current := arg.(type) {
+		case string:
+			values[i] = current
+		case float64:
+			if math.IsNaN(current) || math.IsInf(current, 0) || current != math.Trunc(current) ||
+				current < -maxExactFloatInt || current > maxExactFloatInt {
+				return planUnknown{"ARM function format numeric argument is not an exact integer"}
+			}
+			values[i] = strconv.FormatInt(int64(current), 10)
+		default:
+			return planUnknown{"ARM function format has unsupported plan argument types"}
+		}
+	}
+	var out strings.Builder
+	for pos := 0; pos < len(pattern); {
+		switch pattern[pos] {
+		case '{':
+			end := strings.IndexByte(pattern[pos+1:], '}')
+			if end <= 0 {
+				return planUnknown{"format uses unsupported placeholders"}
+			}
+			token := pattern[pos+1 : pos+1+end]
+			for j := range len(token) {
+				if token[j] < '0' || token[j] > '9' {
+					return planUnknown{"format uses unsupported placeholders"}
+				}
+			}
+			index, err := strconv.Atoi(token)
+			if err != nil || index < 0 || index >= len(values) {
+				return planUnknown{"format uses unsupported placeholders"}
+			}
+			out.WriteString(values[index])
+			pos += end + 2
+		case '}':
+			return planUnknown{"format uses unsupported placeholders"}
+		default:
+			out.WriteByte(pattern[pos])
+			pos++
+		}
+	}
+	return out.String()
 }
 
 func (e *planEnvironment) resourceID(function string, args []any) any {
